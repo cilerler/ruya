@@ -17,8 +17,9 @@
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
-x64/
-x86/
+[Xx]64/
+[Xx]86/
+[Bb]uild/
 bld/
 [Bb]in/
 [Oo]bj/
@@ -178,6 +179,9 @@ csx/
 ecf/
 rcf/
 
+# Microsoft Azure ApplicationInsights config file
+ApplicationInsights.config
+
 # Windows Store app package directories and files
 AppPackages/
 BundleArtifacts/
@@ -192,6 +196,7 @@ _pkginfo.txt
 
 # Others
 ClientBin/
+[Ss]tyle[Cc]op.*
 ~$*
 *~
 *.dbmdl
@@ -256,6 +261,10 @@ typings/
 **/*.Server/ModelManifest.xml
 _Pvt_Extensions
 
+# LightSwitch generated files
+GeneratedArtifacts/
+ModelManifest.xml
+
 # Paket dependency manager
 .paket/paket.exe
 paket-files/
@@ -286,3 +295,23 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
+
+# =========================
+# Windows detritus
+# =========================
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Mac crap
+.DS_Store
+
+.kube
+.vscode
