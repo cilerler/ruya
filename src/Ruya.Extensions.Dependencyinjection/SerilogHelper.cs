@@ -7,7 +7,7 @@ using Serilog.Debugging;
 using Serilog.Events;
 using Serilog.Sinks.Slack;
 
-namespace Ruya.Extensions.Dependencyinjection
+namespace Ruya.Extensions.DependencyInjection
 {
     public class SerilogHelper
     {

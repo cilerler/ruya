@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Ruya.Primitives;
 
-namespace Ruya.Extensions.Dependencyinjection
+namespace Ruya.Extensions.DependencyInjection
 {
     public class StartupInjector
     {

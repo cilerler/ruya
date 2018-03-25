@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using Ruya.Primitives;
 
-namespace Ruya.Extensions.Dependencyinjection
+namespace Ruya.Extensions.DependencyInjection
 {
 	public class Startup
 	{
