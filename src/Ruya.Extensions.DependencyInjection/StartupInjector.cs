@@ -14,6 +14,7 @@ namespace Ruya.Extensions.DependencyInjection
         private Func<Dictionary<string, string>> _registerInMemoryCollection;
         private Func<ILoggingBuilder, ILoggingBuilder> _registerExternalLoggingBuilder;
 
+        public bool CustomDirectoryNameExists { get => !string.IsNullOrWhiteSpace(CustomDirectoryName); }
         public bool ExternalServicesExist { get; private set; }
         public bool InMemoryCollectionExist { get; private set; }
         public bool ExternalLoggingBuilder { get; private set; }
@@ -38,6 +39,7 @@ namespace Ruya.Extensions.DependencyInjection
             set => _environmentName = value;
         }
 
+        public string CustomDirectoryName { set; get; }
         public Action<IServiceCollection, IConfigurationRoot> RegisterExternalServices
         {
             get => _registerExternalServices;

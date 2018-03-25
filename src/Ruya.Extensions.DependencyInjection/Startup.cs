@@ -26,11 +26,10 @@ namespace Ruya.Extensions.DependencyInjection
 		private static void BeforeRegistrations()
 		{
 			#region directory
-			string assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-			if (assemblyDirectory != null)
+            if (StartupInjector.Instance.CustomDirectoryNameExists)
 			{
-				Directory.SetCurrentDirectory(assemblyDirectory);
-			}
+                Directory.SetCurrentDirectory(StartupInjector.Instance.CustomDirectoryName);
+            }
 			#endregion
 		}
 
@@ -46,10 +45,18 @@ namespace Ruya.Extensions.DependencyInjection
 
 			var configuration = new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory());
 			if (config != null)
+            {
 				configuration = configuration.AddInMemoryCollection(config);
+            }
 
-			configuration.AddJsonFile("appsettings.json", true, true)
-						 .AddJsonFile($"appsettings.{environmentName}.json", true, true)
+            const string configurationJsonFile = "appsettings.json";
+            if (!File.Exists(configurationJsonFile))
+            {
+                throw new NotImplementedException($"Configuration file does not exist!  Current Directory {Directory.GetCurrentDirectory()}");
+            }
+
+			configuration.AddJsonFile(configurationJsonFile, true, true)
+						 .AddJsonFile($"{Path.GetFileNameWithoutExtension(configurationJsonFile)}.{environmentName}{Path.GetExtension(configurationJsonFile)}", true, true)
 						 //.AddUserSecrets<Startup>()
 						 .AddEnvironmentVariables();
                          //.AddCommandLine(args)
