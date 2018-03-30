@@ -17,7 +17,7 @@ namespace Ruya.Primitives
         public static bool IsStaging => EnvironmentName.Equals(Constants.Staging);
         public static bool IsProduction => EnvironmentName.Equals(Constants.Production);
 
-        // UNDONE unfortunately couldn't figure out any other way to determine this and not sure what will happen if it runs on non-docker LINUX, could be same
+        // UNDONE unfortunately couldn't figure out any other way to determine this setting and not sure what will happen if it runs on non-docker LINUX, could be same
         public static bool IsDocker => Home.Equals("/root") || UserName.Equals("ContainerAdministrator");
 
         public static string EnvironmentName
