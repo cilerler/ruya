@@ -24,6 +24,6 @@
     <PackageReference Include="Serilog.Extensions.Logging" Version="2.0.2" />
     <PackageReference Include="Serilog.Settings.Configuration" Version="2.6.1" />
     <PackageReference Include="Serilog.Sinks.Slack" Version="1.2.63" />
-    <PackageReference Include="Ruya.Primitives" Version="1.0.374" />
+    <PackageReference Include="Ruya.Primitives" Version="1.0.402" />
   </ItemGroup>
 </Project>
