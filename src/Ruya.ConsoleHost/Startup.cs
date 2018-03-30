@@ -1,18 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Ruya.Primitives;
 
-namespace Ruya.Extensions.DependencyInjection
+namespace Ruya.ConsoleHost
 {
 	public class Startup
 	{
-		public IConfigurationRoot Configuration { get; private set; }
+		public IConfiguration Configuration { get; private set; }
 		public IServiceProvider ServiceProvider { get; private set; }
 
 		private void Register()
@@ -38,9 +37,9 @@ namespace Ruya.Extensions.DependencyInjection
             string environmentName = StartupInjector.Instance.EnvironmentName;
 
 			Dictionary<string, string> config = null;
-			if (StartupInjector.Instance.InMemoryCollectionExist)
+			if (StartupInjector.Instance.InMemoryCollectionExists)
 			{
-				config = StartupInjector.Instance.RegisterInMemoryCollection();
+				config = StartupInjector.Instance.InMemoryCollection();
 			}
 
 			var configuration = new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory());
@@ -56,10 +55,19 @@ namespace Ruya.Extensions.DependencyInjection
             }
 
 			configuration.AddJsonFile(configurationJsonFile, true, true)
-						 .AddJsonFile($"{Path.GetFileNameWithoutExtension(configurationJsonFile)}.{environmentName}{Path.GetExtension(configurationJsonFile)}", true, true)
-						 //.AddUserSecrets<Startup>()
-						 .AddEnvironmentVariables();
-                         //.AddCommandLine(args)
+						 .AddJsonFile($"{Path.GetFileNameWithoutExtension(configurationJsonFile)}.{environmentName}{Path.GetExtension(configurationJsonFile)}", true, true);
+
+            if (EnvironmentHelper.IsDevelopment)
+            {
+                configuration.AddUserSecrets<Startup>();
+            }
+
+            configuration.AddEnvironmentVariables();
+
+		    if (StartupInjector.Instance.ArgsExist)
+		    {
+		        configuration.AddCommandLine(StartupInjector.Instance.Args);
+            }            
 			Configuration = configuration.Build();
 		}
 
@@ -68,32 +76,31 @@ namespace Ruya.Extensions.DependencyInjection
 			IServiceCollection serviceCollection = new ServiceCollection();
 
 			serviceCollection.AddSingleton(Configuration);
-			serviceCollection.AddSingleton<IConfiguration>(Configuration);
 
 			serviceCollection.AddOptions();
 			serviceCollection.AddLogging(ConfigureLogging);
 
-			//x serviceCollection.AddMemoryCache();
-			//X serviceCollection.AddDistributedMemoryCache();
+            //serviceCollection.AddMemoryCache();
+            //serviceCollection.AddDistributedMemoryCache();
 
-			//serviceCollection.AddDistributedSqlServerCache(options =>
-			//										  {
-			//											  options.ConnectionString = Configuration.GetConnectionString(Configuration.GetValue<string>("Cache:SqlServer:ConnectionStringKey"));
-			//											  options.SchemaName = Configuration.GetValue<string>("Cache:SqlServer:SchemaName");
-			//											  options.TableName = Configuration.GetValue<string>("Cache:SqlServer:TableName");
-			//										  });
+            //serviceCollection.AddDistributedSqlServerCache(options =>
+            //										  {
+            //											  options.ConnectionString = Configuration.GetConnectionString(Configuration.GetValue<string>("Cache:SqlServer:ConnectionStringKey"));
+            //											  options.SchemaName = Configuration.GetValue<string>("Cache:SqlServer:SchemaName");
+            //											  options.TableName = Configuration.GetValue<string>("Cache:SqlServer:TableName");
+            //										  });
 
-			//serviceCollection.AddDistributedRedisCache(options =>
-			//                                  {
-			//	                                  options.Configuration = Configuration.GetConnectionString(Configuration.GetValue<string>("Cache:Redis:Configuration"));
-			//	                                  options.InstanceName = Configuration.GetValue<string>("Cache:Redis:InstanceName");
-			//	                                  Configuration.GetSection("ConnectionStrings:RedisConnection").Bind(options);
-			//	                                  //x options.ResolveDns();
-			//                                  });
+            //serviceCollection.AddDistributedRedisCache(options =>
+            //                                  {
+            //	                                  options.Configuration = Configuration.GetConnectionString(Configuration.GetValue<string>("Cache:Redis:Configuration"));
+            //	                                  options.InstanceName = Configuration.GetValue<string>("Cache:Redis:InstanceName");
+            //	                                  Configuration.GetSection("ConnectionStrings:RedisConnection").Bind(options);
+            //	                                  //x options.ResolveDns();
+            //                                  });
 
-			if (StartupInjector.Instance.ExternalServicesExist)
+            if (StartupInjector.Instance.ExternalServicesExist)
 			{
-				StartupInjector.Instance.RegisterExternalServices(serviceCollection, Configuration);
+				StartupInjector.Instance.ExternalServices(serviceCollection, Configuration);
 			}
 
 			ServiceProvider = serviceCollection.BuildServiceProvider();
@@ -106,9 +113,9 @@ namespace Ruya.Extensions.DependencyInjection
 			//x loggingBuilder.AddDebug();
 			//x loggingBuilder.AddConsole();
 
-			if (StartupInjector.Instance.ExternalLoggingBuilder)
+			if (StartupInjector.Instance.ExternalLoggingBuilderExists)
 			{
-				StartupInjector.Instance.RegisterExternalLoggingBuilder(loggingBuilder);
+				StartupInjector.Instance.ExternalLoggingBuilder(loggingBuilder);
 			}
 
 		}
