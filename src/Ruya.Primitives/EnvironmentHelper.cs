@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections;
-using System.Linq;
 
 namespace Ruya.Primitives
 {
@@ -10,22 +9,22 @@ namespace Ruya.Primitives
         private const string EnvironmentHome = "HOME";
         private const string EnvironmentUserName = "USERNAME";
 
-        private static string _name;
+        private static string _environmentName;
         private static string _home;
-        private static string _username;
+        private static string _userName;
 
-        public static bool IsDevelopment => Name.Equals(Constants.Development);
-        public static bool IsStaging => Name.Equals(Constants.Staging);
-        public static bool IsProduction => Name.Equals(Constants.Production);
+        public static bool IsDevelopment => EnvironmentName.Equals(Constants.Development);
+        public static bool IsStaging => EnvironmentName.Equals(Constants.Staging);
+        public static bool IsProduction => EnvironmentName.Equals(Constants.Production);
 
         // UNDONE unfortunately couldn't figure out any other way to determine this and not sure what will happen if it runs on non-docker LINUX, could be same
         public static bool IsDocker => Home.Equals("/root") || UserName.Equals("ContainerAdministrator");
 
-        public static string Name
+        public static string EnvironmentName
         {
             get
             {
-                bool nameExist = (_name != null) && _name.Any();
+                bool nameExist = !string.IsNullOrWhiteSpace(_environmentName);
                 // ReSharper disable once InvertIf
                 if (!nameExist)
                 {
@@ -35,9 +34,9 @@ namespace Ruya.Primitives
                         throw new ArgumentNullException($"Environment {EnvironmentVariable} does not exist");
                     }
                     string value = environmentVariables[EnvironmentVariable] as string;
-                    _name = value?.ToUpper();
+                    _environmentName = value?.ToUpper();
                 }
-                return _name;
+                return _environmentName;
             }
         }
 
@@ -45,7 +44,7 @@ namespace Ruya.Primitives
         {
             get
             {
-                bool homeExist = (_home != null) && _home.Any();
+                bool homeExist = !string.IsNullOrWhiteSpace(_home);
                 // ReSharper disable once InvertIf
                 if (!homeExist)
                 {
@@ -64,18 +63,18 @@ namespace Ruya.Primitives
         {
             get
             {
-                bool usernameExist = (_username != null) && _username.Any();
+                bool usernameExist = !string.IsNullOrWhiteSpace(_userName);
                 // ReSharper disable once InvertIf
                 if (!usernameExist)
                 {
                     IDictionary environmentVariables = Environment.GetEnvironmentVariables();
                     if (!environmentVariables.Contains(EnvironmentUserName))
                     {
-                        _username = string.Empty;
+                        _userName = string.Empty;
                     }
-                    _username = environmentVariables[EnvironmentUserName] as string ?? string.Empty;
+                    _userName = environmentVariables[EnvironmentUserName] as string ?? string.Empty;
                 }
-                return _username;
+                return _userName;
             }
         }
     }
