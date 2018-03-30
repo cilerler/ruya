@@ -5,7 +5,7 @@ namespace Ruya.Extensions.Logging
 {
     public static partial class LoggerExtensionsHelper
     {
-        private static readonly Func<ILogger, string, string, IDisposable> Initializing = LoggerMessage.DefineScope<string, string>("{ApplicationName} :: {ApplicationId}");
+        private static readonly Func<ILogger, string, string, IDisposable> Initializing = LoggerMessage.DefineScope<string, string>("{ApplicationName}, {ApplicationId}");
 
         private static readonly Action<ILogger, string, bool, bool, int, int, string[], Exception> Started = LoggerMessage.Define<string, bool, bool, int, int, string[]>(LogLevel.Information, 2, $"{new string('-', 19)} Started EnvironmentName {{EnvironmentName}}, Environment.UserInteractive {{UserInteractive}}, Debugger.IsAttached {{DebuggerAttached}}, ProcessId {{ProcessId}}, ThreadManagedId {{ThreadManagedId}}, Args{{Args}}");
 
