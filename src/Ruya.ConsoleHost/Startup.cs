@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -59,7 +60,8 @@ namespace Ruya.ConsoleHost
 
             if (EnvironmentHelper.IsDevelopment)
             {
-                configuration.AddUserSecrets<Startup>();
+                //x configuration.AddUserSecrets<Startup>();
+                configuration.AddUserSecrets(Assembly.GetEntryAssembly());
             }
 
             configuration.AddEnvironmentVariables();
