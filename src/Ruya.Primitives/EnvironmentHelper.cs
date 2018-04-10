@@ -38,6 +38,11 @@ namespace Ruya.Primitives
                 }
                 return _environmentName;
             }
+            set
+            {
+                _environmentName = value;
+                Environment.SetEnvironmentVariable(EnvironmentVariable, _environmentName);
+            }
         }
 
         public static string Home

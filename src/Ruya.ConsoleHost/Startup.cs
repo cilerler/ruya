@@ -35,8 +35,6 @@ namespace Ruya.ConsoleHost
 
 		private void RegisterConfiguration()
 		{
-            string environmentName = StartupInjector.Instance.EnvironmentName;
-
 			Dictionary<string, string> config = null;
 			if (StartupInjector.Instance.InMemoryCollectionExists)
 			{
@@ -56,7 +54,7 @@ namespace Ruya.ConsoleHost
             }
 
 			configuration.AddJsonFile(configurationJsonFile, true, true)
-						 .AddJsonFile($"{Path.GetFileNameWithoutExtension(configurationJsonFile)}.{environmentName}{Path.GetExtension(configurationJsonFile)}", true, true);
+						 .AddJsonFile($"{Path.GetFileNameWithoutExtension(configurationJsonFile)}.{EnvironmentHelper.EnvironmentName}{Path.GetExtension(configurationJsonFile)}", true, true);
 
             if (EnvironmentHelper.IsDevelopment)
             {
@@ -69,7 +67,7 @@ namespace Ruya.ConsoleHost
 		    if (StartupInjector.Instance.ArgsExist)
 		    {
 		        configuration.AddCommandLine(StartupInjector.Instance.Args);
-            }            
+            }
 			Configuration = configuration.Build();
 		}
 
