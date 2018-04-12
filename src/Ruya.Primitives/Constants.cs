@@ -1,4 +1,6 @@
-﻿namespace Ruya.Primitives
+﻿using System;
+
+namespace Ruya.Primitives
 {
     public static class Constants
     {
@@ -17,5 +19,9 @@
         public const string HtmlNewLine = "<br />";
         public const string WildCardStar = "*";
         public const string WildCardQuestionMark = "?";
+        public readonly static double KiloByte = Math.Pow(2, 10);
+        public readonly static double MegaByte = Math.Pow(2, 20);
+        public readonly static double GigaByte = Math.Pow(2, 30);
+        public readonly static double TeraByte = Math.Pow(2, 40);
     }
 }
