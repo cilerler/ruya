@@ -19,9 +19,9 @@ namespace Ruya.Primitives
         public const string HtmlNewLine = "<br />";
         public const string WildCardStar = "*";
         public const string WildCardQuestionMark = "?";
-        public readonly static double KiloByte = Math.Pow(2, 10);
-        public readonly static double MegaByte = Math.Pow(2, 20);
-        public readonly static double GigaByte = Math.Pow(2, 30);
-        public readonly static double TeraByte = Math.Pow(2, 40);
+        public static readonly double KiloByte = Math.Pow(2, 10);
+        public static readonly double MegaByte = Math.Pow(2, 20);
+        public static readonly double GigaByte = Math.Pow(2, 30);
+        public static readonly double TeraByte = Math.Pow(2, 40);
     }
 }
