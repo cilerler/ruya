@@ -17,5 +17,9 @@
         public const string HtmlNewLine = "<br />";
         public const string WildCardStar = "*";
         public const string WildCardQuestionMark = "?";
+        public static KiloByte = Math.Pow(2, 10);
+        public static MegaByte = Math.Pow(2, 20);
+        public static GigaByte = Math.Pow(2, 30);
+        public static TeraByte = Math.Pow(2, 40);
     }
 }
