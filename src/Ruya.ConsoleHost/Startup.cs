@@ -5,6 +5,7 @@ using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Caching.Memory;
 using Serilog;
 using Ruya.Primitives;
 
@@ -80,23 +81,8 @@ namespace Ruya.ConsoleHost
 			serviceCollection.AddOptions();
 			serviceCollection.AddLogging(ConfigureLogging);
 
-            //serviceCollection.AddMemoryCache();
-            //serviceCollection.AddDistributedMemoryCache();
-
-            //serviceCollection.AddDistributedSqlServerCache(options =>
-            //										  {
-            //											  options.ConnectionString = Configuration.GetConnectionString(Configuration.GetValue<string>("Cache:SqlServer:ConnectionStringKey"));
-            //											  options.SchemaName = Configuration.GetValue<string>("Cache:SqlServer:SchemaName");
-            //											  options.TableName = Configuration.GetValue<string>("Cache:SqlServer:TableName");
-            //										  });
-
-            //serviceCollection.AddDistributedRedisCache(options =>
-            //                                  {
-            //	                                  options.Configuration = Configuration.GetConnectionString(Configuration.GetValue<string>("Cache:Redis:Configuration"));
-            //	                                  options.InstanceName = Configuration.GetValue<string>("Cache:Redis:InstanceName");
-            //	                                  Configuration.GetSection("ConnectionStrings:RedisConnection").Bind(options);
-            //	                                  //x options.ResolveDns();
-            //                                  });
+            serviceCollection.AddMemoryCache();
+            serviceCollection.AddDistributedMemoryCache();
 
             if (StartupInjector.Instance.ExternalServicesExist)
 			{
