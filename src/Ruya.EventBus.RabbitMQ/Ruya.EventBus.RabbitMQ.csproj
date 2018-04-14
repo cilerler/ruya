@@ -21,10 +21,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="Polly" Version="5.9.0" />
     <PackageReference Include="RabbitMQ.Client" Version="5.0.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Ruya.EventBus\Ruya.EventBus.csproj" />
+    <PackageReference Include="Ruya.EventBus" Version="1.0.422" />
   </ItemGroup>
 
 </Project>
