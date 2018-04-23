@@ -1,6 +1,7 @@
 ﻿using System;
 using Microsoft.Extensions.DependencyInjection;
 using Ruya.Services.DataAccess.Abstractions;
+using Ruya.Services.DataAccess.Sql;
 
 namespace Ruya
 {
