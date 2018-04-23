@@ -85,6 +85,12 @@ dotnet_naming_symbols.hello_symbol.applicable_accessibilities = private
 dotnet_naming_symbols.hello_symbol.required_modifiers = readonly,static
 dotnet_naming_style.hello_style.capitalization = pascal_case
 
+dotnet_naming_rule.const_fields.severity = error
+dotnet_naming_rule.const_fields.symbols = const_field_symbol
+dotnet_naming_rule.const_fields.style = camel_case
+dotnet_naming_symbols.const_fields.applicable_accessibilities = *
+dotnet_naming_symbols.const_fields.required_modifiers = const
+
 dotnet_naming_rule.private_fields_are_camel_case.severity = error
 dotnet_naming_rule.private_fields_are_camel_case.symbols = private_field_symbol
 dotnet_naming_rule.private_fields_are_camel_case.style = private_field_style
@@ -161,7 +167,7 @@ csharp_new_line_before_open_brace = all
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_new_line_between_query_expression_clauses
 csharp_new_line_between_query_expression_clauses = true
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_prefer_braces
-#csharp_prefer_braces = true:error
+csharp_prefer_braces = true:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_prefer_simple_default_expression
 csharp_prefer_simple_default_expression = true:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_preserve_single_line_blocks
@@ -235,9 +241,9 @@ csharp_style_pattern_matching_over_is_with_cast_check = true:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_style_throw_expression
 csharp_style_throw_expression = true:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_style_var_elsewhere
-#csharp_style_var_elsewhere = false:error
+csharp_style_var_elsewhere = false:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_style_var_for_built_in_types
-#csharp_style_var_for_built_in_types = false:error
+csharp_style_var_for_built_in_types = false:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_style_var_when_type_is_apparent
-#csharp_style_var_when_type_is_apparent = true:error
+csharp_style_var_when_type_is_apparent = false:error
 
