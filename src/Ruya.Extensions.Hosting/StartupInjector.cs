@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Ruya.ConsoleHost
+namespace Ruya.Extensions.Hosting
 {
     public class StartupInjector
     {

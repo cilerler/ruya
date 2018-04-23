@@ -10,7 +10,7 @@
     <VersionPrefix>$(BuildNumber)</VersionPrefix>
     <VersionSuffix Condition=" '$(Configuration)' == 'Debug' ">dev</VersionSuffix>
     <Authors>Cengiz Ilerler</Authors>
-    <Product>Ruya.ConsoleHost</Product>
+    <Product>Ruya.Extensions.Hosting</Product>
     <RepositoryUrl>https://github.com/cilerler/ruya</RepositoryUrl>
   </PropertyGroup>
 

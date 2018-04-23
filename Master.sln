@@ -10,7 +10,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ruya.AppDomain", "src\Ruya.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ruya.Extensions.Logging", "src\Ruya.Extensions.Logging\Ruya.Extensions.Logging.csproj", "{13972761-A111-48BA-939A-132E2EBF155F}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ruya.ConsoleHost", "src\Ruya.ConsoleHost\Ruya.ConsoleHost.csproj", "{AC5D724F-41DF-485E-B1BB-BCA1313C61FC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ruya.Extensions.Hosting", "src\Ruya.Extensions.Hosting\Ruya.Extensions.Hosting.csproj", "{AC5D724F-41DF-485E-B1BB-BCA1313C61FC}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ruya.Helpers.Primitives", "src\Ruya.Helpers.Primitives\Ruya.Helpers.Primitives.csproj", "{974AD836-DBB9-4538-9E29-4FF5029F2FD7}"
 EndProject

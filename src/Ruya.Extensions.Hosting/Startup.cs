@@ -9,7 +9,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Serilog;
 using Ruya.Primitives;
 
-namespace Ruya.ConsoleHost
+namespace Ruya.Extensions.Hosting
 {
 	public class Startup
 	{
