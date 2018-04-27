@@ -1,3 +1,12 @@
+```
+       _ _           _           
+      (_) |         | |          
+   ___ _| | ___ _ __| | ___ _ __ 
+  / __| | |/ _ \ '__| |/ _ \ '__|
+ | (__| | |  __/ |  | |  __/ |   
+  \___|_|_|\___|_|  |_|\___|_|   
+```
+
 # Introduction 
 TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
 
