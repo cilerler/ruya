@@ -1,7 +1,7 @@
 *Short summary (3-5 sentences) describing the issue.*
 
 ### Assemblies affected
-*Which assemblies and versions are known to be affected e.g. Ruya 0.0.1-rc1.*
+*Which assemblies and versions are known to be affected e.g. 0.0.1-rc1.*
 
 ### Reproduce steps
 *The simplest set of steps to reproduce the issue. If possible, reference a commit that demonstrates the issue.*
