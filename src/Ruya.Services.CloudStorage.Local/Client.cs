@@ -18,7 +18,7 @@ namespace Ruya.Services.CloudStorage.Local
 		private readonly Setting _options;
 		private string _bucketName;
 
-		public Client(ILogger<Client> logger, IOptionsSnapshot<Setting> options)
+		public Client(ILogger<Client> logger, IOptions<Setting> options)
 		{
 			_logger = logger;
 			_options = options.Value;

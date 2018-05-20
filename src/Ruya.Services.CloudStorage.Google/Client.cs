@@ -26,7 +26,7 @@ namespace Ruya.Services.CloudStorage.Google
 		private string _bucketName;
 
 	    // ReSharper disable once SuggestBaseTypeForParameter
-		public Client(ILogger<Client> logger, IOptionsSnapshot<Setting> options)
+		public Client(ILogger<Client> logger, IOptions<Setting> options)
 		{
 			_logger = logger;
 			_options = options.Value;
