@@ -3,7 +3,8 @@ using RabbitMQ.Client;
 
 namespace Ruya.EventBus.RabbitMQ
 {
-    public interface IRabbitMQPersistentConnection : IDisposable
+	// ReSharper disable once InconsistentNaming
+	public interface IRabbitMQPersistentConnection : IDisposable
     {
         bool IsConnected { get; }
 

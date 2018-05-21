@@ -13,7 +13,7 @@ namespace Ruya
             {
                 throw new ArgumentNullException(nameof(serviceCollection));
             }
-            //x serviceCollection.AddSingleton<EventBusSetting>();
+            
             serviceCollection.AddSingleton<IEventBusSubscriptionsManager, InMemoryEventBusSubscriptionsManager>();
             return serviceCollection;
         }
