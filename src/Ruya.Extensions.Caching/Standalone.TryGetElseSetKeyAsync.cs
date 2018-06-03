@@ -7,7 +7,7 @@ namespace Ruya.Extensions.Caching
 {
     public class Helper
     {
-        public static async Task<string> TryGetElseSetKeyAsync(string key, ILogger logger, IDistributedCache cache, Func<ILogger, string, Task<string>> externalSourceAsync, string url, TimeSpan absoluteExpirationRelativeToNow)
+        public static async Task<string> TryGetElseSetKeyAsync(string key, ILogger logger, IDistributedCache cache, Func<ILogger, string, CancellationToken, HttpContent, Task<string>> externalSourceAsync, string url, TimeSpan absoluteExpirationRelativeToNow)
         {
             // TODO implement ability to bypass CACHE
 
