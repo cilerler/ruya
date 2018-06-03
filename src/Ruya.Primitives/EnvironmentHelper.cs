@@ -5,7 +5,9 @@ namespace Ruya.Primitives
     public static class EnvironmentHelper
     {
         private const string EnvironmentAspNetCore = "ASPNETCORE_ENVIRONMENT";
+		private const string EnvironmentAspNetCoreUrls = "ASPNETCORE_URLS";
 		private const string EnvironmentDotNetRunningInContainer = "DOTNET_RUNNING_IN_CONTAINER";
+		private const string EnvironmentDotNetUsePollingFileWatcher = "DOTNET_USE_POLLING_FILE_WATCHER";
 
         public static bool IsDevelopment => EnvironmentName.Equals(Constants.Development);
         public static bool IsStaging => EnvironmentName.Equals(Constants.Staging);
@@ -43,6 +45,6 @@ namespace Ruya.Primitives
                 _environmentName = value;
                 Environment.SetEnvironmentVariable(EnvironmentAspNetCore, _environmentName);
             }
-        }		
+        }
     }
 }
