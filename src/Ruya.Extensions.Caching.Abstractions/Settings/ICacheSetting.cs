@@ -1,6 +1,6 @@
 using System;
 
-namespace Ruya.Extensions.Caching.Abstractions.Model
+namespace Ruya.Extensions.Caching.Abstractions.Settings
 {
     public interface ICacheSetting
     {
