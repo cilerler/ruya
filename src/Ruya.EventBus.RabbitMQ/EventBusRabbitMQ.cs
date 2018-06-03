@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,7 +18,8 @@ using Ruya.EventBus.Events;
 
 namespace Ruya.EventBus.RabbitMQ
 {
-    public class EventBusRabbitMQ : IEventBus, IDisposable
+	// ReSharper disable once InconsistentNaming
+	public class EventBusRabbitMQ : IEventBus, IDisposable
     {
         private const string ExchangeType = "direct";
         private readonly ILogger<EventBusRabbitMQ> _logger;
@@ -35,7 +37,7 @@ namespace Ruya.EventBus.RabbitMQ
             _serviceProvider = serviceProvider;
             _logger = logger;
             _options = options.Value;
-
+			
             _persistentConnection = persistentConnection ?? throw new ArgumentNullException(nameof(persistentConnection));
             _subsManager = subsManager ?? new InMemoryEventBusSubscriptionsManager();
 
@@ -48,8 +50,8 @@ namespace Ruya.EventBus.RabbitMQ
             _consumerChannel?.Dispose();
             _subsManager.Clear();
         }
-
-        public void GetCounts(out uint messageCount, out uint consumerCount)
+		
+		public void GetCounts(out uint messageCount, out uint consumerCount)
         {
             messageCount = 0;
             consumerCount = 0;
@@ -72,10 +74,10 @@ namespace Ruya.EventBus.RabbitMQ
                 policy.Execute(() =>
                                {
                                    _logger.LogTrace("Retrieving counts from RabbitMQ");
-                                   QueueDeclareOk output = channel.QueueDeclare(_options.SubscriptionClientName
-                                                                              , true
-                                                                              , false
-                                                                              , false);
+                                   QueueDeclareOk output = channel.QueueDeclare(queue: _options.SubscriptionClientName
+                                                                              , durable: true
+                                                                              , exclusive: false
+                                                                              , autoDelete: false);
                                    internalMessageCount = output.MessageCount;
                                    internalConsumerCount = output.ConsumerCount;
                                });
@@ -102,20 +104,40 @@ namespace Ruya.EventBus.RabbitMQ
 
                 string message = JsonConvert.SerializeObject(@event);
                 var body = Encoding.UTF8.GetBytes(message);
-                
-                policy.Execute(() =>
-                               {
-                                   IBasicProperties basicProperties = channel.CreateBasicProperties();
-                                   basicProperties.Persistent = true;
-                                   basicProperties.ContentType = "application/json";
 
-                                   channel.BasicPublish(_options.BrokerName, eventName, true, basicProperties, body);
-                                   if (_options.WaitForConfirmsOrDieExists)
-                                   { 
-                                        channel.WaitForConfirmsOrDie(_options.WaitForConfirmsOrDie);
-                                   }
-                               });
-            }
+				//     policy.Execute(() =>
+				//                    {
+				//                        IBasicProperties basicProperties = channel.CreateBasicProperties();
+				//                        basicProperties.Persistent = true;
+				//                        basicProperties.ContentType = "application/json";
+
+				//                     _logger.LogDebug("Publishing message {BrokerName} {EventName} {Body}", _options.BrokerName, eventName, message);
+				//                     channel.BasicPublish(exchange: _options.BrokerName
+				//                                        , routingKey: eventName
+				//                                        , mandatory: true
+				//                                        , basicProperties: basicProperties
+				//                                        , body: body);
+				//if (_options.WaitForConfirmsOrDieExists)
+				//                        { 
+				//                             channel.WaitForConfirmsOrDie(_options.WaitForConfirmsOrDie);
+				//                        }
+				//                    });
+				IBasicProperties basicProperties = channel.CreateBasicProperties();
+				basicProperties.Persistent = true;
+				basicProperties.ContentType = "application/json";
+
+				_logger.LogDebug("Publishing message {BrokerName} {EventName} {Body}", _options.BrokerName, eventName, message);
+				channel.BasicPublish(exchange: _options.BrokerName
+								   , routingKey: eventName
+								   , mandatory: true
+								   , basicProperties: basicProperties
+								   , body: body);
+				if (_options.WaitForConfirmsOrDieExists)
+				{
+					channel.WaitForConfirmsOrDie(_options.WaitForConfirmsOrDie);
+				}
+
+			}
         }
 
         public void SubscribeDynamic<TH>(string eventName) where TH : IDynamicIntegrationEventHandler
@@ -175,73 +197,73 @@ namespace Ruya.EventBus.RabbitMQ
             }
         }
 
-        private IModel CreateConsumerChannel()
-        {
-            if (!_persistentConnection.IsConnected)
-            {
-                _persistentConnection.TryConnect();
-            }
+private IModel CreateConsumerChannel()
+{
+    if (!_persistentConnection.IsConnected)
+    {
+        _persistentConnection.TryConnect();
+    }
 
-            IModel channel = _persistentConnection.CreateModel();
-            channel.ExchangeDeclare(_options.BrokerName, ExchangeType);
-            channel.QueueDeclare(_options.SubscriptionClientName, true, false, false, null);
+    IModel channel = _persistentConnection.CreateModel();
+    channel.ExchangeDeclare(_options.BrokerName, ExchangeType);
+    channel.QueueDeclare(_options.SubscriptionClientName, true, false, false, null);
 
-            var consumer = new EventingBasicConsumer(channel);
-            consumer.Received += async (model, basicDeliverEventArgs) =>
+    var consumer = new EventingBasicConsumer(channel);
+    consumer.Received += async (model, basicDeliverEventArgs) =>
+                         {
+                             string eventName = basicDeliverEventArgs.RoutingKey;
+                             var body = basicDeliverEventArgs.Body;
+                             string message = Encoding.UTF8.GetString(body);
+
+                             await ProcessEvent(eventName, message);
+
+                             channel.BasicAck(basicDeliverEventArgs.DeliveryTag, false);
+                             //x channel.BasicReject(basicDeliverEventArgs.DeliveryTag, requeue: true);
+                         };
+
+    channel.BasicQos(0, _options.PrefetchCount, false);
+    channel.BasicConsume(_options.SubscriptionClientName, false, consumer);
+
+    channel.CallbackException += (sender, ea) =>
                                  {
-                                     string eventName = basicDeliverEventArgs.RoutingKey;
-                                     var body = basicDeliverEventArgs.Body;
-                                     string message = Encoding.UTF8.GetString(body);
-
-                                     await ProcessEvent(eventName, message);
-
-                                     channel.BasicAck(basicDeliverEventArgs.DeliveryTag, false);
-                                     //x channel.BasicReject(basicDeliverEventArgs.DeliveryTag, requeue: true);
+                                     _consumerChannel.Dispose();
+                                     _consumerChannel = CreateConsumerChannel();
                                  };
 
-            channel.BasicQos(0, _options.PrefetchCount, false);
-            channel.BasicConsume(_options.SubscriptionClientName, false, consumer);
+    return channel;
+}
 
-            channel.CallbackException += (sender, ea) =>
-                                         {
-                                             _consumerChannel.Dispose();
-                                             _consumerChannel = CreateConsumerChannel();
-                                         };
-
-            return channel;
-        }
-
-        private async Task ProcessEvent(string eventName, string message)
+private async Task ProcessEvent(string eventName, string message)
+{
+    if (_subsManager.HasSubscriptionsForEvent(eventName))
+    {
+        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        using (IServiceScope scope = scopeFactory.CreateScope())
         {
-            if (_subsManager.HasSubscriptionsForEvent(eventName))
+            var subscriptions = _subsManager.GetHandlersForEvent(eventName);
+            foreach (InMemoryEventBusSubscriptionsManager.SubscriptionInfo subscription in subscriptions)
             {
-                var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
-                using (IServiceScope scope = scopeFactory.CreateScope())
+                if (subscription.IsDynamic)
                 {
-                    var subscriptions = _subsManager.GetHandlersForEvent(eventName);
-                    foreach (InMemoryEventBusSubscriptionsManager.SubscriptionInfo subscription in subscriptions)
+                    if (!(scope.ServiceProvider.GetService(subscription.HandlerType) is IDynamicIntegrationEventHandler handler))
                     {
-                        if (subscription.IsDynamic)
-                        {
-                            if (!(scope.ServiceProvider.GetService(subscription.HandlerType) is IDynamicIntegrationEventHandler handler))
-                            {
-                                throw new NotImplementedException();
-                            }
-
-                            dynamic eventData = JObject.Parse(message);
-                            await handler.Handle(eventData);
-                        }
-                        else
-                        {
-                            Type eventType = _subsManager.GetEventTypeByName(eventName);
-                            object integrationEvent = JsonConvert.DeserializeObject(message, eventType);
-                            object handler = scope.ServiceProvider.GetService(subscription.HandlerType);
-                            Type concreteType = typeof(IIntegrationEventHandler<>).MakeGenericType(eventType);
-                            await (Task)concreteType.GetMethod("Handle").Invoke(handler, new[] {integrationEvent});
-                        }
+                        throw new NotImplementedException();
                     }
+
+                    dynamic eventData = JObject.Parse(message);
+                    await handler.Handle(eventData);
+                }
+                else
+                {
+                    Type eventType = _subsManager.GetEventTypeByName(eventName);
+                    object integrationEvent = JsonConvert.DeserializeObject(message, eventType);
+                    object handler = scope.ServiceProvider.GetService(subscription.HandlerType);
+                    Type concreteType = typeof(IIntegrationEventHandler<>).MakeGenericType(eventType);
+                    await (Task)concreteType.GetMethod("Handle").Invoke(handler, new[] {integrationEvent});
                 }
             }
         }
+    }
+}
     }
 }
