@@ -17,19 +17,19 @@ namespace Ruya.Extensions.Caching
             {
                 try
                 {
-                    logger.LogTrace($"[{methodName}] Trying to retrieve data from the cache");
+                    logger.LogTrace($"Trying to retrieve data from the cache");
                     response = await cache.GetStringAsync(key);
                     bool existKey = !string.IsNullOrWhiteSpace(response);
                     if (existKey)
                     {
-                        logger.LogInformation($"[{methodName}] Data retrieved from the cache");
+                        logger.LogInformation($"Data retrieved from the cache");
                         return response;
                     }
-                    logger.LogTrace($"[{methodName}] Key does not exist in the cache");
+                    logger.LogTrace($"Key does not exist in the cache");
                 }
                 catch (Exception ex)
                 {
-                    logger.LogCritical(-1, ex, $"[{methodName}] There is an error occurred while retrieving the data from cache.");
+                    logger.LogCritical(-1, ex, "There is an error occurred while retrieving the data from cache.");
                     response = null;
                     // ReSharper disable once ExpressionIsAlwaysNull
                     return response;
