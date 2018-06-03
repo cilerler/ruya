@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
@@ -11,21 +13,20 @@ namespace Ruya.Extensions.Caching
         {
             // TODO implement ability to bypass CACHE
 
-            const string methodName = nameof(TryGetElseSetKeyAsync);
             string response;
             using (logger.BeginScope("{cacheKey}", key))
             {
                 try
                 {
-                    logger.LogTrace($"Trying to retrieve data from the cache");
+                    logger.LogTrace("Trying to retrieve data from the cache");
                     response = await cache.GetStringAsync(key);
                     bool existKey = !string.IsNullOrWhiteSpace(response);
                     if (existKey)
                     {
-                        logger.LogInformation($"Data retrieved from the cache");
+                        logger.LogInformation("Data retrieved from the cache");
                         return response;
                     }
-                    logger.LogTrace($"Key does not exist in the cache");
+                    logger.LogTrace("Key does not exist in the cache");
                 }
                 catch (Exception ex)
                 {
@@ -38,7 +39,7 @@ namespace Ruya.Extensions.Caching
                 try
                 {
                     logger.LogTrace("Trying to retrieve data from the original source {url}", url);
-                    response = await externalSourceAsync(logger, url);
+					response = await externalSourceAsync(logger, url, default, null);
 
                     logger.LogInformation("Data retrieved from original source.");
 
