@@ -133,7 +133,7 @@ namespace Ruya.Services.DataAccess.Sql
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(-1, ex, $"{ex.Message} {{sql}}", sql);
+                        _logger.LogError(ex, $"{ex.Message} {{sql}}", sql);
                         sqlTransaction.Rollback();
                         _logger.LogInformation($"[{methodName}] Rollback successful");
                         throw;
@@ -167,7 +167,7 @@ namespace Ruya.Services.DataAccess.Sql
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(-1, ex, $"{ex.Message} {{sql}}", sql);
+                        _logger.LogError(ex, $"{ex.Message} {{sql}}", sql);
                         sqlTransaction.Rollback();
                         _logger.LogInformation($"[{methodName}] Rollback successful");
                         throw;
@@ -201,7 +201,7 @@ namespace Ruya.Services.DataAccess.Sql
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(-1, ex, $"{ex.Message} {{sql}}", sql);
+                        _logger.LogError(ex, $"{ex.Message} {{sql}}", sql);
                         sqlTransaction.Rollback();
                         _logger.LogInformation($"[{methodName}] Rollback successful");
                         throw;
@@ -273,7 +273,7 @@ namespace Ruya.Services.DataAccess.Sql
             {
                 if (ex.Message == "Object reference not set to an instance of an object")
                 {
-                    _logger.LogError(-1, ex, $"[{methodName}] {ex.Message} {{items}}", enumerable);
+                    _logger.LogError(ex, $"[{methodName}] {ex.Message} {{items}}", enumerable);
                 }
 
                 throw;
