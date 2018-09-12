@@ -2,7 +2,7 @@
 
 namespace Ruya.Extensions.Caching.Abstractions.Settings
 {
-    public class CacheSetting : ICacheSetting
+    public class CacheSetting
     {
         public bool Enabled { get; set; }
         public string Prefix { get; set; }

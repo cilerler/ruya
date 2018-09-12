@@ -9,41 +9,39 @@ namespace Ruya.Extensions.Caching
 {
     public class Helper
     {
-        public static async Task<string> TryGetElseSetKeyAsync(string key, ILogger logger, IDistributedCache cache, Func<ILogger, string, CancellationToken, HttpContent, Task<string>> externalSourceAsync, string url, TimeSpan absoluteExpirationRelativeToNow)
+        public static async Task<string> TryGetElseSetKeyAsync(string key, ILogger logger, IDistributedCache cache, Func<ILogger, string, CancellationToken, HttpContent, bool, Task<string>> externalSourceAsync, string url, TimeSpan absoluteExpirationRelativeToNow, bool enableCache)
         {
-            // TODO implement ability to bypass CACHE
-
-            string response;
+			string response;
             using (logger.BeginScope("{cacheKey}", key))
             {
-                try
-                {
-                    logger.LogTrace("Trying to retrieve data from the cache");
-                    response = await cache.GetStringAsync(key);
-                    bool existKey = !string.IsNullOrWhiteSpace(response);
-                    if (existKey)
-                    {
-                        logger.LogInformation("Data retrieved from the cache");
-                        return response;
-                    }
-                    logger.LogTrace("Key does not exist in the cache");
-                }
-                catch (Exception ex)
-                {
-                    logger.LogCritical(-1, ex, "There is an error occurred while retrieving the data from cache.");
-                    response = null;
-                    // ReSharper disable once ExpressionIsAlwaysNull
-                    return response;
-                }
-
+				if (enableCache)
+				{
+					try
+					{
+						logger.LogTrace("Trying to retrieve data from the cache");
+						response = await cache.GetStringAsync(key);
+						bool existKey = !string.IsNullOrWhiteSpace(response);
+						if (existKey)
+						{
+							logger.LogInformation("Data retrieved from the cache");
+							return response;
+						}
+						logger.LogTrace("Key does not exist in the cache");
+					}
+					catch (Exception ex)
+					{
+						logger.LogWarning(ex, "There is an error occurred while retrieving the data from cache.");
+						response = null;
+					}
+				}
                 try
                 {
                     logger.LogTrace("Trying to retrieve data from the original source {url}", url);
-					response = await externalSourceAsync(logger, url, default, null);
+					response = await externalSourceAsync(logger, url, default, null, true);
 
                     logger.LogInformation("Data retrieved from original source.");
 
-                    if (response != null)
+                    if (enableCache && response != null)
                     {
                         logger.LogTrace("Saving response into the cache");
                         await cache.SetStringAsync(key,
@@ -57,7 +55,7 @@ namespace Ruya.Extensions.Caching
                 }
                 catch (Exception ex)
                 {
-                    logger.LogCritical(-1, ex, "There is an error occurred while retrieving the data from external source.");
+                    logger.LogCritical(ex, "There is an error occurred while retrieving the data from external source.");
                     response = null;
                 }
             }
