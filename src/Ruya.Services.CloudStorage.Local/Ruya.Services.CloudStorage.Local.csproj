@@ -21,7 +21,7 @@
     <PackageReference Include="Microsoft.Extensions.Options" Version="2.1.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="2.1.0" />
     <PackageReference Include="MimeTypesMap" Version="1.0.3" />
-    <PackageReference Include="Ruya.Primitives" Version="1.0.417" />
+    <PackageReference Include="Ruya.Primitives" Version="1.0.470" />
 
   </ItemGroup>
 
