@@ -16,13 +16,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Ruya.Extensions.Caching.Abstractions\Ruya.Extensions.Caching.Abstractions.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="2.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Redis" Version="2.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="2.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="2.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="2.2.0" />
   </ItemGroup>
 
 </Project>
