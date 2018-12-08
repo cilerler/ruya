@@ -12,35 +12,29 @@ namespace Ruya.Services.CloudStorage.Local.Tests
 	[TestClass]
 	public class ClientTest
 	{
-		private static IServiceProvider _serviceProvider;
 		private static TestContext _testContext;
+	    private static IServiceProvider _serviceProvider;
+		private static ILogger _logger;
 
 		[ClassInitialize]
 		public static void ClassInitialize(TestContext testContext)
 		{
 			_testContext = testContext;
 
-			IConfigurationRoot configuration = new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory())
-																		 .AddJsonFile("appsettings.json", true, true)
-																		 .Build();
-
-			IServiceCollection serviceCollection = new ServiceCollection();
-			serviceCollection.AddLogging(loggingBuilder =>
-			{
-#if DEBUG
-											 loggingBuilder.AddSeq(configuration.GetSection("Seq"));
-#endif
-			                             });
-			serviceCollection.AddOptions();
-			serviceCollection.AddSingleton(configuration);
-			serviceCollection.AddSingleton<IConfiguration>(configuration);
+		    IServiceCollection serviceCollection = new ServiceCollection();
+			using (IEnumerator<ServiceDescriptor> sc = Initialize.ServiceCollection.GetEnumerator())
+		    {
+				while (sc.MoveNext())
+			    {
+				    serviceCollection.Add(sc.Current);
+			    }
+			}
 
 			serviceCollection.AddGoogleStorageService(configuration);
 
 			_serviceProvider = serviceCollection.BuildServiceProvider();
-
+		    _logger =_serviceProvider.GetRequiredService<ILogger<ClientTest>>();
 		}
-
 
 		[TestCategory("Writers")]
 		[Priority(1)]
