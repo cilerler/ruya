@@ -24,8 +24,4 @@
     <PackageReference Include="Ruya.Primitives" Version="(1.0.470,)" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Ruya.Services.CloudStorage.Abstractions\Ruya.Services.CloudStorage.Abstractions.csproj" />
-  </ItemGroup>
-
 </Project>
