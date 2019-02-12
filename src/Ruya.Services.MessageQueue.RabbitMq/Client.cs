@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Net.Mime;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -13,17 +14,15 @@ namespace Ruya.Services.MessageQueue.RabbitMq
     {
         private readonly IConfiguration _configuration;
         private readonly ILogger _logger;
-        private readonly IServiceProvider _serviceProvider;
 
         private EventHandler<MessageQueueEventArgs> _afterInitialSettings;
 
         public IModel Channel;
 
         // ReSharper disable once SuggestBaseTypeForParameter
-        public Client(IConfiguration configuration, IServiceProvider serviceProvider, ILogger<Client> logger)
+        public Client(IConfiguration configuration, ILogger<Client> logger)
         {
             _configuration = configuration;
-            _serviceProvider = serviceProvider;
             _logger = logger;
         }
 
@@ -101,7 +100,7 @@ namespace Ruya.Services.MessageQueue.RabbitMq
             {
                 IBasicProperties basicProperties = Channel.CreateBasicProperties();
                 basicProperties.Persistent = true;
-                basicProperties.ContentType = "application/json";
+                basicProperties.ContentType = MediaTypeNames.Application.Json;
 
                 _logger.LogInformation($"Sending message to RabbitMQ to {Configuration.RoutingKey}");
                 Channel.BasicPublish(Configuration.Exchange, Configuration.RoutingKey, basicProperties, body);
@@ -124,8 +123,8 @@ namespace Ruya.Services.MessageQueue.RabbitMq
                 return false;
             }
             bool errorOccured = false;
-            var consumer = new EventingBasicConsumer(Channel);
-            consumer.Received += OnConsumerOnReceived;
+            var consumer = new EventingBasicConsumer(Channel); // DefaultBasicConsumer
+			consumer.Received += OnConsumerOnReceived;
             Channel.BasicConsume(Configuration.Queue, false, consumer);
 
             //while (!unsubscribe())
@@ -201,7 +200,7 @@ namespace Ruya.Services.MessageQueue.RabbitMq
                     connectionFactory.AutomaticRecoveryEnabled = Configuration.AutomaticRecoveryEnabled;
                 }
 
-                if (Configuration.RequestedHeartbeatSeconds != default(TimeSpan))
+                if (Configuration.RequestedHeartbeatSeconds != default)
                 {
                     connectionFactory.RequestedHeartbeat = (ushort)Configuration.RequestedHeartbeatSeconds.TotalSeconds;
                 }
@@ -210,11 +209,11 @@ namespace Ruya.Services.MessageQueue.RabbitMq
 
                 Connection = connectionFactory.CreateConnection();
                 Channel = Connection.CreateModel();
-                Channel.ExchangeDeclare(Configuration.Exchange, Configuration.ExchangeType, true, false);
-                Channel.QueueDeclare(Configuration.Queue, true, false, false);
+                Channel.ExchangeDeclare(exchange: Configuration.Exchange, type: Configuration.ExchangeType, durable:true, autoDelete:false, arguments: null);
+                Channel.QueueDeclare(queue:Configuration.Queue, durable:true, exclusive:false, autoDelete: false, arguments: null);
                 Channel.ConfirmSelect();
-                Channel.QueueBind(Configuration.Queue, Configuration.Exchange, Configuration.RoutingKey);
-                Channel.BasicQos(0, Configuration.PrefetchCount, false);
+                Channel.QueueBind(queue:Configuration.Queue, exchange:Configuration.Exchange, routingKey: Configuration.RoutingKey);
+                Channel.BasicQos(prefetchSize: 0, prefetchCount: Configuration.PrefetchCount, global:false);
                 _logger.LogTrace("RabbitMQ connection established.");
                 output = true;
             }
