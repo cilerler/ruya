@@ -100,9 +100,9 @@ namespace Ruya.Services.MessageQueue.RabbitMq
             {
                 IBasicProperties basicProperties = Channel.CreateBasicProperties();
                 basicProperties.Persistent = true;
-                basicProperties.ContentType = MediaTypeNames.Application.Json;
+                basicProperties.ContentType = "application/json";
 
-                _logger.LogInformation($"Sending message to RabbitMQ to {Configuration.RoutingKey}");
+				_logger.LogInformation($"Sending message to RabbitMQ to {Configuration.RoutingKey}");
                 Channel.BasicPublish(Configuration.Exchange, Configuration.RoutingKey, basicProperties, body);
                 Channel.WaitForConfirmsOrDie();
                 _logger.LogTrace("Message sent to RabbitMQ");
