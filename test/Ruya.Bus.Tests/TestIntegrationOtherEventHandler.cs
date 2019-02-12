@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 using Ruya.Bus.Abstractions;
 
 namespace Ruya.Bus.Tests
@@ -12,6 +13,6 @@ namespace Ruya.Bus.Tests
             Handled = false;
         }
 
-        public async Task Handle(TestIntegrationEvent @event) => Handled = true;
+        public async Task Handle(TestIntegrationEvent @event, Dictionary<string, object> parameters) => Handled = true;
     }
 }
