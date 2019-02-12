@@ -240,7 +240,7 @@ csharp_style_expression_bodied_constructors = false:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_style_expression_bodied_indexers
 csharp_style_expression_bodied_indexers = true:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_style_expression_bodied_methods
-csharp_style_expression_bodied_methods = true:error
+csharp_style_expression_bodied_methods = false:none
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_style_expression_bodied_operators
 csharp_style_expression_bodied_operators =true:error
 # http://kent-boogaart.com/blog/editorconfig-reference-for-c-developers#csharp_style_expression_bodied_properties
