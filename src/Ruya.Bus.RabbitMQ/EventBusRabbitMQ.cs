@@ -143,7 +143,7 @@ namespace Ruya.Bus.RabbitMQ
 
 			using (IModel channel = _persistentConnection.CreateModel())
 			{
-				string message = JsonConvert.SerializeObject(@event);
+				string message = JsonConvert.SerializeObject(@event, new JsonSerializerSettings() { ReferenceLoopHandling = ReferenceLoopHandling.Ignore });
 				byte[] body = Encoding.UTF8.GetBytes(message);
 				channel.BasicAcks += BasicAcks;
 				channel.BasicReturn += BasicReturn;
@@ -269,7 +269,7 @@ namespace Ruya.Bus.RabbitMQ
 				_logger.LogWarning("Consumer for queue {queueName} does not exist.");
 				return;
 			}
-			
+
 			_consumerChannels[queueName]
 			   .Close();
 			_consumerChannels[queueName]
