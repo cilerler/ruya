@@ -19,8 +19,9 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="2.2.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="2.2.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="2.2.0" />
-    <PackageReference Include="Dapper" Version="1.50.7" />
-    <PackageReference Include="FastMember" Version="1.4.1" />
+    <PackageReference Include="Dapper" Version="1.60.6" />
+    <PackageReference Include="FastMember" Version="1.5.0" />
+    <PackageReference Include="Ruya.Services.DataAccess.Abstractions" Version="[1.0.502,)" />
   </ItemGroup>
 
 </Project>

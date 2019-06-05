@@ -20,7 +20,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="2.2.0" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="2.2.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="2.2.0" />
-    <PackageReference Include="MimeTypesMap" Version="1.0.3" />
+    <PackageReference Include="MimeTypesMap" Version="1.0.7" />
+    <PackageReference Include="Ruya.Services.CloudStorage.Abstractions" Version="[1.0.493,)" />
     <PackageReference Include="Ruya.Primitives" Version="(1.0.470,)" />
   </ItemGroup>
 
