@@ -25,6 +25,9 @@ namespace Ruya.Bus.Events
 		[JsonProperty]
 		public DateTime CreationDate { get; private set; }
 
+		[JsonProperty]
+		public object Data { get; set; }
+
 		[JsonIgnore]
 		public bool PublishAsError { get; set; }
 
