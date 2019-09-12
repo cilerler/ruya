@@ -1,0 +1,49 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.24720.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruya.Data.Entity", "Ruya.Data.Entity\Ruya.Data.Entity.csproj", "{A1DC9ADD-702E-48AD-863F-C9594DF20990}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruya.Data.Entity.Interfaces", "Ruya.Data.Entity.Interfaces\Ruya.Data.Entity.Interfaces.csproj", "{76CAEE81-BDA7-439B-BEBB-58DBD8CBA299}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruya.Data.Entity.Tests", "Ruya.Data.Entity.Tests\Ruya.Data.Entity.Tests.csproj", "{54D4E0C4-660D-4C98-B393-76E2CC07D0A3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1DC9ADD-702E-48AD-863F-C9594DF20990}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1DC9ADD-702E-48AD-863F-C9594DF20990}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1DC9ADD-702E-48AD-863F-C9594DF20990}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1DC9ADD-702E-48AD-863F-C9594DF20990}.Release|Any CPU.Build.0 = Release|Any CPU
+		{76CAEE81-BDA7-439B-BEBB-58DBD8CBA299}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{76CAEE81-BDA7-439B-BEBB-58DBD8CBA299}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{76CAEE81-BDA7-439B-BEBB-58DBD8CBA299}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{76CAEE81-BDA7-439B-BEBB-58DBD8CBA299}.Release|Any CPU.Build.0 = Release|Any CPU
+		{54D4E0C4-660D-4C98-B393-76E2CC07D0A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{54D4E0C4-660D-4C98-B393-76E2CC07D0A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{54D4E0C4-660D-4C98-B393-76E2CC07D0A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{54D4E0C4-660D-4C98-B393-76E2CC07D0A3}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(TeamFoundationVersionControl) = preSolution
+		SccNumberOfProjects = 4
+		SccEnterpriseProvider = {4CA58AB2-18FA-4F8D-95D4-32DDF27D184C}
+		SccTeamFoundationServer = https://ilerler.visualstudio.com/defaultcollection
+		SccLocalPath0 = .
+		SccProjectUniqueName1 = Ruya.Data.Entity\\Ruya.Data.Entity.csproj
+		SccProjectName1 = Ruya.Data.Entity
+		SccLocalPath1 = Ruya.Data.Entity
+		SccProjectUniqueName2 = Ruya.Data.Entity.Interfaces\\Ruya.Data.Entity.Interfaces.csproj
+		SccProjectName2 = Ruya.Data.Entity.Interfaces
+		SccLocalPath2 = Ruya.Data.Entity.Interfaces
+		SccProjectUniqueName3 = Ruya.Data.Entity.Tests\\Ruya.Data.Entity.Tests.csproj
+		SccProjectName3 = Ruya.Data.Entity.Tests
+		SccLocalPath3 = Ruya.Data.Entity.Tests
+	EndGlobalSection
+EndGlobal

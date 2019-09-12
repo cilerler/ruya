@@ -1,0 +1,31 @@
+﻿@import "settings";
+
+body {
+    padding-top: $bodyPadding;
+    padding-bottom: $bodyPadding;    
+}
+
+$field-error-color: #FA787E;
+$field-success-color: #78FA89;
+
+.ng-invalid.ng-dirty {
+    border-color: $field-error-color;
+}
+
+.ng-valid.ng-dirty {
+    border-color: $field-success-color;
+}
+
+.updateProcess {
+    position: absolute;
+    z-index: 1000;
+    height: 100%;
+    width: 100%;
+    background-image: url(../images/dataloader.gif);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-position: center;
+    /* ReSharper disable once CssBrowserCompatibility */
+    background-size: 100px;
+    top: 0;
+}

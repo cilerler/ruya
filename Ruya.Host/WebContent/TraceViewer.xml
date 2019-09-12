@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="TraceViewer.xslt" ?>
+<!DOCTYPE root
+[
+  <!ENTITY traceLog SYSTEM "/logs/TraceLog.svclog">
+]>
+<root>
+  &traceLog;
+</root>

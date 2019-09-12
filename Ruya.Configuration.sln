@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.24720.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruya.Configuration", "Ruya.Configuration\Ruya.Configuration.csproj", "{CF53ADB9-F8DE-4038-8DF6-EF26121EBDB8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruya.Configuration.Tests", "Ruya.Configuration.Tests\Ruya.Configuration.Tests.csproj", "{C0EC0DE5-5C8F-4448-A8B0-FEEF14422667}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CF53ADB9-F8DE-4038-8DF6-EF26121EBDB8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CF53ADB9-F8DE-4038-8DF6-EF26121EBDB8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CF53ADB9-F8DE-4038-8DF6-EF26121EBDB8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CF53ADB9-F8DE-4038-8DF6-EF26121EBDB8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C0EC0DE5-5C8F-4448-A8B0-FEEF14422667}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C0EC0DE5-5C8F-4448-A8B0-FEEF14422667}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C0EC0DE5-5C8F-4448-A8B0-FEEF14422667}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C0EC0DE5-5C8F-4448-A8B0-FEEF14422667}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(TeamFoundationVersionControl) = preSolution
+		SccNumberOfProjects = 3
+		SccEnterpriseProvider = {4CA58AB2-18FA-4F8D-95D4-32DDF27D184C}
+		SccTeamFoundationServer = https://ilerler.visualstudio.com/defaultcollection
+		SccLocalPath0 = .
+		SccProjectUniqueName1 = Ruya.Configuration\\Ruya.Configuration.csproj
+		SccProjectName1 = Ruya.Configuration
+		SccLocalPath1 = Ruya.Configuration
+		SccProjectUniqueName2 = Ruya.Configuration.Tests\\Ruya.Configuration.Tests.csproj
+		SccProjectName2 = Ruya.Configuration.Tests
+		SccLocalPath2 = Ruya.Configuration.Tests
+	EndGlobalSection
+EndGlobal

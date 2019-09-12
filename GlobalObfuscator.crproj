@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<project baseDir=".\Ruya.Host\bin\Release" outputDir=".\Output" xmlns="http://confuser.codeplex.com">
+  <rule preset="none" pattern="true">
+    <protection id="anti debug" />
+    <protection id="anti dump" />
+    <protection id="anti ildasm" />
+    <protection id="anti tamper" />
+    <protection id="constants" />
+    <protection id="ctrl flow" />
+    <protection id="invalid metadata" />
+    <protection id="ref proxy" />
+    <protection id="rename" />
+    <protection id="resources" />
+  </rule>
+  
+  <module path="Ruya.Caching.dll" />
+  <module path="Ruya.Configuration.dll" />
+  <module path="Ruya.Core.dll" />
+  <module path="Ruya.Data.Entity.dll">
+    <rule pattern="true" inherit="true">      
+      <protection id="resources" action="remove" />
+    </rule>
+  </module>
+  <module path="Ruya.Diagnostics.dll">
+    <rule pattern="true" inherit="true">
+      <protection id="anti dump" action="remove" />
+      <protection id="rename" action="remove" />
+    </rule>
+  </module>
+  <module path="Ruya.IO.dll" />
+  <module path="Ruya.Json.dll">
+    <rule pattern="true" inherit="true">
+      <protection id="anti dump" action="remove" />
+      <protection id="rename" action="remove" />
+    </rule>
+  </module>
+  <module path="Ruya.Net.dll" />
+  <module path="Ruya.Security.dll" />
+  <module path="Ruya.Xml.dll" />
+
+  <module path="Ruya.Domain.dll" />
+  <module path="Ruya.Host.exe">
+    <rule pattern="true" inherit="true">
+      <protection id="rename" action="remove" />
+    </rule>
+  </module>
+
+</project>

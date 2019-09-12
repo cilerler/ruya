@@ -1,0 +1,1 @@
+Place all non-nuget 3rd Party assemblies here

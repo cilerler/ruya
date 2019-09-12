@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.24720.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruya.Security", "Ruya.Security\Ruya.Security.csproj", "{013D445E-2F57-46DD-A55B-D9148E03D520}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruya.Security.Tests", "Ruya.Security.Tests\Ruya.Security.Tests.csproj", "{94BBC091-911A-4D8D-A428-30349BBDFFA5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{013D445E-2F57-46DD-A55B-D9148E03D520}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{013D445E-2F57-46DD-A55B-D9148E03D520}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{013D445E-2F57-46DD-A55B-D9148E03D520}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{013D445E-2F57-46DD-A55B-D9148E03D520}.Release|Any CPU.Build.0 = Release|Any CPU
+		{94BBC091-911A-4D8D-A428-30349BBDFFA5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{94BBC091-911A-4D8D-A428-30349BBDFFA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{94BBC091-911A-4D8D-A428-30349BBDFFA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{94BBC091-911A-4D8D-A428-30349BBDFFA5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(TeamFoundationVersionControl) = preSolution
+		SccNumberOfProjects = 3
+		SccEnterpriseProvider = {4CA58AB2-18FA-4F8D-95D4-32DDF27D184C}
+		SccTeamFoundationServer = https://ilerler.visualstudio.com/defaultcollection
+		SccLocalPath0 = .
+		SccProjectUniqueName1 = Ruya.Security\\Ruya.Security.csproj
+		SccProjectName1 = Ruya.Security
+		SccLocalPath1 = Ruya.Security
+		SccProjectUniqueName2 = Ruya.Security.Tests\\Ruya.Security.Tests.csproj
+		SccProjectName2 = Ruya.Security.Tests
+		SccLocalPath2 = Ruya.Security.Tests
+	EndGlobalSection
+EndGlobal

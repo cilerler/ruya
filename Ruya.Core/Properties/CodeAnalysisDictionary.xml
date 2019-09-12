@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<Dictionary xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="..\CodeAnalysisDictionary.xsd">
+  <Words>
+    <Unrecognized>
+      <Word></Word>
+    </Unrecognized>
+    <Recognized>
+      <Word></Word>
+    </Recognized>
+    <Deprecated>
+      <Term PreferredAlternate=""></Term>
+    </Deprecated>
+    <Compound>
+      <Term CompoundAlternate=""></Term>
+    </Compound>
+    <DiscreteExceptions>
+      <Term>LineFeed</Term>
+      <Term>CarriageReturn</Term>
+      <Term>LineFeedCarriageReturn</Term>
+      <Term>BackSpace</Term>
+      <Term>BackSlash</Term>
+    </DiscreteExceptions>
+  </Words>
+  <Acronyms>
+    <CasingExceptions>
+      <Acronym>CRLF</Acronym>
+      <Acronym>CSV</Acronym>
+    </CasingExceptions>
+  </Acronyms>
+</Dictionary>

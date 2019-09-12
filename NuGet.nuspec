@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>$id$</id>
+    <version>$version$</version>
+    <title>$title$</title>
+    <authors>$author$</authors>
+    <owners>$author$</owners>
+    <description>$description$</description>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <copyright>$copyright$</copyright>
+    <projectUrl>https://github.com/cilerler/Ruya</projectUrl>
+    <licenseUrl>https://raw.githubusercontent.com/cilerler/Ruya/master/LICENSE.txt</licenseUrl>
+  </metadata>
+</package>

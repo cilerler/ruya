@@ -1,0 +1,36 @@
+{
+    "version": "v4",
+    "repo": "borisyankov/DefinitelyTyped",
+    "ref": "master",
+    "path": "typings",
+    "bundle": "typings/tsd.d.ts",
+    "installed": {
+        "jquery/jquery.d.ts": {
+            "commit": "f23cd55e319a0f67362ca0dbc4cf3e2ec1339f4e"
+        },
+        "angularjs/angular.d.ts": {
+            "commit": "557bb595af0ab301d098fb5bd50943fffbfcee57"
+        },
+        "angularjs/angular-resource.d.ts": {
+            "commit": "557bb595af0ab301d098fb5bd50943fffbfcee57"
+        },
+        "angularjs/angular-route.d.ts": {
+            "commit": "557bb595af0ab301d098fb5bd50943fffbfcee57"
+        },
+        "angularjs/angular-cookies.d.ts": {
+            "commit": "557bb595af0ab301d098fb5bd50943fffbfcee57"
+        },
+        "underscore/underscore.d.ts": {
+            "commit": "f23cd55e319a0f67362ca0dbc4cf3e2ec1339f4e"
+        },
+        "cryptojs/cryptojs.d.ts": {
+            "commit": "6c2589a6335713cc5b88701d607a2770f1c53b63"
+        },
+        "signalr/signalr.d.ts": {
+            "commit": "f23cd55e319a0f67362ca0dbc4cf3e2ec1339f4e"
+        },
+        "papaparse/papaparse.d.ts": {
+            "commit": "c5a2f44bab06cf9f2bcc14530171daac1cebff6c"
+        }
+    }
+}

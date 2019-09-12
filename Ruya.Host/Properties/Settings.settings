@@ -1,0 +1,15 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="Ruya.Host.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="ServerAddress" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">http://localhost:8080/</Value>
+    </Setting>
+    <Setting Name="JobInterval" Type="System.TimeSpan" Scope="Application">
+      <Value Profile="(Default)">00:00:10</Value>
+    </Setting>
+    <Setting Name="JobMaxSkipAllowed" Type="System.Int32" Scope="Application">
+      <Value Profile="(Default)">5</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>

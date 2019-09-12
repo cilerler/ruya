@@ -1,0 +1,121 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title>Service (Edition)</title>
+    <link rel="stylesheet" href="lib/bootstrap/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="lib/bootstrap/css/bootstrap-theme.min.css"/>
+    <link rel="stylesheet" href="lib/fontawesome/css/font-awesome.min.css" />
+    <link rel="stylesheet" href="lib/emojione/css/emojione.min.css"/>
+    <link rel="stylesheet" href="css/application.css" />
+</head>
+<body>
+    <div ng-app="app">
+        <div ng-controller="traceController">
+            <div class="container">
+                <div class="page-header">
+                    <!--<img src="../StyleContent/Logo.jpg" alt="logo" class="img-rounded img-responsive">-->
+                    <h1>
+                        Service <small>Edition</small>
+                    </h1>
+                </div>
+                <span id="webSocketStatusSpan"></span>
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="panel panel-default">
+                            <div class="panel-heading">
+                                Trace Activity
+                                <button class="btn btn-xs pull-right" data-toggle="tooltip" data-placement="top" title="Connect" ng-click="signalRService.connect()" ng-hide="signalRService.isConnected()">
+                                    <i class="fa fa-link"></i>
+                                </button>
+                                <button class="btn btn-xs pull-right btn-danger" data-toggle="tooltip" data-placement="bottom" title="Disconnect" ng-click="signalRService.disconnect()" ng-hide="!signalRService.isConnected()">
+                                    <i class="fa fa-unlink"></i>
+                                </button>
+                                <!--<button class="btn btn-xs pull-right" data-toggle="tooltip" data-placement="bottom" title="Users" ng-click="updateClientsList();" ng-hide="!signalRService.isConnected()">
+                                    <i class="fa fa-user"></i>
+                                </button>
+                                <button class="btn btn-xs pull-right" data-toggle="tooltip" data-placement="bottom" title="Groups" ng-click="updateGroupsList();" ng-hide="!signalRService.isConnected()">
+                                    <i class="fa fa-group"></i>
+                                </button>
+                                <button class="btn btn-xs pull-right" data-toggle="tooltip" data-placement="bottom" title="DebugValues" ng-click="updateDebugValuesList();" ng-hide="!signalRService.isConnected()">
+                                    <i class="fa fa-cog"></i>
+                                </button>-->
+                            </div>
+                            <div class="panel-body">
+                                <ul ul-class="list-group">
+                                    <li class="list-group-item" ng-class="{'list-group-item-info':message.EventType=='Information','list-group-item-success':message.EventType=='Warning','list-group-item-warning':message.EventType=='Error','list-group-item-danger':message.EventType=='Critical'}" ng-model="message" ng-repeat="message in messagesList.slice().reverse()">
+                                        <span class="badge pull-left" style="margin-right: 5px;">{{message.DateTime | date:'HH:mm:ss:sss'}}</span>
+                                                
+                                        <span><i class="fa fa-lg" ng-class="{'fa-play':message.EventType=='Start','fa-stop':message.EventType=='Stop','fa-pause':message.EventType=='Suspend','fa-step-forward':message.EventType=='Resume','fa-info':message.EventType=='Information','fa-warning-sign':message.EventType=='Warning','fa-belt':message.EventType=='Error','fa-bolt':message.EventType=='Critical','fa-ticket':message.EventType=='Verbose'}"></i></span>
+                                        <span class="label label-info">{{message.LogicalOperationStack}}</span>
+                                        {{message.Content}}
+
+                                        <span class="label label-danger">{{message.Unknown}}</span>
+                                        <span class="label label-primary pull-right">{{message.Source}}</span>
+                        
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div ng-class="{updateProcess: applicationBlocked}"></div>
+                <nav class="navbar navbar-default navbar-fixed-bottom" role="navigation">
+                    <div class="container">
+                        <div class="navbar-header">
+                            <a class="navbar-brand" href="http://ruya.ilerler.com">Ruya&reg; .NET Wrapper&#8482; </a>
+                        </div>
+                        <p class="navbar-text">is a part of Ilerler, Inc., registered in the U.S. and other countries. Copyright &#0169 {{year}}</p>
+                        <a href="TraceViewer.xml" title="logs" class="btn navbar-btn navbar-right" role="button" target="_blank"><i class="fa fa-archive fa-lg"></i></a> 
+                        <!--&nbsp; <a href="../api/Data/get" title="api" class="btn navbar-btn navbar-right" role="button" target="_blank"><i class="fa fa-code fa-lg"></i></a>-->
+                    </div>
+                </nav>
+            </div>
+            <script type="text/ng-template" id="modal.html">
+                <div class="modal-header">
+                    <h3 class="modal-title">Please paste/type your configuration</h3>
+                </div>
+                <div class="modal-body">
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <p>
+                                <textarea ng-model="context" class="form-control" rows="3"></textarea>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" ng-click="ok()">OK</button>
+                    <button class="btn btn-warning" ng-click="cancel()">Cancel</button>
+                </div>
+            </script>
+        </div>
+    </div>
+
+    <!--
+        <script src="../scripts/jquery-2.1.3.min.js"></script>
+        <script src="../scripts/jquery.signalR-2.2.0.min.js"></script>
+        -->
+
+    <script src="lib/jquery/jquery.min.js"></script>
+    <script src="lib/signalr/jquery.signalR.min.js"></script>
+
+    <!-- ReSharper disable once Html.PathError -->
+    <script src="/signalr/hubs"></script>
+
+    <script src="lib/bootstrap/js/bootstrap.min.js"></script>
+    <script src="lib/emojione/js/emojione.min.js"></script>
+    <script src="lib/angular/angular.min.js"></script>
+    <script src="lib/angular-route/angular-route.min.js"></script>
+    <script src="lib/angular-resource/angular-resource.min.js"></script>
+    <script src="lib/angular-cookies/angular-cookies.min.js"></script>
+    <script src="lib/angular-bootstrap/ui-bootstrap-tpls.min.js"></script>
+    <script src="lib/underscore/underscore-min.js"></script>
+    <script src="lib/crypto-js/core.js"></script>
+    <script src="lib/crypto-js/md5.js"></script>
+    <script src="lib/papaparse/papaparse.min.js"></script>
+    <script src="scripts/application.min.js"></script>
+</body>
+</html>
