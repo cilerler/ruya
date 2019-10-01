@@ -43,7 +43,7 @@ steps:
 #   displayName: Configure LFS for use with submodules
 - powershell: Write-Host "This is a script that could use $env:BUILDNUMBER"
   env:
-    BUILD_NUMBER: $(Build.BuildNumber)
+    BUILD_NUMBER: '1.0.$(BuildId)'
 - checkout: self
   submodules: true
   lfs: true
