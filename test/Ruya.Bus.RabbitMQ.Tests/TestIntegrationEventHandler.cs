@@ -24,18 +24,20 @@ namespace Ruya.Bus.RabbitMQ.Tests
 			Handled = true;
 			Logger.LogDebug("{@payload}"
 			              , @event);
-			if (@event.TestId % 10==0)
+			if (@event.TestId % 10 == 0)
 			{
 				if (@event.Error == null)
 				{
 					@event.Error = new List<object>();
 				}
 				@event.Error.Add(@event.Error.Any()
-					                 ? $"Adding Error {@event.Error.Count+1}"
+					                 ? $"Adding Error {@event.Error.Count + 1}"
 					                 : "Initial");
 
 				PublishError(@event, parameters);
 			}
+
+			await Task.CompletedTask;
 		}
 	}
 }

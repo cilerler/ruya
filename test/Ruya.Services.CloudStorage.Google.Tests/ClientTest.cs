@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,10 +32,11 @@ namespace Ruya.Services.CloudStorage.Google.Tests
 			    }
 			}
 
-			serviceCollection.AddGoogleStorageService(configuration);
+			serviceCollection.AddGoogleStorageService(Initialize.ServiceProvider.GetRequiredService<IConfiguration>());
 
 			_serviceProvider = serviceCollection.BuildServiceProvider();
 		    _logger =_serviceProvider.GetRequiredService<ILogger<ClientTest>>();
+			Task.Delay(TimeSpan.FromSeconds(1)).Wait();
 		}
 
 

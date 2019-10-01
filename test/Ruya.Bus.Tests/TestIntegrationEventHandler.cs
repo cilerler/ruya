@@ -13,6 +13,10 @@ namespace Ruya.Bus.Tests
             Handled = false;
         }
 
-        public async Task Handle(TestIntegrationEvent @event, Dictionary<string, object> parameters) => Handled = true;
+        public async Task Handle(TestIntegrationEvent @event, Dictionary<string, object> parameters)
+        {
+	        Handled = true;
+	        await Task.CompletedTask;
+		}
     }
 }
