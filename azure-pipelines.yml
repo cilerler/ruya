@@ -41,7 +41,7 @@ steps:
 #     git config --global --add filter.lfs.process "git-lfs filter-process"
 #     git config --global --add filter.lfs.clean "git-lfs clean -- %f"
 #   displayName: Configure LFS for use with submodules
-- powershell: Write-Host "This is a script that could use [$env:BUILD_NUMBER] and [$(BuildId)] and [$(buildPlatform)] and [$(configuration)]"
+- powershell: Write-Host "This is a script that could use [$env:BUILD_NUMBER] and [$(BuildId)] and [$(buildPlatform)]]"
   env:
     BUILD_NUMBER: '1.0.$(BuildId)'
 # - checkout: self
