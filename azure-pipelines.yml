@@ -17,20 +17,14 @@
 # $(Build.DefinitionName)_$(Build.DefinitionVersion)_$(Build.BuildId)_$(Build.BuildNumber)_$(My.Variable)
  
 
-resources:
-  repositories:
-  - repository: ruya
-    type: github
-    connection: cilerler
-    name: cilerler/ruya
-    trigger:
-      batch: true
-      branches:
-        include:
-        - master
-      paths:
-        exclude:
-        - docs/README.md
+trigger:
+  batch: true
+  branches:
+    include:
+    - master
+  paths:
+    exclude:
+    - docs/README.md
 
 pool:
   vmImage: 'ubuntu-16.04'
