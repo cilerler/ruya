@@ -43,7 +43,7 @@ steps:
 #     git config --global --add filter.lfs.process "git-lfs filter-process"
 #     git config --global --add filter.lfs.clean "git-lfs clean -- %f"
 #   displayName: Configure LFS for use with submodules
-- powershell: Write-Host "This is a script that could use [$(Build.BuildNumber)] and [$env:BUILD_NUMBER] and [$(buildPlatform)]] and [$(version.Revision)]"
+- powershell: Write-Host "This is a script that could use [$env:BUILD_NUMBER] and [$(buildPlatform)]] and [$(Build.BuildNumber)]"
   env:
     BUILD_NUMBER: '$(MajorVersion).$(MinorVersion).$(Build.BuildId)'
 # - checkout: self
