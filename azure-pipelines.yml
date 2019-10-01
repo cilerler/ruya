@@ -34,6 +34,7 @@ variables:
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
 
+
 steps:
 # - script: |
 #     git config --global --add filter.lfs.required true
@@ -41,7 +42,7 @@ steps:
 #     git config --global --add filter.lfs.process "git-lfs filter-process"
 #     git config --global --add filter.lfs.clean "git-lfs clean -- %f"
 #   displayName: Configure LFS for use with submodules
-- powershell: Write-Host "This is a script that could use $env:BUILDNUMBER"
+- powershell: Write-Host "This is a script that could use $env:BUILD_NUMBER"
   env:
     BUILD_NUMBER: '1.0.$(BuildId)'
 - checkout: self
