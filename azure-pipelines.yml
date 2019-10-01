@@ -34,7 +34,6 @@ variables:
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
 
-
 steps:
 # - script: |
 #     git config --global --add filter.lfs.required true
@@ -42,53 +41,53 @@ steps:
 #     git config --global --add filter.lfs.process "git-lfs filter-process"
 #     git config --global --add filter.lfs.clean "git-lfs clean -- %f"
 #   displayName: Configure LFS for use with submodules
-- powershell: Write-Host "This is a script that could use $env:BUILD_NUMBER"
+- powershell: Write-Host "This is a script that could use [$env:BUILD_NUMBER] and [$(BuildId)] and [$(buildPlatform)] and [$(configuration)]"
   env:
     BUILD_NUMBER: '1.0.$(BuildId)'
-- checkout: self
-  submodules: true
-  lfs: true
-- task: UseDotNet@2
-  inputs:
-    packageType: 'sdk'
-    version: '3.0.100'
-- task: DotNetCoreCLI@2
-  inputs:
-    command: 'restore'
-    projects: '**/Ruya.Primitives.csproj'
-    feedsToUse: 'select'
-- task: DotNetCoreCLI@2
-  inputs:
-    command: 'build'
-    projects: '**/Ruya.Primitives.csproj'
-    arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
-- task: DotNetCoreCLI@2
-  inputs:
-    command: 'test'
-    projects: '**/*Tests/Ruya.Primitives.Tests.csproj'
-    arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
-- task: DotNetCoreCLI@2
-  inputs:
-    command: 'publish'
-    publishWebProjects: false
-    arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)'
-    zipAfterPublish: false
-- task: DotNetCoreCLI@2
-  inputs:
-    command: 'pack'
-    packagesToPack: '**/Ruya.Primitives.csproj'
-    nobuild: true
-    versioningScheme: 'byBuildNumber'
-    # versioningScheme: byEnvVar
-    # versionEnvVar: version
-- task: PublishBuildArtifacts@1
-  inputs:
-    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-    ArtifactName: 'drop'
-    publishLocation: 'Container'
-
-# - task: NuGetCommand@2
+# - checkout: self
+#   submodules: true
+#   lfs: true
+# - task: UseDotNet@2
 #   inputs:
-#     command: 'push'
-#     packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
-#     nuGetFeedType: 'external'
+#     packageType: 'sdk'
+#     version: '3.0.100'
+# - task: DotNetCoreCLI@2
+#   inputs:
+#     command: 'restore'
+#     projects: '**/Ruya.Primitives.csproj'
+#     feedsToUse: 'select'
+# - task: DotNetCoreCLI@2
+#   inputs:
+#     command: 'build'
+#     projects: '**/Ruya.Primitives.csproj'
+#     arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
+# - task: DotNetCoreCLI@2
+#   inputs:
+#     command: 'test'
+#     projects: '**/*Tests/Ruya.Primitives.Tests.csproj'
+#     arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
+# - task: DotNetCoreCLI@2
+#   inputs:
+#     command: 'publish'
+#     publishWebProjects: false
+#     arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+#     zipAfterPublish: false
+# - task: DotNetCoreCLI@2
+#   inputs:
+#     command: 'pack'
+#     packagesToPack: '**/Ruya.Primitives.csproj'
+#     nobuild: true
+#     versioningScheme: 'byBuildNumber'
+#     # versioningScheme: byEnvVar
+#     # versionEnvVar: version
+# - task: PublishBuildArtifacts@1
+#   inputs:
+#     PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+#     ArtifactName: 'drop'
+#     publishLocation: 'Container'
+
+# # - task: NuGetCommand@2
+# #   inputs:
+# #     command: 'push'
+# #     packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
+# #     nuGetFeedType: 'external'
