@@ -18,7 +18,7 @@
  
 #name: $(Build.DefinitionName)-$(date:yyyyMMdd)$(rev:.r)
 
-name: $(Build.DefinitionName)_$(Build.DefinitionVersion)_$(Build.BuildId)_$(Build.BuildNumber)
+name: $(Build.DefinitionName)-$(MajorVersion).$(MinorVersion).$(Build.BuildId)
 
 trigger:
   batch: true
