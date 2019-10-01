@@ -16,6 +16,7 @@
 
 # $(Build.DefinitionName)_$(Build.DefinitionVersion)_$(Build.BuildId)_$(Build.BuildNumber)_$(My.Variable)
  
+# name: $(Build.DefinitionName)-$(date:yyyyMMdd)$(rev:.r)
 
 trigger:
   batch: true
@@ -33,6 +34,7 @@ variables:
   solution: '**/*.sln'
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
+  buildNumber: '$(MajorVersion).$(MinorVersion).$(Build.BuildId)'
   #version.MajorMinor: 1.0
   #version.Revision: $[counter(variables['version.MajorMinor'], 0)]
 
@@ -43,12 +45,9 @@ steps:
 #     git config --global --add filter.lfs.process "git-lfs filter-process"
 #     git config --global --add filter.lfs.clean "git-lfs clean -- %f"
 #   displayName: Configure LFS for use with submodules
-- powershell: Write-Host "This is a script that could use [$env:BUILD_NUMBER] and [$(buildPlatform)]] and [$(Build.BuildNumber)]"
+- powershell: Write-Host "This is a script that could use [$env:BUILD_NUMBER] and [$(buildPlatform)]] and [$(Build.BuildNumber)] and [$(Build.DefinitionName)_$(Build.DefinitionVersion)_$(Build.BuildId)_$(Build.BuildNumber)_$(date:yyyyMMdd)_$(rev:.r)]"
   env:
     BUILD_NUMBER: '$(MajorVersion).$(MinorVersion).$(Build.BuildId)'
-# - checkout: self
-#   submodules: true
-#   lfs: true
 # - task: UseDotNet@2
 #   inputs:
 #     packageType: 'sdk'
@@ -80,10 +79,6 @@ steps:
 #     packagesToPack: '**/Ruya.Primitives.csproj'
 #     nobuild: true
 #     versioningScheme: 'byBuildNumber'
-#     # nuGetFeedType: external
-#     # publishFeedCredentials: '<Name of the NuGet service connection>'
-#     # versioningScheme: byEnvVar
-#     # versionEnvVar: version
 # - task: PublishBuildArtifacts@1
 #   inputs:
 #     PathtoPublish: '$(Build.ArtifactStagingDirectory)'
