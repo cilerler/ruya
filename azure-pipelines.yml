@@ -19,10 +19,9 @@
 
 resources:
   repositories:
-  - repository: Ruya
-    type: GitHub
+  - repository: cilerler/ruya
+    type: github
     connection: cilerler
-    source: cilerler/ruya
     trigger:
       batch: true
       branches:
