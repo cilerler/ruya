@@ -46,7 +46,7 @@ steps:
 # - powershell: Write-Host "This is a script that could use [$(buildNumber)] and [$env:BUILD_NUMBER]"
 #   env:
 #     BUILD_NUMBER: '$(MajorVersion).$(MinorVersion).$(Build.BuildId)'
-- script: |
+- powershell: |
     Write-Host "This is a script that could use [$(Build.BuildNumber)]"
     Write-Host "##vso[build.updatebuildnumber]$(buildNumber)"
     Write-Host "This is a script that could use [$(Build.BuildNumber)]"
