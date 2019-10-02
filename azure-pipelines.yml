@@ -22,6 +22,8 @@ trigger:
     include:
     - master
   paths:
+    include:
+    - src/Ruya.Primitives
     exclude:
     - README.md
 
@@ -33,59 +35,57 @@ variables:
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
   buildNumber: '$(MajorVersion).$(MinorVersion).$(Build.BuildId)'
-  #version.MajorMinor: 1.0
-  #version.Revision: $[counter(variables['version.MajorMinor'], 0)]
 
 steps:
-# - script: |
-#     git config --global --add filter.lfs.required true
-#     git config --global --add filter.lfs.smudge "git-lfs smudge -- %f"
-#     git config --global --add filter.lfs.process "git-lfs filter-process"
-#     git config --global --add filter.lfs.clean "git-lfs clean -- %f"
-#   displayName: Configure LFS for use with submodules
-- powershell: Write-Host "This is a script that could use $(Build.BuildNumber)"
-#- powershell: Write-Host "This is a script that could use [$(buildNumber)] and [$env:BUILD_NUMBER] and [$(Build.BuildNumber)]"
-#   env:
-#     BUILD_NUMBER: '$(MajorVersion).$(MinorVersion).$(Build.BuildId)'
-- powershell: |
+- pwsh: |
     Write-Host "##vso[build.updatebuildnumber]$(buildNumber)"
-- powershell: Write-Host "This is a script that could use $(Build.BuildNumber)"
-# - task: UseDotNet@2
-#   inputs:
-#     packageType: 'sdk'
-#     version: '3.0.100'
-# - task: DotNetCoreCLI@2
-#   inputs:
-#     command: 'restore'
-#     projects: '**/Ruya.Primitives.csproj'
-#     feedsToUse: 'select'
-# - task: DotNetCoreCLI@2
-#   inputs:
-#     command: 'build'
-#     projects: '**/Ruya.Primitives.csproj'
-#     arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
-# - task: DotNetCoreCLI@2
-#   inputs:
-#     command: 'test'
-#     projects: '**/*Tests/Ruya.Primitives.Tests.csproj'
-#     arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
-# - task: DotNetCoreCLI@2
-#   inputs:
-#     command: 'publish'
-#     publishWebProjects: false
-#     arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)'
-#     zipAfterPublish: false
-# - task: DotNetCoreCLI@2
-#   inputs:
-#     command: 'pack'
-#     packagesToPack: '**/Ruya.Primitives.csproj'
-#     nobuild: true
-#     versioningScheme: 'byBuildNumber'
-# - task: PublishBuildArtifacts@1
-#   inputs:
-#     PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-#     ArtifactName: 'drop'
-#     publishLocation: 'Container'
+- script: |
+    git config --global --add filter.lfs.required true
+    git config --global --add filter.lfs.smudge "git-lfs smudge -- %f"
+    git config --global --add filter.lfs.process "git-lfs filter-process"
+    git config --global --add filter.lfs.clean "git-lfs clean -- %f"
+  displayName: Configure LFS for use with submodules
+- checkout: self
+  lfs: true
+  submodules: true
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '3.0.100'
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'restore'
+    projects: '**/Ruya.Primitives.csproj'
+    feedsToUse: 'select'
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'build'
+    projects: '**/Ruya.Primitives.csproj'
+    arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'test'
+    projects: '**/*Tests/Ruya.Primitives.Tests.csproj'
+    arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
+- pwsh: |
+    Write-Host "##vso[build.addbuildtag]Tag_$(buildNumber)"
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+    zipAfterPublish: false
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'pack'
+    packagesToPack: '**/Ruya.Primitives.csproj'
+    nobuild: true
+    versioningScheme: 'byBuildNumber'
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
 
 # # - task: NuGetCommand@2
 # #   inputs:
