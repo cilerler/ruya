@@ -49,51 +49,69 @@ steps:
   lfs: true
   submodules: true
 - task: UseDotNet@2
+  displayName: dotnet sdk
   inputs:
     packageType: 'sdk'
     version: '3.0.100'
 - task: DotNetCoreCLI@2
+  displayName: dotnet restore
   inputs:
     command: 'restore'
     projects: '**/Ruya.Primitives.csproj'
-    feedsToUse: 'select'
+    # feedsToUse: config
+    # nugetConfigPath: NuGet.config    # Relative to root of the repository
+    # externalFeedCredentials: <Name of the NuGet service connection>
 - task: DotNetCoreCLI@2
+  displayName: dotnet build
   inputs:
     command: 'build'
     projects: '**/Ruya.Primitives.csproj'
     arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
 - task: DotNetCoreCLI@2
+  displayName: dotnet test
   inputs:
     command: 'test'
     projects: '**/*Tests/Ruya.Primitives.Tests.csproj'
     arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
 - pwsh: |
-    Write-Host "##vso[build.addbuildtag]Tag_$(buildNumber)"
+    Write-Host "##vso[build.addbuildtag]$(buildNumber)"
 - task: DotNetCoreCLI@2
+  displayName: dotnet publish
   inputs:
     command: 'publish'
     publishWebProjects: false
-    arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+    projects: '**/Ruya.Helpers.Primitives.csproj'
+    arguments: '--configuration $(BuildConfiguration) --output $(build.artifactstagingdirectory)'
     zipAfterPublish: false
+    modifyOutputPath: true
 - task: DotNetCoreCLI@2
+  displayName: dotnet pack
   inputs:
     command: 'pack'
     packagesToPack: '**/Ruya.Primitives.csproj'
     nobuild: true
+    includesymbols: false
+    includesource: false
     versioningScheme: 'byBuildNumber'
+# - task: DotNetCoreCLI@2
+#   displayName: dotnet push
+#   continueOnError: true
+#   inputs:
+#     command: 'push'
+#     packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
+#     nuGetFeedType: 'external'
+#     publishFeedCredentials: 'NuGet'
 - task: PublishBuildArtifacts@1
+  displayName: Publish Artifact
   inputs:
     PathtoPublish: '$(Build.ArtifactStagingDirectory)'
     ArtifactName: 'drop'
     publishLocation: 'Container'
-
-# # - task: NuGetCommand@2
-# #   inputs:
-# #     command: 'push'
-# #     packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
-# #     nuGetFeedType: 'external'
-    # command: push
-    # nuGetFeedType: external
-    # publishFeedCredentials: '<Name of the NuGet service connection>'
-    # versioningScheme: byEnvVar
-    # versionEnvVar: version
+# - task: GitHubRelease@1
+#   inputs:
+#     repositoryName: '$(Build.Repository.Name)'
+#     action: 'create'
+#     target: '$(Build.SourceVersion)'
+#     tagSource: 'gitTag'
+#     changeLogCompareToRelease: 'lastFullRelease'
+#     changeLogType: 'commitBased'
