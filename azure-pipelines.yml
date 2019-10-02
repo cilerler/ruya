@@ -11,9 +11,6 @@
 #[skip azp] or [azp skip]
 #***NO_CI***
 
-# logging https://docs.microsoft.com/en-us/azure/devops/pipelines/scripts/logging-commands?view=azure-devops&tabs=powershell
-# variables https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops&tabs=yaml%2Cbatch
-
 # name: $(TeamProject)_$(BuildDefinitionName)_$(SourceBranchName)_$(Build.DefinitionVersion)_$(Build.BuildId)_$(Build.BuildNumber)_$(Date:yyyyMMdd)$(Rev:.r)
 
 trigger:
@@ -39,6 +36,7 @@ variables:
 steps:
 - pwsh: |
     Write-Host "##vso[build.updatebuildnumber]$(buildNumber)"
+  displayName: update the "Build Number"
 - script: |
     git config --global --add filter.lfs.required true
     git config --global --add filter.lfs.smudge "git-lfs smudge -- %f"
@@ -93,14 +91,14 @@ steps:
     includesymbols: false
     includesource: false
     versioningScheme: 'byBuildNumber'
-# - task: DotNetCoreCLI@2
-#   displayName: dotnet push
-#   continueOnError: true
-#   inputs:
-#     command: 'push'
-#     packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
-#     nuGetFeedType: 'external'
-#     publishFeedCredentials: 'NuGet'
+- task: DotNetCoreCLI@2
+  displayName: dotnet push
+  continueOnError: true
+  inputs:
+    command: 'push'
+    packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
+    nuGetFeedType: 'external'
+    publishFeedCredentials: 'NuGet'
 - task: PublishBuildArtifacts@1
   displayName: Publish Artifact
   inputs:
