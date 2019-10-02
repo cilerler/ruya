@@ -43,13 +43,14 @@ steps:
 #     git config --global --add filter.lfs.process "git-lfs filter-process"
 #     git config --global --add filter.lfs.clean "git-lfs clean -- %f"
 #   displayName: Configure LFS for use with submodules
-# - powershell: Write-Host "This is a script that could use [$(buildNumber)] and [$env:BUILD_NUMBER]"
+- powershell: Write-Host "This is a script that could use [$(buildNumber)] and [$env:BUILD_NUMBER] and [$(Build.BuildNumber)]"
 #   env:
 #     BUILD_NUMBER: '$(MajorVersion).$(MinorVersion).$(Build.BuildId)'
 - powershell: |
     Write-Host "This is a script that could use [$(Build.BuildNumber)]"
     Write-Host "##vso[build.updatebuildnumber]$(buildNumber)"
     Write-Host "This is a script that could use [$(Build.BuildNumber)]"
+- powershell: Write-Host "This is a script that could use [$(buildNumber)] and [$env:BUILD_NUMBER] and [$(Build.BuildNumber)]"
 # - task: UseDotNet@2
 #   inputs:
 #     packageType: 'sdk'
