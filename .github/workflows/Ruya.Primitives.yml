@@ -63,7 +63,7 @@ jobs:
         git tag $buildNumber
         git -c http.extraheader="AUTHORIZATION: basic $(echo -n "no-username:${{ secrets.GITHUB_TOKEN }}" | base64)" push origin $buildNumber
     - name: GitHub Release
-      uses: cilerler/github-release@master
+      uses: cilerler/github-release@temp
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         tag: buildNumber
