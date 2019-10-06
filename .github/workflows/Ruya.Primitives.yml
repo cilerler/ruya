@@ -5,11 +5,11 @@ on:
   #   types: [published]
   push:
     branches:
-    - master
-  #  - 'releases/**'
+  #  - master
+    - 'releases/**'
   #  - '!releases/**-alpha'
     paths:
-    - '.github/workflows/**.yml'
+    - '.github/workflows/Ruya.Primitives.yml'
     - 'src/Ruya.Primitives/**'
     # - '!test/**'
     # - '!docs/**'
@@ -74,14 +74,12 @@ jobs:
           artifacts:./artifacts/ArtifactStagingDirectory
           ./artifacts/NuGetPackages/*.nupkg
 
-    # # =====
-    # # Not working due to https://github.com/NuGet/Home/issues/8580
-    # # =====
     # - name: GitHub Packages
     #   run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://nuget.pkg.github.com/cilerler/index.json
     #   env:
     #     nugetApiKey: ${{secrets.GITHUB_TOKEN}}
     # # =====
+    # # Not working due to https://github.com/NuGet/Home/issues/8580
     # # WORKAROUND WHICH ONLY WORKS WITH WINDOWS
     # # =====
     # # runs-on: windows-latest
@@ -95,11 +93,12 @@ jobs:
     # - name: nuget push
     #   run: nuget push ./artifacts/NuGetPackages/*.nupkg -Source "GPR" -SkipDuplicate
 
-    # - name: Push Nuget
-    #   run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://api.nuget.org/v3/index.json
-    #   env:
-    #     nugetApiKey: ${{secrets.NUGET_API_KEY}}
+    - name: Push Nuget
+      run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://api.nuget.org/v3/index.json
+      env:
+        nugetApiKey: ${{secrets.NUGET_API_KEY}}
 
+# https://github.community/t5/GitHub-Actions/Triggering-by-other-repository/m-p/30688/highlight/true#M512
 
 # if [ ! -z "${TAG}" ]; then
 #   if TAGFROMENVVAR=$(printenv ${TAG}); then
@@ -108,5 +107,3 @@ jobs:
 #     fi
 #   fi
 # fi
-
-# https://github.community/t5/GitHub-Actions/Triggering-by-other-repository/m-p/30688/highlight/true#M512
