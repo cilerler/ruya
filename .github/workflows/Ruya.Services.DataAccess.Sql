@@ -1,0 +1,60 @@
+name: Ruya.Services.DataAccess.Sql
+
+on:
+  push:
+    branches:
+    - master
+    paths:
+    - '.github/workflows/Ruya.Services.DataAccess.Sql.yml'
+    - 'src/Ruya.Services.DataAccess.Sql/**'
+
+jobs:
+
+  Primitives:
+
+    runs-on: ubuntu-latest
+
+    env:
+      buildConfiguration: 'Release'
+      buildNumber: '0.0.0'
+      projectFile: './src/Ruya.Services.DataAccess.Sql/Ruya.Services.DataAccess.Sql.csproj'
+      projectTestFile: './test/Ruya.Services.DataAccess.Sql.Tests/Ruya.Services.DataAccess.Sql.Tests.csproj'
+
+    steps:
+    - uses: actions/checkout@v1
+    - uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 3.0.100
+    - name: Set the build number
+      run: |
+        export buildNumber="1.1.$(git rev-list --count HEAD)"
+        echo "::set-env name=buildNumber::$buildNumber"
+    - name: Restore
+      run: dotnet restore $projectFile
+    - name: Build
+      run: dotnet build $projectFile --configuration $buildConfiguration -p:BuildNumber=$buildNumber
+    - name: Test
+      run: dotnet test $projectTestFile --configuration $buildConfiguration -p:CollectCoverage=true
+      continue-on-error: true
+    - name: Publish
+      run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/ArtifactStagingDirectory
+    - name: Pack
+      run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/NuGetPackages
+    - name: GitHub Tag
+      run: |
+        git tag $buildNumber
+        git -c http.extraheader="AUTHORIZATION: basic $(echo -n "no-username:${{ secrets.GITHUB_TOKEN }}" | base64)" push origin $buildNumber
+    - name: GitHub Release
+      uses: cilerler/github-release@temp
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag: buildNumber
+        gzip: folders
+        allow_override: true
+        files: >
+          artifacts:./artifacts/ArtifactStagingDirectory
+          ./artifacts/NuGetPackages/*.nupkg
+    - name: Push Nuget
+      run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://api.nuget.org/v3/index.json
+      env:
+        nugetApiKey: ${{secrets.NUGET_API_KEY}}
