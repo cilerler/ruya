@@ -5,8 +5,8 @@ on:
   #   types: [published]
   push:
     branches:
-  #  - master
-    - 'releases/**'
+    - master
+  #  - 'releases/**'
   #  - '!releases/**-alpha'
     paths:
     - '.github/workflows/Ruya.Primitives.yml'
@@ -28,7 +28,7 @@ jobs:
       buildConfiguration: 'Release'
       buildNumber: '0.0.0'
       projectFile: './src/Ruya.Primitives/Ruya.Primitives.csproj'
-      projectTestFile: './test/Ruya.Primitives/Ruya.Primitives.Tests.csproj'
+      projectTestFile: './test/Ruya.Primitives.Tests/Ruya.Primitives.Tests.csproj'
 
     steps:
     - uses: actions/checkout@v1
@@ -56,7 +56,6 @@ jobs:
       continue-on-error: true
     - name: Publish
       run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/ArtifactStagingDirectory
-      continue-on-error: true
     - name: Pack
       run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/NuGetPackages
     - name: GitHub Tag
@@ -74,6 +73,11 @@ jobs:
           artifacts:./artifacts/ArtifactStagingDirectory
           ./artifacts/NuGetPackages/*.nupkg
 
+    # - name: Set NuGet creds
+    #   shell: pwsh
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #   run: ./Set-NuGetCredentials -ConfigFile ./nuget.config -Source GPR -Username cilerler -Password $env:GITHUB_TOKEN
     # - name: GitHub Packages
     #   run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://nuget.pkg.github.com/cilerler/index.json
     #   env:
@@ -99,11 +103,3 @@ jobs:
         nugetApiKey: ${{secrets.NUGET_API_KEY}}
 
 # https://github.community/t5/GitHub-Actions/Triggering-by-other-repository/m-p/30688/highlight/true#M512
-
-# if [ ! -z "${TAG}" ]; then
-#   if TAGFROMENVVAR=$(printenv ${TAG}); then
-#     if [ ! -z "$TAGFROMENVVAR" ]; then
-#       TAG="${TAGFROMENVVAR}"
-#     fi
-#   fi
-# fi
