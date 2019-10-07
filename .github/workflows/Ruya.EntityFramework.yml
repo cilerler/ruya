@@ -1,12 +1,12 @@
-name: Ruya.Services.MessageQueue.Abstractions
+name: Ruya.EntityFramework
 
 on:
   push:
     branches:
     - master
     paths:
-    - '.github/workflows/Ruya.Services.MessageQueue.Abstractions.yml'
-    - 'src/Ruya.Services.MessageQueue.Abstractions/**'
+    - '.github/workflows/Ruya.EntityFramework.yml'
+    - 'src/Ruya.EntityFramework/**'
 
 jobs:
 
@@ -17,8 +17,8 @@ jobs:
     env:
       buildConfiguration: 'Release'
       buildNumber: '0.0.0'
-      projectFile: './src/Ruya.Services.MessageQueue.Abstractions/Ruya.Services.MessageQueue.Abstractions.csproj'
-      projectTestFile: './test/Ruya.Services.MessageQueue.Abstractions.Tests/Ruya.Services.MessageQueue.Abstractions.Tests.csproj'
+      projectFile: './src/Ruya.EntityFramework/Ruya.EntityFramework.csproj'
+      projectTestFile: './test/Ruya.EntityFramework.Tests/Ruya.EntityFramework.Tests.csproj'
 
     steps:
     - uses: actions/checkout@v1

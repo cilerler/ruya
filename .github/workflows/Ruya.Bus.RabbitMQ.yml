@@ -22,13 +22,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+      with:
+        ref: master
     - uses: actions/setup-dotnet@v1
       with:
         dotnet-version: 3.0.100
     - name: Set the build number
-      run: |
-        export buildNumber="1.1.$(git rev-list --count HEAD)"
-        echo "::set-env name=buildNumber::$buildNumber"
+      run: echo ::set-env name=buildNumber::1.1.$(git rev-list --count HEAD)
     - name: Restore
       run: dotnet restore $projectFile
     - name: Build
@@ -40,21 +40,25 @@ jobs:
       run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/ArtifactStagingDirectory
     - name: Pack
       run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/NuGetPackages
-    - name: GitHub Tag
+    - name: Tag
       run: |
         git tag $buildNumber
-        git -c http.extraheader="AUTHORIZATION: basic $(echo -n "no-username:${{ secrets.GITHUB_TOKEN }}" | base64)" push origin $buildNumber
+        authorizationToken=$(echo -n "no-username:${{ secrets.GITHUB_TOKEN }}" | base64)
+        git -c http.extraheader="AUTHORIZATION: basic $authorizationToken" push origin $buildNumber
+    - name: Set GitHub Release Environment Variables
+      run: |
+        echo ::set-env name=RELEASE_TAG::$buildNumber
+        echo ::set-env name=RELEASE_NAME::$GITHUB_WORKFLOW
+        echo ::set-env name=RELEASE_FILES::artifacts-${GITHUB_WORKFLOW}-${buildNumber}:./artifacts/ArtifactStagingDirectory ./artifacts/NuGetPackages/*.nupkg
     - name: GitHub Release
-      uses: cilerler/github-release@temp
+      uses: meeDamian/github-release@v1.0.1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        tag: buildNumber
         gzip: folders
         allow_override: true
-        files: >
-          artifacts:./artifacts/ArtifactStagingDirectory
-          ./artifacts/NuGetPackages/*.nupkg
-    - name: Push Nuget
+        prerelease: false
+    - name: Nuget
       run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://api.nuget.org/v3/index.json
       env:
         nugetApiKey: ${{secrets.NUGET_API_KEY}}
+

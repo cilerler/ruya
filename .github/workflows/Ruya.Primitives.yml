@@ -1,20 +1,12 @@
 name: Ruya.Primitives
 
 on:
-  # release:
-  #   types: [published]
   push:
     branches:
     - master
-  #  - 'releases/**'
-  #  - '!releases/**-alpha'
     paths:
     - '.github/workflows/Ruya.Primitives.yml'
     - 'src/Ruya.Primitives/**'
-    # - '!test/**'
-    # - '!docs/**'
-    # - '!tools/**'
-    # - '**/*.md'
 
 jobs:
 
@@ -23,8 +15,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      #solution: '**/*.sln'
-      #buildPlatform: 'Any CPU'
       buildConfiguration: 'Release'
       buildNumber: '0.0.0'
       projectFile: './src/Ruya.Primitives/Ruya.Primitives.csproj'
@@ -32,21 +22,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+      with:
+        ref: master
     - uses: actions/setup-dotnet@v1
       with:
         dotnet-version: 3.0.100
-    # - name: Display the path
-    #   shell: pwsh
-    #   run: |
-    #     Get-Location
-    #     echo ${env:PATH} and ${{secrets.NUGET_API_KEY}} and ${env:solution}
-    #     echo https://github.com/{github_id}/{repository}/workflows/{workflow_name}/badge.svg
-    #     echo e.g. https://github.com/cilerler/test-github_actions/workflows/Ruya.Primitives/badge.svg
-    #     $buildNumber = "0.0.$(git rev-list --count HEAD)"
     - name: Set the build number
-      run: |
-        export buildNumber="1.1.$(git rev-list --count HEAD)"
-        echo "::set-env name=buildNumber::$buildNumber"
+      run: echo ::set-env name=buildNumber::1.1.$(git rev-list --count HEAD)
     - name: Restore
       run: dotnet restore $projectFile
     - name: Build
@@ -58,48 +40,25 @@ jobs:
       run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/ArtifactStagingDirectory
     - name: Pack
       run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/NuGetPackages
-    - name: GitHub Tag
+    - name: Tag
       run: |
         git tag $buildNumber
-        git -c http.extraheader="AUTHORIZATION: basic $(echo -n "no-username:${{ secrets.GITHUB_TOKEN }}" | base64)" push origin $buildNumber
+        authorizationToken=$(echo -n "no-username:${{ secrets.GITHUB_TOKEN }}" | base64)
+        git -c http.extraheader="AUTHORIZATION: basic $authorizationToken" push origin $buildNumber
+    - name: Set GitHub Release Environment Variables
+      run: |
+        echo ::set-env name=RELEASE_TAG::$buildNumber
+        echo ::set-env name=RELEASE_NAME::$GITHUB_WORKFLOW
+        echo ::set-env name=RELEASE_FILES::artifacts-${GITHUB_WORKFLOW}-${buildNumber}:./artifacts/ArtifactStagingDirectory ./artifacts/NuGetPackages/*.nupkg
     - name: GitHub Release
-      uses: cilerler/github-release@temp
+      uses: meeDamian/github-release@v1.0.1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        tag: buildNumber
         gzip: folders
         allow_override: true
-        files: >
-          artifacts:./artifacts/ArtifactStagingDirectory
-          ./artifacts/NuGetPackages/*.nupkg
-
-    # - name: Set NuGet creds
-    #   shell: pwsh
-    #   env:
-    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #   run: ./Set-NuGetCredentials -ConfigFile ./nuget.config -Source GPR -Username cilerler -Password $env:GITHUB_TOKEN
-    # - name: GitHub Packages
-    #   run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://nuget.pkg.github.com/cilerler/index.json
-    #   env:
-    #     nugetApiKey: ${{secrets.GITHUB_TOKEN}}
-    # # =====
-    # # Not working due to https://github.com/NuGet/Home/issues/8580
-    # # WORKAROUND WHICH ONLY WORKS WITH WINDOWS
-    # # =====
-    # # runs-on: windows-latest
-    # # =====
-    # - name: Setup Nuget.exe
-    #   uses: warrenbuckley/Setup-Nuget@v1
-    # - name: Add GPR Source
-    #   run: nuget sources add -name "GPR" -Source https://nuget.pkg.github.com/cilerler/index.json -Username cilerler -Password ${nugetApiKey}
-    #   env:
-    #     nugetApiKey: ${{secrets.NUGET_API_KEY}}
-    # - name: nuget push
-    #   run: nuget push ./artifacts/NuGetPackages/*.nupkg -Source "GPR" -SkipDuplicate
-
-    - name: Push Nuget
+        prerelease: false
+    - name: Nuget
       run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://api.nuget.org/v3/index.json
       env:
         nugetApiKey: ${{secrets.NUGET_API_KEY}}
 
-# https://github.community/t5/GitHub-Actions/Triggering-by-other-repository/m-p/30688/highlight/true#M512
