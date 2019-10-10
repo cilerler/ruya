@@ -37,9 +37,9 @@ jobs:
       run: dotnet test $projectTestFile --configuration $buildConfiguration -p:CollectCoverage=true
       continue-on-error: true
     - name: Publish
-      run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/ArtifactStagingDirectory
+      run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/staging
     - name: Pack
-      run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/NuGetPackages
+      run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/packages
     - name: Tag
       run: |
         git tag $buildNumber
@@ -49,7 +49,7 @@ jobs:
       run: |
         echo ::set-env name=RELEASE_TAG::$buildNumber
         echo ::set-env name=RELEASE_NAME::$GITHUB_WORKFLOW
-        echo ::set-env name=RELEASE_FILES::artifacts-${GITHUB_WORKFLOW}-${buildNumber}:./artifacts/ArtifactStagingDirectory ./artifacts/NuGetPackages/*.nupkg
+        echo ::set-env name=RELEASE_FILES::artifacts-${GITHUB_WORKFLOW}-${buildNumber}:./artifacts/staging ./artifacts/packages/*.nupkg
     - name: GitHub Release
       uses: meeDamian/github-release@v1.0.1
       with:
@@ -58,7 +58,7 @@ jobs:
         allow_override: true
         prerelease: false
     - name: Nuget
-      run: dotnet nuget push ./artifacts/NuGetPackages/*.nupkg -k ${nugetApiKey} -s https://api.nuget.org/v3/index.json
+      run: dotnet nuget push ./artifacts/packages/*.nupkg -k ${nugetApiKey} -s https://api.nuget.org/v3/index.json
       env:
         nugetApiKey: ${{secrets.NUGET_API_KEY}}
 
