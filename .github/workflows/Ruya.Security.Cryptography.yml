@@ -41,6 +41,7 @@ jobs:
     - name: Pack
       run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/packages
     - name: Tag
+      continue-on-error: true
       run: |
         git tag $buildNumber
         authorizationToken=$(echo -n "no-username:${{ secrets.GITHUB_TOKEN }}" | base64)
