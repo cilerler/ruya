@@ -242,7 +242,8 @@ namespace Ruya.Services.DataAccess.Sql
                     throw new ArgumentNullException(nameof(members));
                 }
 
-                using (var bulkCopy = new SqlBulkCopy(connection, SqlBulkCopyOptions.Default, scope))
+                var bulkCopyOptions = SqlBulkCopyOptions.CheckConstraints | SqlBulkCopyOptions.FireTriggers;
+                using (var bulkCopy = new SqlBulkCopy(connection, bulkCopyOptions, scope))
                 {
                     bulkCopy.BatchSize = 100;
                     bulkCopy.BulkCopyTimeout = commandTimeout == default(int)
