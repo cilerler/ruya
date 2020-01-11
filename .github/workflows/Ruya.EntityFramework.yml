@@ -26,7 +26,7 @@ jobs:
         ref: master
     - uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: 3.0.100
+        dotnet-version: 3.1.100
     - name: Set the build number
       run: echo ::set-env name=buildNumber::1.1.$(git rev-list --count HEAD)
     - name: Restore
