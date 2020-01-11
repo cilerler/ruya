@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Ruya.Services.DataAccess.Abstractions" Version=">=1.1.135" />
+    <PackageReference Include="Ruya.Services.DataAccess.Abstractions" Version="[1.1.135,)" />
     <!-- <ProjectReference Include="..\Ruya.Services.DataAccess.Abstractions\Ruya.Services.DataAccess.Abstractions.csproj" /> -->
   </ItemGroup>
 

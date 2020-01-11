@@ -25,7 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Ruya.Services.MessageQueue.Abstractions" Version=">=1.1.135">
+    <PackageReference Include="Ruya.Services.MessageQueue.Abstractions" Version="[1.1.135,)">
       <NoWarn>NU1604</NoWarn>
     </PackageReference>
     <!-- <ProjectReference Include="..\Ruya.Services.MessageQueue.Abstractions\Ruya.Services.MessageQueue.Abstractions.csproj" /> -->
