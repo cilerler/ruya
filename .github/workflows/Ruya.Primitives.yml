@@ -43,29 +43,29 @@ jobs:
         with:
           dotnet-version: 3.1.100
 
-    - name: Restore
-      run: dotnet restore $projectFile
-    - name: Build
-      run: dotnet build $projectFile --configuration $buildConfiguration -p:BuildNumber=$buildNumber
-    - name: Test
-      run: dotnet test $projectTestFile --configuration $buildConfiguration -p:CollectCoverage=true
-      continue-on-error: true
-    - name: Publish
-      run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/staging
-    - name: Pack
-      run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/packages
+      - name: Restore
+        run: dotnet restore $projectFile
+      - name: Build
+        run: dotnet build $projectFile --configuration $buildConfiguration -p:BuildNumber=$buildNumber
+      - name: Test
+        run: dotnet test $projectTestFile --configuration $buildConfiguration -p:CollectCoverage=true
+        continue-on-error: true
+      - name: Publish
+        run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/staging
+      - name: Pack
+        run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/packages
 
-    - name: Publish artifacts (staging)
-      uses: actions/upload-artifact@master
-      with:
-        name: staging
-        path: ./artifacts/staging
+      - name: Publish artifacts (staging)
+        uses: actions/upload-artifact@master
+        with:
+          name: staging
+          path: ./artifacts/staging
 
-    - name: Publish artifacts (packages)
-      uses: actions/upload-artifact@master
-      with:
-        name: packages
-        path: ./artifacts/packages
+      - name: Publish artifacts (packages)
+        uses: actions/upload-artifact@master
+        with:
+          name: packages
+          path: ./artifacts/packages
 
       - name: Publish artifacts (output)
         uses: actions/upload-artifact@master
