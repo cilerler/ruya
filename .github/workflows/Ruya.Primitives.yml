@@ -101,4 +101,6 @@ jobs:
       - name: Push to GitHub Packages
         run: dotnet nuget push ./artifacts/packages/*.nupkg --skip-duplicate --source "github"
       - name: Push to Nuget
-        run: dotnet nuget push ./artifacts/packages/*.nupkg --skip-duplicate --source "nuget"
+        run: dotnet nuget push ./artifacts/packages/*.nupkg --skip-duplicate --source "nuget" --api-key ${nugetApiKey}
+        env:
+          nugetApiKey: ${{secrets.NUGET_API_KEY}}
