@@ -37,7 +37,6 @@ jobs:
         run: |
           ./tools/Set-NuGetCredentials.ps1 -ConfigFile ./nuget.config -Source github -Username ${{github.actor}} -Password ${{ secrets.GITHUB_TOKEN }}
           ./tools/Set-NuGetCredentials.ps1 -ConfigFile ./nuget.config -Source nuget -Username ${{secrets.NUGET_USERNAME}} -Password ${{ secrets.NUGET_API_KEY }}
-        # waiting for https://github.com/NuGet/Home/issues/4126
 
       - uses: actions/setup-dotnet@v1
         with:
