@@ -36,11 +36,12 @@ jobs:
         shell: pwsh
         run: |
           ./tools/Set-NuGetCredentials.ps1 -ConfigFile ./nuget.config -Source github -Username ${{github.actor}} -Password ${{ secrets.GITHUB_TOKEN }}
-          ./tools/Set-NuGetCredentials.ps1 -ConfigFile ./nuget.config -Source nuget -Username ${{secrets.NUGET_USERNAME}} -Password ${{ secrets.NUGET_API_KEY }}
+#         ./tools/Set-NuGetCredentials.ps1 -ConfigFile ./nuget.config -Source nuget -Username ${{secrets.NUGET_USERNAME}} -Password ${{ secrets.NUGET_API_KEY }}
+          # waiting for https://github.com/NuGet/Home/issues/4126
 
       - uses: actions/setup-dotnet@v1
         with:
-          dotnet-version: 3.1.100
+          dotnet-version: 3.1.101
 
       - name: Restore
         run: dotnet restore $projectFile
@@ -98,8 +99,10 @@ jobs:
           asset_content_type: application/zip
 
       - name: Push to GitHub Packages
-        run: dotnet nuget push ./artifacts/packages/*.nupkg --skip-duplicate --source "github"
-      - name: Push to Nuget
-        run: dotnet nuget push ./artifacts/packages/*.nupkg --skip-duplicate --source "nuget" --api-key ${nugetApiKey}
+        run: dotnet nuget push ./artifacts/packages/*.nupkg --skip-duplicate --source "github" --api-key ${GITHUB_TOKEN}
         env:
-          nugetApiKey: ${{secrets.NUGET_API_KEY}}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push to Nuget
+        run: dotnet nuget push ./artifacts/packages/*.nupkg --skip-duplicate --source "nuget" --api-key ${NUGET_API_KEY}
+        env:
+          NUGET_API_KEY: ${{secrets.NUGET_API_KEY}}
