@@ -53,24 +53,24 @@ jobs:
       - name: Pack
         run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ./artifacts/packages
 
-      - name: Publish artifacts (staging)
-        uses: actions/upload-artifact@master
-        with:
-          name: staging
-          path: ./artifacts/staging
+      # - name: Publish artifacts (staging)
+      #   uses: actions/upload-artifact@master
+      #   with:
+      #     name: staging
+      #     path: ./artifacts/staging
 
-      - name: Publish artifacts (packages)
-        uses: actions/upload-artifact@master
-        with:
-          name: packages
-          path: ./artifacts/packages
+      # - name: Publish artifacts (packages)
+      #   uses: actions/upload-artifact@master
+      #   with:
+      #     name: packages
+      #     path: ./artifacts/packages
 
-      - name: Publish artifacts (output)
-        uses: actions/upload-artifact@master
-        if: failure()
-        with:
-          name: output
-          path: ./
+      # - name: Publish artifacts (output)
+      #   uses: actions/upload-artifact@master
+      #   if: failure()
+      #   with:
+      #     name: output
+      #     path: ./
 
       - name: Create Release
         id: create_release
@@ -84,6 +84,7 @@ jobs:
           prerelease: true
           body: |
             [Changelog](https://github.com/${{github.repository}}/blob/${{ steps.extract_branch.outputs.branch }}/CHANGELOG.md)
+        continue-on-error: true
 
       - name: Upload Release Asset
         id: upload-release-asset
