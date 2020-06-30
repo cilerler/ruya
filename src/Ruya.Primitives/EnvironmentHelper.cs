@@ -6,6 +6,7 @@ namespace Ruya.Primitives
     {
 		private const string EnvironmentVariable = "ENVIRONMENT";
         private const string EnvironmentAspNetCore = "ASPNETCORE_ENVIRONMENT";
+        private const string EnvironmentDotNetCore = "DOTNET_ENVIRONMENT";
 		private const string EnvironmentAspNetCoreUrls = "ASPNETCORE_URLS";
 		private const string EnvironmentDotNetRunningInContainer = "DOTNET_RUNNING_IN_CONTAINER";
 		private const string EnvironmentDotNetUsePollingFileWatcher = "DOTNET_USE_POLLING_FILE_WATCHER";
