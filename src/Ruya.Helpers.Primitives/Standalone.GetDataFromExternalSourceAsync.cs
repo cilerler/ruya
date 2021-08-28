@@ -10,8 +10,7 @@ namespace Ruya.Helpers.Primitives
     {
 		public static async Task<string> GetDataFromExternalSourceAsync(ILogger logger, string url, CancellationToken cancellationToken = default, HttpContent httpContent = null, bool ensureSuccessStatusCode = true)
 		{
-			const string methodName = nameof(GetDataFromExternalSourceAsync);
-			logger.LogTrace("[{MethodName}] {Url}", methodName, url);
+			logger.LogTrace("{Url}", url);
 
 			var retry = new RetryWithExponentialBackoff(logger);
 
@@ -32,8 +31,7 @@ namespace Ruya.Helpers.Primitives
 							                               : await httpClient.GetAsync(url
 							                                                         , ct);
 						responseBodyAsText = await response.Content.ReadAsStringAsync();
-						logger.LogTrace("[{MethodName}] StatusCode {StatusCode} ReasonPhrase {ReasonPhrase} ResponseBody {responseBodyAsText}"
-						              , methodName
+						logger.LogTrace("StatusCode {StatusCode} ReasonPhrase {ReasonPhrase} ResponseBody {responseBodyAsText}"
 						              , response.StatusCode
 						              , response.ReasonPhrase
 						              , responseBodyAsText);
@@ -43,8 +41,7 @@ namespace Ruya.Helpers.Primitives
 							//response.EnsureSuccessStatusCode();
 							if (!response.IsSuccessStatusCode)
 							{
-								logger.LogWarning("[{MethodName}] StatusCode {StatusCode} ReasonPhrase {ReasonPhrase} ResponseBody {responseBodyAsText}"
-											, methodName
+								logger.LogWarning("StatusCode {StatusCode} ReasonPhrase {ReasonPhrase} ResponseBody {responseBodyAsText}"
 											, response.StatusCode
 											, response.ReasonPhrase
 											, responseBodyAsText);
