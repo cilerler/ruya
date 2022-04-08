@@ -26,7 +26,7 @@ jobs:
         id: extract_branch
 
       - name: Set the build number
-        run: echo ::set-env name=buildNumber::$buildNumber.${GITHUB_RUN_NUMBER}
+        run: echo "buildNumber=$buildNumber.${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
 
       - uses: actions/checkout@v2
         with:
