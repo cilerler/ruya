@@ -11,7 +11,7 @@ on:
 jobs:
 
   build:
-    if: github.event_name == 'push' && contains(toJson(github.event.commits), '***NO_CI***') == false && contains(toJson(github.event.commits), '[ci skip]') == false && contains(toJson(github.event.commits), '[skip ci]') == false
+    if: contains(toJson(github.event.commits), '[ci skip]') == false && contains(toJson(github.event.commits), '[skip ci]') == false
     runs-on: ubuntu-latest
 
     env:
@@ -26,7 +26,7 @@ jobs:
         id: extract_branch
 
       - name: Set the build number
-        run: echo ::set-env name=buildNumber::$buildNumber.${GITHUB_RUN_NUMBER}
+        run: echo "buildNumber=$buildNumber.${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
 
       - uses: actions/checkout@v2
         with:
