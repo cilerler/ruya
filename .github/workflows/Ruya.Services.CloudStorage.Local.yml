@@ -37,10 +37,6 @@ jobs:
         run: |
           ./tools/Set-NuGetCredentials.ps1 -ConfigFile ./nuget.config -Source github -Username ${{github.actor}} -Password ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: 3.1.x
-
       - name: Restore
         run: dotnet restore $projectFile
       - name: Build

@@ -11,7 +11,7 @@ on:
 jobs:
 
   build:
-    if: github.event_name == 'push' && contains(toJson(github.event.commits), '***NO_CI***') == false && contains(toJson(github.event.commits), '[ci skip]') == false && contains(toJson(github.event.commits), '[skip ci]') == false
+    if: contains(toJson(github.event.commits), '[ci skip]') == false && contains(toJson(github.event.commits), '[skip ci]') == false
     runs-on: ubuntu-latest
 
     env:
@@ -36,10 +36,6 @@ jobs:
         shell: pwsh
         run: |
           ./tools/Set-NuGetCredentials.ps1 -ConfigFile ./nuget.config -Source github -Username ${{github.actor}} -Password ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: 3.1.x
 
       - name: Restore
         run: dotnet restore $projectFile
