@@ -36,23 +36,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  run_if_repository_dispatch:
-    if: contains(toJson(github.event.client_payload), '"sha"')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Debug details
-        shell: pwsh
-        run: |
-          Write-Output "sha:            ${{github.event.client_payload.sha}}"
-          Write-Output "version:        ${{github.event.client_payload.version}}"
-          Write-Output "repository:     ${{github.event.client_payload.repository}}"
-          Write-Output "branch:         ${{github.event.client_payload.branch}}"
-          Write-Output "isProduction:   ${{github.event.client_payload.isProduction}}"
-          Write-Output "isStaging:      ${{github.event.client_payload.isStaging}}"
-          Write-Output "isTesting:      ${{github.event.client_payload.isTesting}}"
-          Write-Output "isIntegration:  ${{github.event.client_payload.isIntegration}}"
-          Write-Output "isDevelopment:  ${{github.event.client_payload.isDevelopment}}"
-
   build:
     timeout-minutes: 3
     env:
@@ -66,7 +49,7 @@ jobs:
       projectTestFile: './test/Ruya.Primitives.Tests/Ruya.Primitives.Tests.csproj'
       repositoryDispatchEventType: 'Ruya.Primitives'
 
-    if: contains(toJson(github.event.commits), '[ci skip]') == false && contains(toJson(github.event.commits), '[skip ci]') == false
+    if: contains(toJson(github.event.commits), '[skip ci]') == false
     runs-on: ubuntu-latest
     environment: ${{github.event.inputs.environment}}
     outputs:
@@ -149,7 +132,6 @@ jobs:
           Add-Content $env:GITHUB_OUTPUT "isDevelopment=$isDevelopment"
           Add-Content $env:GITHUB_ENV "version=$version"
 
-
       # - uses: actions/setup-dotnet@v3
 
       # - name: Get package versions
@@ -166,7 +148,6 @@ jobs:
 
       - name: Add PackageManager
         run: |
-            dotnet nuget add source https://api.nuget.org/v3/index.json -n nuget -u ${{secrets.NUGET_USERNAME}} -p ${{secrets.NUGET_API_KEY}} --store-password-in-clear-text
             dotnet nuget add source https://nuget.pkg.github.com/cilerler/index.json -n github -u ${{github.actor}} -p ${{secrets.PAT}} --store-password-in-clear-text
 
       - name: Restore
@@ -225,7 +206,8 @@ jobs:
         run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "github" --api-key ${{secrets.GITHUB_TOKEN}}
 
       - name: Push to Nuget
-        run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget" --api-key ${{secrets.NUGET_API_KEY}}
+        if: steps.extract_metadata_environment.outputs.isProduction == true
+        run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget.org" --api-key ${{secrets.NUGET_API_KEY}}
 
       - name: Debug details
         if: failure()
@@ -247,14 +229,14 @@ jobs:
           Write-Output "sha                 ${{env.hasSha}}"
           Write-Output "github repository   ${{github.event.repository.name}}"
           exit 1;
-        continue-on-error: false
 
       - name: Publish artifacts (output)
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v3
         if: failure()
         with:
           name: output
           path: ./
+          retention-days: 1
 
   dispatch:
     needs: build
