@@ -1,0 +1,49 @@
+name: "Feature Request 🚀"
+description: Suggest a new feature or improvement
+labels: ["Type: Feature (*)"]
+body:
+  - type: textarea
+    attributes:
+      label: Description of the new feature / enhancement
+      placeholder: |
+        A clear and concise description of what the problem is that the new feature would solve.
+        Describe why and how a user would use this new functionality (if applicable).
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed technical implementation details
+      placeholder: A clear and concise description of what you want to happen
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Additional context (e.g. Screenshot, file, etc.)
+      description: |
+        If applicable, add screenshots to help explain your problem.
+        You may select this area and drag-drop the file.
+      placeholder: Add any other context about the problem here.
+    validations:
+      required: false
+  - type: dropdown
+    attributes:
+      label: What is the value of this issue for you?
+      multiple: false
+      options:
+        - Bronze
+        - Silver
+        - Gold
+        - Platinum
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: What is the priority of this issue for you?
+      multiple: false
+      options:
+        - Low
+        - Medium
+        - High
+        - Urgent
+    validations:
+      required: true

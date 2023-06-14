@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: General
+    url: https://github.com/cilerler/ruya/discussions/new?category=general
+    about: Want to discuss something?
+  - name: Ideas
+    url: https://github.com/cilerler/ruya/discussions/new?category=ideas
+    about: Want to suggest an idea?
+  - name: Questions
+    url: https://github.com/cilerler/ruya/discussions/new?category=q-a
+    about: Have a question?
