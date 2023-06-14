@@ -1,30 +1,33 @@
 ﻿using System;
 
-namespace Ruya.Bus.Commands
-{
-	public abstract class IntegrationCommand
-	{
-		protected IntegrationCommand()
-		{
-			Id = Guid.NewGuid();
-			Sent = DateTime.UtcNow;
-		}
+namespace Ruya.Bus.Commands;
 
-		public Guid Id { get; }
-		public DateTime Sent { get; }
-		public abstract object GetDataAsObject();
+public abstract class IntegrationCommand
+{
+	protected IntegrationCommand()
+	{
+		Id = Guid.NewGuid();
+		Sent = DateTime.UtcNow;
 	}
 
-	public class IntegrationCommand<T> : IntegrationCommand
-	{
-		public IntegrationCommand(string name, T data)
-		{
-			Data = data;
-			Name = name;
-		}
+	public Guid Id { get; }
+	public DateTime Sent { get; }
+	public abstract object GetDataAsObject();
+}
 
-		public T Data { get; }
-		public string Name { get; }
-		public override object GetDataAsObject() => Data;
+public class IntegrationCommand<T> : IntegrationCommand
+{
+	public IntegrationCommand(string name, T data)
+	{
+		Data = data;
+		Name = name;
+	}
+
+	public T Data { get; }
+	public string Name { get; }
+
+	public override object GetDataAsObject()
+	{
+		return Data;
 	}
 }

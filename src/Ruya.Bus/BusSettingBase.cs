@@ -1,30 +1,27 @@
 ﻿using System;
 
-namespace Ruya.Bus
+namespace Ruya.Bus;
+
+public abstract class BusSettingBase
 {
-    public abstract class BusSettingBase
-    {
-	    public const string ConfigurationSectionName = "Bus";
-        public string Connection { get; set; } = "localhost"; //ConnectionStringKey
-        public string UserName { get; set; } = "guest";
-        public string Password { get; set; } = "guest";
-        public string BrokerName { get; set; } = "bus"; // Exchange Name
+	public const string ConfigurationSectionName = "Bus";
 
-		// QeueueName
-	    private string _subscriptionClientName;
-		public string SubscriptionClientName
+	// QeueueName
+	private string _subscriptionClientName;
+	public string ConnectionStringKey { get; set; } = "localhost";
+	public string UserName { get; set; } = "guest";
+	public string Password { get; set; } = "guest";
+	public string BrokerName { get; set; } = "bus"; // Exchange Name
+
+	public string SubscriptionClientName
+	{
+		get => _subscriptionClientName;
+		set
 		{
-			get => _subscriptionClientName;
-			set
-			{
-				_subscriptionClientName = value;
-				if (string.IsNullOrEmpty(_subscriptionClientName))
-				{
-					throw new ArgumentNullException(nameof(SubscriptionClientName));
-				}
-			}
+			_subscriptionClientName = value;
+			if (string.IsNullOrEmpty(_subscriptionClientName)) throw new ArgumentNullException(nameof(SubscriptionClientName));
 		}
+	}
 
-	    public byte RetryCount { get; set; } = default;
-    }
+	public byte RetryCount { get; set; } = default;
 }

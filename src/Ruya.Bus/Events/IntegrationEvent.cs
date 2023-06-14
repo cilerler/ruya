@@ -1,38 +1,33 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
-using Newtonsoft.Json;
+using System.Text.Json.Serialization;
 
-namespace Ruya.Bus.Events
+namespace Ruya.Bus.Events;
+
+public class IntegrationEvent
 {
-	public class IntegrationEvent
+	public IntegrationEvent()
 	{
-		public IntegrationEvent()
-		{
-			Id = Guid.NewGuid();
-			CreationDate = DateTime.UtcNow;
-		}
-
-		[JsonConstructor]
-		public IntegrationEvent(Guid id, DateTime createDate)
-		{
-			Id = id;
-			CreationDate = createDate;
-		}
-
-		[JsonProperty]
-		public Guid Id { get; private set; }
-
-		[JsonProperty]
-		public DateTime CreationDate { get; private set; }
-
-		[JsonProperty]
-		public object Data { get; set; }
-
-		[JsonIgnore]
-		public bool PublishAsError { get; set; }
-
-		[JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
-		public List<object> Error { get; set; }
+		Id = Guid.NewGuid();
+		CreationDate = DateTime.UtcNow;
 	}
+
+	[JsonConstructor]
+	public IntegrationEvent(Guid id, DateTime createDate)
+	{
+		Id = id;
+		CreationDate = createDate;
+	}
+
+	[JsonPropertyName("id")] public Guid Id { get; private set; }
+
+	[JsonPropertyName("creationDate")] public DateTime CreationDate { get; private set; }
+
+	[JsonPropertyName("data")] public object Data { get; set; }
+
+	[JsonIgnore] public bool PublishAsError { get; set; }
+
+	[JsonPropertyName("error")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public List<object> Error { get; set; }
 }
