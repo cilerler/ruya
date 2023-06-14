@@ -1,9 +1,8 @@
-﻿namespace Ruya.Bus.RabbitMQ
+﻿namespace Ruya.Bus.RabbitMQ;
+
+public class Binding
 {
-	public class Binding
-	{
-		public string Source{ set; get; }
-		public string Destination{ set; get; }
-		public string RoutingKey { set; get; }
-	}
+	public string Source { set; get; }
+	public string Destination { set; get; }
+	public string RoutingKey { set; get; }
 }

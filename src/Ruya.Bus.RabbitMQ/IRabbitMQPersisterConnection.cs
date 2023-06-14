@@ -1,14 +1,13 @@
 ﻿using System;
 using RabbitMQ.Client;
 
-namespace Ruya.Bus.RabbitMQ
+namespace Ruya.Bus.RabbitMQ;
+
+public interface IRabbitMqPersistentConnection : IDisposable
 {
-	public interface IRabbitMqPersistentConnection : IDisposable
-    {
-        bool IsConnected { get; }
+	bool IsConnected { get; }
 
-        bool TryConnect();
+	bool TryConnect();
 
-        IModel CreateModel();
-    }
+	IModel CreateModel();
 }
