@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,7 +21,6 @@ public class ClientTest
 	public static void ClassInitialize(TestContext testContext)
 	{
 		_testContext = testContext;
-
 
 		IServiceCollection serviceCollection = new ServiceCollection();
 		using (IEnumerator<ServiceDescriptor> sc = Initialize.ServiceCollection.GetEnumerator())

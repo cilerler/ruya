@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
 using Ruya.Services.CloudStorage.Abstractions;
 using Ruya.Services.CloudStorage.Google;
 
@@ -20,7 +20,7 @@ namespace Ruya.Services.CloudStorage.Google
 
 			Dictionary<string, string> sectionItems = configuration.GetSection(Setting.ConfigurationSectionName)
 				.GetChildren().ToDictionary(item => item.Key, item => item.Value);
-			string output = JsonConvert.SerializeObject(sectionItems);
+			string output = JsonSerializer.Serialize(sectionItems);
 			return output;
 		}
 	}

@@ -35,7 +35,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	<ProjectReference Include="..\..\src\Ruya.Services.CloudStorage.Local\Ruya.Services.CloudStorage.Local.csproj" />
+		<ProjectReference Include="..\..\src\Ruya.Services.CloudStorage.Local\Ruya.Services.CloudStorage.Local.csproj" />
 	</ItemGroup>
 
 </Project>

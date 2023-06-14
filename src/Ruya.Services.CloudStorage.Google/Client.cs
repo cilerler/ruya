@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using Google;
 using Google.Api.Gax;
 using Google.Apis.Auth.OAuth2;
@@ -12,7 +13,6 @@ using Google.Cloud.Storage.V1;
 using HeyRed.Mime;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Newtonsoft.Json;
 using Ruya.Services.CloudStorage.Abstractions;
 using Object = Google.Apis.Storage.v1.Data.Object;
 
@@ -222,7 +222,7 @@ public class Client : ICloudFileService
 		{
 			output = GoogleCredential.FromJson(_options.Credential);
 		}
-		catch (InvalidOperationException ioe) when (ioe.InnerException is JsonSerializationException)
+		catch (InvalidOperationException ioe) when (ioe.InnerException is JsonException)
 		{
 			throw;
 		}
