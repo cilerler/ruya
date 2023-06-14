@@ -224,7 +224,7 @@ jobs:
         run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "github" --api-key ${{secrets.GITHUB_TOKEN}}
 
       - name: Push to Nuget
-        run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget" --api-key ${{secrets.NUGET_API_KEY}}
+        run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget.org" --api-key ${{secrets.NUGET_API_KEY}}
 
       - name: Debug details
         if: failure()
