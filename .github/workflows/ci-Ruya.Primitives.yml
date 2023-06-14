@@ -166,7 +166,6 @@ jobs:
 
       - name: Add PackageManager
         run: |
-            dotnet nuget add source https://api.nuget.org/v3/index.json -n nuget -u ${{secrets.NUGET_USERNAME}} -p ${{secrets.NUGET_API_KEY}} --store-password-in-clear-text
             dotnet nuget add source https://nuget.pkg.github.com/cilerler/index.json -n github -u ${{github.actor}} -p ${{secrets.PAT}} --store-password-in-clear-text
 
       - name: Restore
