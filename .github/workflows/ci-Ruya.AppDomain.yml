@@ -12,13 +12,12 @@ on:
         description: 'initiate rolling deployment'
         default: false
   repository_dispatch:
-    types: []
+    types: [Ruya.Primitives]
   push:
     branches: [master, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.AppDomain.yml'
       - 'src/Ruya.AppDomain/**'
-
 
 env:
   version: '7.0'
@@ -62,7 +61,6 @@ jobs:
       isTesting: ${{steps.extract_metadata_environment.outputs.isTesting}}
       isIntegration: ${{steps.extract_metadata_environment.outputs.isIntegration}}
       isDevelopment: ${{steps.extract_metadata_environment.outputs.isDevelopment}}
-
 
     steps:
       - if: env.hasSha=='false'
