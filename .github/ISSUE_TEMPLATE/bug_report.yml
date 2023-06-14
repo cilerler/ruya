@@ -1,0 +1,62 @@
+name: "Bug Report 🪲"
+description: Report errors or unexpected behavior
+labels: ["Type: Bug (*)"]
+body:
+  - type: textarea
+    attributes:
+      label: Brief placeholder of your issue
+      placeholder: Briefly describe your issue here.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: |
+        We must be able to reproduce the issue; if we can't, it is most likely that we may not resolve the issue.
+      placeholder: A placeholder of how to trigger this bug
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      placeholder: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Actual behavior
+      placeholder: What is currently happening?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Additional context (e.g. Screenshot, file, etc.)
+      description: |
+        If applicable, add screenshots to help explain your problem.
+        You may select this area and drag-drop the file.
+      placeholder: Add any other context about the problem here.
+    validations:
+      required: false
+  - type: dropdown
+    attributes:
+      label: What is the value of this issue for you?
+      multiple: false
+      options:
+        - Bronze
+        - Silver
+        - Gold
+        - Platinum
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: What is the priority of this issue for you?
+      multiple: false
+      options:
+        - Low
+        - Medium
+        - High
+        - Urgent
+    validations:
+      required: true
