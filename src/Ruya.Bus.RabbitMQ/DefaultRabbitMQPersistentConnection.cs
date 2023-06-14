@@ -28,7 +28,7 @@ public class DefaultRabbitMqPersistentConnection : IRabbitMqPersistentConnection
 		_options = options.Value;
 		_connectionFactory = new ConnectionFactory
 		{
-			HostName = _options.Connection,
+			HostName = _options.ConnectionStringKey, //UNDONE: retrieve the connection string from the settings,
 			UserName = _options.UserName,
 			Password = _options.Password,
 			VirtualHost = _options.VirtualHost,
@@ -37,7 +37,7 @@ public class DefaultRabbitMqPersistentConnection : IRabbitMqPersistentConnection
 		};
 
 		if (_options.RequestedHeartbeatSeconds != default)
-			_connectionFactory.RequestedHeartbeat = (ushort)_options.RequestedHeartbeatSeconds.TotalSeconds;
+			_connectionFactory.RequestedHeartbeat = _options.RequestedHeartbeatSeconds;
 
 		try
 		{

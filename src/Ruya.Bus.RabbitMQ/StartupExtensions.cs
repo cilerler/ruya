@@ -17,7 +17,7 @@ public static class StartupExtensions
 		// ReSharper disable once AccessToStaticMemberViaDerivedType
 		serviceCollection.Configure<BusSetting>(configuration.GetSection(BusSetting.ConfigurationSectionName));
 		serviceCollection.AddSingleton<IRabbitMqPersistentConnection, DefaultRabbitMqPersistentConnection>();
-		serviceCollection.AddTransient<IEventBus, EventBusRabbitMq>();
+		serviceCollection.AddSingleton<IEventBus, EventBusRabbitMq>();
 		return serviceCollection;
 	}
 }

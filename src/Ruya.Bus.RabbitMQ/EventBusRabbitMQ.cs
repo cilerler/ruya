@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -79,8 +80,7 @@ public sealed class EventBusRabbitMq : IEventBus, IDisposable
 
 		using (IModel channel = _persistentConnection.CreateModel())
 		{
-			string message =
-				JsonConvert.SerializeObject(@event, new JsonSerializerSettings { ReferenceLoopHandling = ReferenceLoopHandling.Ignore });
+			string message = JsonSerializer.Serialize(@event, new JsonSerializerOptions { ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles });
 			byte[] body = Encoding.UTF8.GetBytes(message);
 			channel.BasicAcks += BasicAcks;
 			channel.BasicReturn += BasicReturn;
@@ -206,7 +206,7 @@ public sealed class EventBusRabbitMq : IEventBus, IDisposable
 
 	private void BasicReturn(object sender, BasicReturnEventArgs e)
 	{
-		byte[] body = e.Body;
+		byte[] body = e.Body.ToArray();
 		string message = Encoding.UTF8.GetString(body);
 		var parameters = new Dictionary<string, object> { { "exchange", e.Exchange }, { "routingKey", e.RoutingKey } };
 		_logger.LogError(
@@ -301,9 +301,9 @@ public sealed class EventBusRabbitMq : IEventBus, IDisposable
 		var consumer = new EventingBasicConsumer(channel); // DefaultBasicConsumer
 		consumer.Received += async (sender, basicDeliverEventArgs) =>
 		{
+			ReadOnlyMemory<byte> body = basicDeliverEventArgs.Body;
+			string message = Encoding.UTF8.GetString(body.ToArray());
 			string eventName = basicDeliverEventArgs.BasicProperties.Type;
-			byte[] body = basicDeliverEventArgs.Body;
-			string message = Encoding.UTF8.GetString(body);
 			var parameters = new Dictionary<string, object>
 			{
 				{ "exchange", basicDeliverEventArgs.Exchange }, { "routingKey", basicDeliverEventArgs.RoutingKey }
@@ -318,7 +318,7 @@ public sealed class EventBusRabbitMq : IEventBus, IDisposable
 
 			try
 			{
-				await ProcessEvent(eventName, message, parameters);
+				await ProcessEventAsync(eventName, message, parameters);
 				channel.BasicAck(basicDeliverEventArgs.DeliveryTag
 					, false);
 			}
@@ -351,7 +351,7 @@ public sealed class EventBusRabbitMq : IEventBus, IDisposable
 		return channel;
 	}
 
-	private async Task ProcessEvent(string eventName, string message, Dictionary<string, object> parameters)
+	private async Task ProcessEventAsync(string eventName, string message, Dictionary<string, object> parameters)
 	{
 		if (_subscriptionsManager.HasSubscriptionsForEvent(eventName))
 		{
@@ -364,7 +364,8 @@ public sealed class EventBusRabbitMq : IEventBus, IDisposable
 					{
 						if (!( scope.ServiceProvider.GetService(subscription.HandlerType) is IDynamicIntegrationEventHandler handler )) continue;
 
-						dynamic eventData = JObject.Parse(message);
+						JsonDocument document = JsonDocument.Parse(message);
+						dynamic eventData = document.RootElement;
 						await handler.Handle(eventData);
 					}
 					else
@@ -373,7 +374,7 @@ public sealed class EventBusRabbitMq : IEventBus, IDisposable
 						if (handler == null) continue;
 
 						Type eventType = _subscriptionsManager.GetEventTypeByName(eventName);
-						object integrationEvent = JsonConvert.DeserializeObject(message, eventType);
+						object integrationEvent = JsonSerializer.Deserialize(message, eventType);
 						Type concreteType = typeof(IIntegrationEventHandler<>).MakeGenericType(eventType);
 						if (!concreteType.IsInstanceOfType(handler))
 						{
