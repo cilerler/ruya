@@ -1,5 +1,5 @@
-namespace Ruya.Helpers.Primitives
+namespace Ruya.Helpers.Primitives;
+
+public partial class Standalone
 {
-    public partial class Standalone
-    { }
 }
