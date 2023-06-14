@@ -12,7 +12,7 @@ on:
         description: 'initiate rolling deployment'
         default: false
   repository_dispatch:
-    types: [Ruya.Primitives]
+    types: []
   push:
     branches: [master, release-preview, release-qa, develop]
     paths:
