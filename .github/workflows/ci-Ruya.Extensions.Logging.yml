@@ -1,0 +1,240 @@
+name: Ruya.Extensions.Logging
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: environment
+        description: 'Environment'
+        required: false
+      rollingDeployment:
+        type: boolean
+        description: 'initiate rolling deployment'
+        default: false
+  repository_dispatch:
+    types: [Ruya.Primitives]
+  push:
+    branches: [master, release-preview, release-qa, develop]
+    paths:
+    - '.github/workflows/Ruya.Extensions.Logging.yml'
+    - 'src/Ruya.Extensions.Logging/**'
+
+env:
+  version: '7.0'
+  productionBranch: 'master'
+  stagingBranch: 'release-preview'
+  testingBranch: 'release-qa'
+  integrationBranch: 'develop'
+  hasSha: ${{contains(toJson(github.event.client_payload), '"sha"')}}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{github.workflow}}-${{github.ref}}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      buildConfiguration: 'Release'
+      packageOutputPath: './artifacts/packages'
+      publishOutputPath: './artifacts/staging'
+      projectFile: './src/Ruya.Extensions.Logging/Ruya.Extensions.Logging.csproj'
+      projectTestFile: './test/Ruya.Extensions.Logging.Tests/Ruya.Extensions.Logging.Tests.csproj'
+      repositoryDispatchEventType: 'Ruya.Extensions.Logging'
+    if: contains(toJson(github.event.commits), '[skip ci]') == false
+    timeout-minutes: 3
+    runs-on: ubuntu-latest
+    environment: ${{github.event.inputs.environment}}
+    outputs:
+      version: ${{env.version}}
+      repositoryDispatchEventType: ${{env.repositoryDispatchEventType}}
+      repository: ${{steps.extract_metadata.outputs.repository}}
+      branch: ${{steps.extract_metadata.outputs.branch}}
+      isProduction: ${{steps.extract_metadata_environment.outputs.isProduction}}
+      isStaging: ${{steps.extract_metadata_environment.outputs.isStaging}}
+      isTesting: ${{steps.extract_metadata_environment.outputs.isTesting}}
+      isIntegration: ${{steps.extract_metadata_environment.outputs.isIntegration}}
+      isDevelopment: ${{steps.extract_metadata_environment.outputs.isDevelopment}}
+
+    steps:
+      - if: env.hasSha=='false'
+        name: Checkout
+        uses: actions/checkout@v3
+
+      - if: env.hasSha=='true'
+        name: CheckoutRepositoryDispatch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{github.event.client_payload.branch}}
+
+      - name: Extract metadata
+        id: extract_metadata
+        shell: pwsh
+        run: |
+          if ($env:hasSha -eq $true) {
+            $branch = "${{github.event.client_payload.branch}}"
+          } else {
+            $branch = "$env:GITHUB_REF" -replace 'refs/heads/', ''
+          };
+          Add-Content $env:GITHUB_OUTPUT "branch=$branch"
+          Add-Content $env:GITHUB_OUTPUT "branchsafe=$($branch -replace '/', '-')"
+          Add-Content $env:GITHUB_OUTPUT "repository=$($env:GITHUB_REPOSITORY -replace '.*/', '')"
+          Add-Content $env:GITHUB_ENV "version=$env:version.$env:GITHUB_RUN_NUMBER"
+
+      - name: Extract metadata environment
+        id: extract_metadata_environment
+        shell: pwsh
+        run: |
+          $isProduction = 0
+          $isStaging = 0
+          $isTesting = 0
+          $isIntegration = 0
+          $isDevelopment = 0
+          $branch = "${{steps.extract_metadata.outputs.branch}}"
+
+          if ($branch -eq "${{env.productionBranch}}" -or "${{github.event.inputs.environment}}" -eq "production") {
+            $isProduction = 1
+          }
+          elseif ($branch -eq  "${{env.stagingBranch}}" -or "${{github.event.inputs.environment}}" -eq "staging") {
+            $isStaging = 1
+            $versionSuffix = "preview"
+          }
+          elseif ($branch -eq "${{env.testingBranch}}" -or "${{github.event.inputs.environment}}" -eq "testing") {
+            $isTesting = 1
+            $versionSuffix = "qa"
+          }
+          elseif ($branch -eq "${{env.integrationBranch}}" -or "${{github.event.inputs.environment}}" -eq "integration") {
+            $isIntegration = 1
+            $versionSuffix = "develop"
+          }
+          else {
+            $isDevelopment = 1
+            $versionSuffix = "dev"
+          }
+
+          if ($versionSuffix) {
+            $version = "$env:version-$versionSuffix"
+          } else {
+            $version = $env:version
+          }
+
+          Add-Content $env:GITHUB_OUTPUT "isProduction=$isProduction"
+          Add-Content $env:GITHUB_OUTPUT "isStaging=$isStaging"
+          Add-Content $env:GITHUB_OUTPUT "isTesting=$isTesting"
+          Add-Content $env:GITHUB_OUTPUT "isIntegration=$isIntegration"
+          Add-Content $env:GITHUB_OUTPUT "isDevelopment=$isDevelopment"
+          Add-Content $env:GITHUB_ENV "version=$version"
+
+      - name: Add PackageManager
+        run: |
+            dotnet nuget add source https://nuget.pkg.github.com/cilerler/index.json -n github -u ${{github.actor}} -p ${{secrets.PAT}} --store-password-in-clear-text
+
+      - name: Restore
+        run: dotnet restore $projectFile -p:Version=$version
+
+      - name: Build
+        run: dotnet build $projectFile --configuration $buildConfiguration -p:Version=$version
+
+      - name: Test
+        run: dotnet test $projectTestFile --configuration $buildConfiguration -p:CollectCoverage=true
+        continue-on-error: true
+
+      - name: Publish
+        run: dotnet publish $projectFile --configuration $buildConfiguration --no-restore --no-build --output ${{env.publishOutputPath}}
+
+      - name: Pack
+        run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ${{env.packageOutputPath}}
+
+      - name: Publish artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: packages
+          path: ${{env.packageOutputPath}}/*.nupkg
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Create tag
+        if: steps.extract_metadata_environment.outputs.isProduction == false
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/v${{env.version}}',
+              sha: context.sha
+            })
+
+      - name: Create Release
+        if: steps.extract_metadata_environment.outputs.isProduction == true
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        with:
+          tag_name: v${{env.version}}
+          name: ${{github.workflow}}.${{env.version}}
+          draft: false
+          prerelease: false
+          files: |
+            ${{env.packageOutputPath}}/*.nupkg
+          body: |
+            [Changelog](https://github.com/${{github.repository}}/blob/${{steps.extract_metadata.outputs.branch}}/CHANGELOG.md)
+
+      - name: Push to GitHub Packages
+        run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "github" --api-key ${{secrets.GITHUB_TOKEN}}
+
+      - name: Push to Nuget
+        if: steps.extract_metadata_environment.outputs.isProduction == true
+        run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget.org" --api-key ${{secrets.NUGET_API_KEY}}
+
+      - name: Debug details
+        if: failure()
+        shell: pwsh
+        run: |
+          Write-Output "productionBranch    ${{env.productionBranch}}"
+          Write-Output "buildConfiguration  ${{env.buildConfiguration}}"
+          Write-Output "version             ${{env.version}}"
+          Write-Output "branch from payload ${{github.event.client_payload.branch}}"
+          Write-Output "branch              ${{steps.extract_metadata.outputs.branch}}"
+          Write-Output "production          ${{steps.extract_metadata_environment.outputs.isProduction}}"
+          Write-Output "staging             ${{steps.extract_metadata_environment.outputs.isStaging}}"
+          Write-Output "testing             ${{steps.extract_metadata_environment.outputs.isTesting}}"
+          Write-Output "integration         ${{steps.extract_metadata_environment.outputs.isIntegration}}"
+          Write-Output "development         ${{steps.extract_metadata_environment.outputs.isDevelopment}}"
+          Write-Output "environment input   ${{github.event.inputs.environment}}"
+          Write-Output "rollingDeployment   ${{github.event.inputs.rollingDeployment}}"
+          Write-Output "rollingDeployment   ${{env.repositoryDispatchEventType}}"
+          Write-Output "sha                 ${{env.hasSha}}"
+          Write-Output "github repository   ${{github.event.repository.name}}"
+          exit 1;
+
+      - name: Publish artifacts (output)
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: output
+          path: ./
+          retention-days: 1
+
+  dispatch:
+    needs: build
+    if: (contains(toJson(github.event.commits), '[rolling deployment]') || contains(toJson(github.event.client_payload), '"sha"') || github.event.inputs.rollingDeployment == 'true' )
+    strategy:
+      matrix:
+        repo: ['cilerler/ruya','cilerler/burcin']
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{secrets.PAT}}
+          repository: ${{matrix.repo}}
+          event-type: ${{needs.build.outputs.repositoryDispatchEventType}}
+          client-payload: '{"sha": "${{github.sha}}", "version": "${{needs.build.outputs.version}}", "repository": "${{needs.build.outputs.repository}}", "branch": "${{needs.build.outputs.branch}}", "isProduction": "${{needs.build.outputs.isProduction}}", "isStaging": "${{needs.build.outputs.isStaging}}", "isTesting": "${{needs.build.outputs.isTesting}}", "isIntegration": "${{needs.build.outputs.isIntegration}}", "isDevelopment": "${{needs.build.outputs.isDevelopment}}"}'
