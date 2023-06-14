@@ -1,9 +1,8 @@
-﻿namespace Ruya.Services.CloudStorage.Local
-{
-	public class Setting
-	{
-		public const string ConfigurationSectionName = "CloudStorage_Local";
+﻿namespace Ruya.Services.CloudStorage.Local;
 
-		public string Path { get; set; }
-	}
+public class Setting
+{
+	public const string ConfigurationSectionName = "CloudStorage_Local";
+
+	public string Path { get; set; }
 }

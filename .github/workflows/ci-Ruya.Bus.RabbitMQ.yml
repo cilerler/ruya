@@ -1,4 +1,4 @@
-name: Ruya.AppDomain
+name: Ruya.Bus.RabbitMQ
 
 on:
   workflow_dispatch:
@@ -12,12 +12,12 @@ on:
         description: 'initiate rolling deployment'
         default: false
   repository_dispatch:
-    types: [Ruya.Primitives]
+    types: [Ruya.Bus]
   push:
     branches: [master, release-preview, release-qa, develop]
     paths:
-      - '.github/workflows/Ruya.AppDomain.yml'
-      - 'src/Ruya.AppDomain/**'
+    - '.github/workflows/Ruya.Bus.RabbitMQ.yml'
+    - 'src/Ruya.Bus.RabbitMQ/**'
 
 env:
   version: '7.0'
@@ -44,9 +44,9 @@ jobs:
       buildConfiguration: 'Release'
       packageOutputPath: './artifacts/packages'
       publishOutputPath: './artifacts/staging'
-      projectFile: './src/Ruya.AppDomain/Ruya.AppDomain.csproj'
-      projectTestFile: './test/Ruya.AppDomain.Tests/Ruya.AppDomain.Tests.csproj'
-      repositoryDispatchEventType: 'Ruya.AppDomain'
+      projectFile: './src/Ruya.Bus.RabbitMQ/Ruya.Bus.RabbitMQ.csproj'
+      projectTestFile: './test/Ruya.Bus.RabbitMQ.Tests/Ruya.Bus.RabbitMQ.Tests.csproj'
+      repositoryDispatchEventType: 'Ruya.Bus.RabbitMQ'
     if: contains(toJson(github.event.commits), '[skip ci]') == false
     timeout-minutes: 3
     runs-on: ubuntu-latest

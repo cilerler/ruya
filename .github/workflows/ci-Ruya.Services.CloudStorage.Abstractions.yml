@@ -1,4 +1,4 @@
-name: Ruya.AppDomain
+name: Ruya.Services.CloudStorage.Abstractions
 
 on:
   workflow_dispatch:
@@ -12,12 +12,12 @@ on:
         description: 'initiate rolling deployment'
         default: false
   repository_dispatch:
-    types: [Ruya.Primitives]
+    types: []
   push:
     branches: [master, release-preview, release-qa, develop]
     paths:
-      - '.github/workflows/Ruya.AppDomain.yml'
-      - 'src/Ruya.AppDomain/**'
+    - '.github/workflows/Ruya.Services.CloudStorage.Abstractions.yml'
+    - 'src/Ruya.Services.CloudStorage.Abstractions/**'
 
 env:
   version: '7.0'
@@ -44,9 +44,9 @@ jobs:
       buildConfiguration: 'Release'
       packageOutputPath: './artifacts/packages'
       publishOutputPath: './artifacts/staging'
-      projectFile: './src/Ruya.AppDomain/Ruya.AppDomain.csproj'
-      projectTestFile: './test/Ruya.AppDomain.Tests/Ruya.AppDomain.Tests.csproj'
-      repositoryDispatchEventType: 'Ruya.AppDomain'
+      projectFile: './src/Ruya.Services.CloudStorage.Abstractions/Ruya.Services.CloudStorage.Abstractions.csproj'
+      projectTestFile: './test/Ruya.Services.CloudStorage.Abstractions.Tests/Ruya.Services.CloudStorage.Abstractions.Tests.csproj'
+      repositoryDispatchEventType: 'Ruya.Services.CloudStorage.Abstractions'
     if: contains(toJson(github.event.commits), '[skip ci]') == false
     timeout-minutes: 3
     runs-on: ubuntu-latest

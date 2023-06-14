@@ -1,9 +1,8 @@
 ﻿using System.Threading.Tasks;
 
-namespace Ruya.Bus.Abstractions
+namespace Ruya.Bus.Abstractions;
+
+public interface IDynamicIntegrationEventHandler
 {
-    public interface IDynamicIntegrationEventHandler
-    {
-        Task Handle(dynamic eventData);
-    }
+	Task Handle(dynamic eventData);
 }

@@ -12,12 +12,12 @@ on:
         description: 'initiate rolling deployment'
         default: false
   repository_dispatch:
-    types: [Ruya.Primitives]
+    types: []
   push:
     branches: [master, release-preview, release-qa, develop]
     paths:
-      - '.github/workflows/Ruya.AppDomain.yml'
-      - 'src/Ruya.AppDomain/**'
+    - '.github/workflows/Ruya.Extensions.Caching.yml'
+    - 'src/Ruya.Extensions.Caching/**'
 
 env:
   version: '7.0'
@@ -44,9 +44,9 @@ jobs:
       buildConfiguration: 'Release'
       packageOutputPath: './artifacts/packages'
       publishOutputPath: './artifacts/staging'
-      projectFile: './src/Ruya.AppDomain/Ruya.AppDomain.csproj'
-      projectTestFile: './test/Ruya.AppDomain.Tests/Ruya.AppDomain.Tests.csproj'
-      repositoryDispatchEventType: 'Ruya.AppDomain'
+      projectFile: './src/Ruya.Extensions.Caching/Ruya.Extensions.Caching.csproj'
+      projectTestFile: './test/Ruya.Extensions.Caching.Tests/Ruya.Extensions.Caching.Tests.csproj'
+      repositoryDispatchEventType: 'Ruya.Extensions.Caching'
     if: contains(toJson(github.event.commits), '[skip ci]') == false
     timeout-minutes: 3
     runs-on: ubuntu-latest

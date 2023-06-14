@@ -14,6 +14,7 @@ public static class EnvironmentHelper
 	private static string[]? _environmentArgs;
 
 	public static bool IsDevelopment => EnvironmentName.Equals(Constants.Development);
+	public static bool IsIntegration => EnvironmentName.Equals(Constants.Integration);
 	public static bool IsStaging => EnvironmentName.Equals(Constants.Staging);
 	public static bool IsProduction => EnvironmentName.Equals(Constants.Production);
 

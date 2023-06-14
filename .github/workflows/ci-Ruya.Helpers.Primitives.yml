@@ -1,4 +1,4 @@
-name: Ruya.AppDomain
+name: Ruya.Helpers.Primitives
 
 on:
   workflow_dispatch:
@@ -12,12 +12,12 @@ on:
         description: 'initiate rolling deployment'
         default: false
   repository_dispatch:
-    types: [Ruya.Primitives]
+    types: []
   push:
     branches: [master, release-preview, release-qa, develop]
     paths:
-      - '.github/workflows/Ruya.AppDomain.yml'
-      - 'src/Ruya.AppDomain/**'
+    - '.github/workflows/Ruya.Helpers.Primitives.yml'
+    - 'src/Ruya.Helpers.Primitives/**'
 
 env:
   version: '7.0'
@@ -44,9 +44,9 @@ jobs:
       buildConfiguration: 'Release'
       packageOutputPath: './artifacts/packages'
       publishOutputPath: './artifacts/staging'
-      projectFile: './src/Ruya.AppDomain/Ruya.AppDomain.csproj'
-      projectTestFile: './test/Ruya.AppDomain.Tests/Ruya.AppDomain.Tests.csproj'
-      repositoryDispatchEventType: 'Ruya.AppDomain'
+      projectFile: './src/Ruya.Helpers.Primitives/Ruya.Helpers.Primitives.csproj'
+      projectTestFile: './test/Ruya.Helpers.Primitives.Tests/Ruya.Helpers.Primitives.Tests.csproj'
+      repositoryDispatchEventType: 'Ruya.Helpers.Primitives'
     if: contains(toJson(github.event.commits), '[skip ci]') == false
     timeout-minutes: 3
     runs-on: ubuntu-latest

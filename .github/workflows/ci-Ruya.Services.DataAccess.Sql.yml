@@ -1,4 +1,4 @@
-name: Ruya.AppDomain
+name: Ruya.Services.DataAccess.Sql
 
 on:
   workflow_dispatch:
@@ -12,12 +12,12 @@ on:
         description: 'initiate rolling deployment'
         default: false
   repository_dispatch:
-    types: [Ruya.Primitives]
+    types: [Ruya.Services.DataAccess.Abstractions]
   push:
     branches: [master, release-preview, release-qa, develop]
     paths:
-      - '.github/workflows/Ruya.AppDomain.yml'
-      - 'src/Ruya.AppDomain/**'
+    - '.github/workflows/Ruya.Services.DataAccess.Sql.yml'
+    - 'src/Ruya.Services.DataAccess.Sql/**'
 
 env:
   version: '7.0'
@@ -44,9 +44,9 @@ jobs:
       buildConfiguration: 'Release'
       packageOutputPath: './artifacts/packages'
       publishOutputPath: './artifacts/staging'
-      projectFile: './src/Ruya.AppDomain/Ruya.AppDomain.csproj'
-      projectTestFile: './test/Ruya.AppDomain.Tests/Ruya.AppDomain.Tests.csproj'
-      repositoryDispatchEventType: 'Ruya.AppDomain'
+      projectFile: './src/Ruya.Services.DataAccess.Sql/Ruya.Services.DataAccess.Sql.csproj'
+      projectTestFile: './test/Ruya.Services.DataAccess.Sql.Tests/Ruya.Services.DataAccess.Sql.Tests.csproj'
+      repositoryDispatchEventType: 'Ruya.Services.DataAccess'
     if: contains(toJson(github.event.commits), '[skip ci]') == false
     timeout-minutes: 3
     runs-on: ubuntu-latest
