@@ -37,7 +37,6 @@ concurrency:
 
 jobs:
   build:
-    timeout-minutes: 3
     env:
       DOTNET_NOLOGO: true
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -48,8 +47,8 @@ jobs:
       projectFile: './src/Ruya.Primitives/Ruya.Primitives.csproj'
       projectTestFile: './test/Ruya.Primitives.Tests/Ruya.Primitives.Tests.csproj'
       repositoryDispatchEventType: 'Ruya.Primitives'
-
     if: contains(toJson(github.event.commits), '[skip ci]') == false
+    timeout-minutes: 3
     runs-on: ubuntu-latest
     environment: ${{github.event.inputs.environment}}
     outputs:
@@ -194,7 +193,7 @@ jobs:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
         with:
           tag_name: v${{env.version}}
-          name: ${{env.version}}
+          name: ${{github.workflow}}.${{env.version}}
           draft: false
           prerelease: false
           files: |
