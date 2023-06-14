@@ -1,31 +1,43 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <LangVersion>latest</LangVersion>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net7.0</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	</PropertyGroup>
 
-  <PropertyGroup>
-    <BuildNumber Condition=" '$(BuildNumber)' == '' ">0.0.0</BuildNumber>
-    <VersionPrefix>$(BuildNumber)</VersionPrefix>
-    <VersionSuffix Condition=" '$(Configuration)' == 'Debug' ">dev</VersionSuffix>
-    <Authors>Cengiz Ilerler</Authors>
-    <Product>Ruya.Services.DataAccess</Product>
-    <RepositoryUrl>https://github.com/cilerler/ruya</RepositoryUrl>
-  </PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+		<PlatformTarget>x64</PlatformTarget>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="3.1.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="3.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="3.1.2" />
-    <PackageReference Include="Dapper" Version="2.0.30" />
-    <PackageReference Include="FastMember" Version="1.5.0" />
-  </ItemGroup>
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+		<PlatformTarget>x64</PlatformTarget>
+		<Optimize>true</Optimize>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Ruya.Services.DataAccess.Abstractions" Version="[1.2.0,)" />
-    <!-- <ProjectReference Include="..\Ruya.Services.DataAccess.Abstractions\Ruya.Services.DataAccess.Abstractions.csproj" /> -->
-  </ItemGroup>
+	<PropertyGroup>
+		<Version Condition="'$(Configuration)' == 'Debug' ">0.0.0.0</Version>
+		<VersionSuffix Condition=" '$(Configuration)' == 'Debug' ">dev</VersionSuffix>
+		<Authors>Cengiz Ilerler</Authors>
+		<Product>Ruya.Services.DataAccess</Product>
+		<RepositoryUrl>https://github.com/cilerler/ruya</RepositoryUrl>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="7.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.1" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="7.0.0" />
+		<PackageReference Include="Dapper" Version="2.0.138" />
+		<PackageReference Include="FastMember" Version="1.5.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Ruya.Services.DataAccess.Abstractions" Version="[7.0.0,)">
+			<NoWarn>NU1604</NoWarn>
+		</PackageReference>
+		<!-- <ProjectReference Include="..\Ruya.Services.DataAccess.Abstractions\Ruya.Services.DataAccess.Abstractions.csproj" /> -->
+	</ItemGroup>
 
 </Project>
