@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net7.0</TargetFramework>
@@ -33,11 +33,15 @@
 		<PackageReference Include="FastMember" Version="1.5.0" />
 	</ItemGroup>
 
-	<ItemGroup>
+
+	<ItemGroup Condition=" '$(Configuration)' == 'Debug' ">
+		<ProjectReference Include="..\Ruya.Services.DataAccess.Abstractions\Ruya.Services.DataAccess.Abstractions.csproj" />
+	</ItemGroup>
+
+	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">
 		<PackageReference Include="Ruya.Services.DataAccess.Abstractions" Version="[7.0.0,)">
 			<NoWarn>NU1604</NoWarn>
 		</PackageReference>
-		<!-- <ProjectReference Include="..\Ruya.Services.DataAccess.Abstractions\Ruya.Services.DataAccess.Abstractions.csproj" /> -->
 	</ItemGroup>
 
 </Project>
