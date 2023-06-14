@@ -166,7 +166,8 @@ jobs:
 
       - name: Add PackageManager
         run: |
-            dotnet nuget add source https://api.nuget.org/v3/index.json -n nuget.org -u ${{secrets.NUGET_USERNAME}} -p ${{secrets.NUGET_API_KEY}} --store-password-in-clear-text
+            dotnet nuget list source
+            dotnet nuget add source https://api.nuget.org/v3/index.json -n nuget -u ${{secrets.NUGET_USERNAME}} -p ${{secrets.NUGET_API_KEY}} --store-password-in-clear-text
             dotnet nuget add source https://nuget.pkg.github.com/cilerler/index.json -n github -u ${{github.actor}} -p ${{secrets.PAT}} --store-password-in-clear-text
 
       - name: Restore
@@ -225,7 +226,7 @@ jobs:
         run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "github" --api-key ${{secrets.GITHUB_TOKEN}}
 
       - name: Push to Nuget
-        run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget.org" --api-key ${{secrets.NUGET_API_KEY}}
+        run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget" --api-key ${{secrets.NUGET_API_KEY}}
 
       - name: Debug details
         if: failure()
