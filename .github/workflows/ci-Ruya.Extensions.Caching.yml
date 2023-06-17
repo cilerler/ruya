@@ -194,27 +194,6 @@ jobs:
         if: steps.extract_metadata_environment.outputs.isProduction == true
         run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget.org" --api-key ${{secrets.NUGET_API_KEY}}
 
-      - name: Debug details
-        if: failure()
-        shell: pwsh
-        run: |
-          Write-Output "productionBranch    ${{env.productionBranch}}"
-          Write-Output "buildConfiguration  ${{env.buildConfiguration}}"
-          Write-Output "version             ${{env.version}}"
-          Write-Output "branch from payload ${{github.event.client_payload.branch}}"
-          Write-Output "branch              ${{steps.extract_metadata.outputs.branch}}"
-          Write-Output "production          ${{steps.extract_metadata_environment.outputs.isProduction}}"
-          Write-Output "staging             ${{steps.extract_metadata_environment.outputs.isStaging}}"
-          Write-Output "testing             ${{steps.extract_metadata_environment.outputs.isTesting}}"
-          Write-Output "integration         ${{steps.extract_metadata_environment.outputs.isIntegration}}"
-          Write-Output "development         ${{steps.extract_metadata_environment.outputs.isDevelopment}}"
-          Write-Output "environment input   ${{github.event.inputs.environment}}"
-          Write-Output "rollingDeployment   ${{github.event.inputs.rollingDeployment}}"
-          Write-Output "rollingDeployment   ${{env.repositoryDispatchEventType}}"
-          Write-Output "sha                 ${{env.hasSha}}"
-          Write-Output "github repository   ${{github.event.repository.name}}"
-          exit 1;
-
       - name: Publish artifacts (output)
         uses: actions/upload-artifact@v3
         if: failure()
