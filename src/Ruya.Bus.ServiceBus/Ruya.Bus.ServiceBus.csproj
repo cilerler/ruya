@@ -21,7 +21,7 @@
 		<Version Condition="'$(Configuration)' == 'Debug' ">0.0.0.0</Version>
 		<VersionSuffix Condition=" '$(Configuration)' == 'Debug' ">dev</VersionSuffix>
 		<Authors>Cengiz Ilerler</Authors>
-		<Product>Ruya.Bus.RabbitMQ</Product>
+		<Product>Ruya.Bus.ServiceBus</Product>
 		<RepositoryUrl>https://github.com/cilerler/ruya</RepositoryUrl>
 	</PropertyGroup>
 
@@ -33,7 +33,7 @@
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="7.0.0" />
-		<PackageReference Include="RabbitMQ.Client" Version="6.5.0" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.15.0" />
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">

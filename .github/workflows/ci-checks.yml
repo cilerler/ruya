@@ -1,0 +1,121 @@
+name: ci-checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: environment
+        description: 'Environment'
+        required: false
+  push:
+    branches: ['hotfix-**']
+  pull_request:
+    branches: [develop]
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  solutionPath: 'Ruya.sln'
+  buildConfiguration: 'Release'
+
+jobs:
+  format:
+    name: Format
+    if: contains(toJson(github.event.commits), '[skip ci]') == false
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Git AutoCrlf Setup
+        run: |
+          git config --global core.autocrlf true
+
+      - name: Extract metadata
+        run: |
+          echo "branch=$(echo $(if [ ${GITHUB_EVENT_NAME} == 'pull_request' ]; then echo ${GITHUB_HEAD_REF}; else echo ${GITHUB_REF#refs/heads/}; fi))" >> $GITHUB_OUTPUT
+          echo "branchsafe=$(echo $(if [ ${{github.event_name}} == 'pull_request' ]; then echo ${GITHUB_HEAD_REF}; else echo ${GITHUB_REF#refs/heads/}; fi | sed -r 's/[/]+/-/g'))" >> $GITHUB_OUTPUT
+          echo "repository=$(echo ${GITHUB_REPOSITORY#*/})" >> $GITHUB_OUTPUT
+          echo "coauthoredby=$(echo $(if [ ${GITHUB_EVENT_NAME} == 'pull_request' ]; then echo '${{github.event.pull_request.user.login}} <${{github.event.pull_request.user.id}}+${{github.event.pull_request.user.login}}@users.noreply.github.com>'; else echo '${{github.event.sender.login}} <${{github.event.sender.id}}+${{github.event.sender.login}}@users.noreply.github.com>'; fi))" >> $GITHUB_OUTPUT
+        id: extract_metadata
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        # submodules: recursive
+        # fetch-depth: 0
+        with:
+          ref: ${{steps.extract_metadata.outputs.branch}}
+          # ref: ${{ github.event.workflow_run.head_branch }}
+
+      - name: Add PackageManager
+        run: dotnet nuget add source https://nuget.pkg.github.com/cilerler/index.json -n github -u ${{github.actor}} -p ${{ secrets.PAT}} --store-password-in-clear-text
+
+      - name: Format
+        if: github.event_name == 'pull_request'
+        run: |
+          dotnet format ${{env.solutionPath}} -v diagnostic
+
+      - name: Git Status Checker for Format
+        run: |
+          echo "modified=$(if [ -n "$(git status --porcelain --untracked-files=no)" ]; then echo 'true'; else echo 'false'; fi)" >> $GITHUB_OUTPUT
+          # echo ::set-output name=modified::$(git update-index -q --refresh && if git diff-index --quiet HEAD --; then echo "false"; else echo "true"; fi)
+        id: git-status-check
+
+      - name: Push changes
+        if: steps.git-status-check.outputs.modified == 'true'
+        continue-on-error: true
+        env:
+          TOKEN: ${{secrets.GITHUB_TOKEN}}
+          OWNER: ${{github.repository_owner}}
+          REPOSITORY: ${{steps.extract_metadata.outputs.repository}}
+          CO_AUTHORED_BY: ${{steps.extract_metadata.outputs.coauthoredby}}
+        run: |
+          echo steps.git-status-check.outputs.modified
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${TOKEN}@github.com/${{env.OWNER}}/${{env.REPOSITORY}}
+          git status
+          git commit -a -m "$(echo -e 'Automated FORMAT update\nCo-authored-by: ${{env.CO_AUTHORED_BY}}')"
+          git push
+
+  build:
+    needs: [format]
+    name: Build
+    if: contains(toJson(github.event.commits), '[skip ci]') == false
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Git AutoCrlf Setup
+        run: |
+          git config --global core.autocrlf true
+
+      - name: Extract metadata
+        run: |
+          echo "branch=$(echo $(if [ ${GITHUB_EVENT_NAME} == 'pull_request' ]; then echo ${GITHUB_HEAD_REF}; else echo ${GITHUB_REF#refs/heads/}; fi))" >> $GITHUB_OUTPUT
+          echo "branchsafe=$(echo $(if [ ${{github.event_name}} == 'pull_request' ]; then echo ${GITHUB_HEAD_REF}; else echo ${GITHUB_REF#refs/heads/}; fi | sed -r 's/[/]+/-/g'))" >> $GITHUB_OUTPUT
+        id: extract_metadata
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        # submodules: recursive
+        # fetch-depth: 0
+        with:
+          ref: ${{steps.extract_metadata.outputs.branch}}
+          # ref: ${{ github.event.workflow_run.head_branch }}
+
+      - name: Add PackageManager
+        run: dotnet nuget add source https://nuget.pkg.github.com/cilerler/index.json -n github -u ${{github.actor}} -p ${{ secrets.PAT}} --store-password-in-clear-text
+
+      - name: Restore
+        run: |
+          dotnet restore ${solutionPath}
+
+      - name: Build
+        run: |
+          dotnet build ${solutionPath} -c ${buildConfiguration}

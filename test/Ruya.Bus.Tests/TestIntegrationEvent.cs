@@ -1,7 +1,7 @@
-using Ruya.Bus.Events;
+﻿using Ruya.Bus.Events;
 
 namespace Ruya.Bus.Tests;
 
-public class TestIntegrationEvent : IntegrationEvent
+public record TestIntegrationEvent : IntegrationEvent
 {
 }

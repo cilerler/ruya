@@ -1,10 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Ruya.Bus.Events;
 
-public class IntegrationEvent
+public record IntegrationEvent
 {
 	public IntegrationEvent()
 	{
@@ -19,15 +18,7 @@ public class IntegrationEvent
 		CreationDate = createDate;
 	}
 
-	[JsonPropertyName("id")] public Guid Id { get; private set; }
+	[JsonInclude] public Guid Id { get; private init; }
 
-	[JsonPropertyName("creationDate")] public DateTime CreationDate { get; private set; }
-
-	[JsonPropertyName("data")] public object Data { get; set; }
-
-	[JsonIgnore] public bool PublishAsError { get; set; }
-
-	[JsonPropertyName("error")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public List<object> Error { get; set; }
+	[JsonInclude] public DateTime CreationDate { get; private init; }
 }

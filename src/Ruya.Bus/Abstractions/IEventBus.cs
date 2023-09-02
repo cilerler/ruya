@@ -1,20 +1,17 @@
-﻿using System.Collections.Generic;
+﻿using System;
 using Ruya.Bus.Events;
 
 namespace Ruya.Bus.Abstractions;
 
 public interface IEventBus
 {
-	void Publish(IntegrationEvent @event, Dictionary<string, object> parameters);
+	void Publish(IntegrationEvent @event, byte priority = default, TimeSpan delay = default);
 
-	void Subscribe<T, TH>() where T : IntegrationEvent where TH : IIntegrationEventHandler<T>;
+	void Subscribe<T, TH>()
+		where T : IntegrationEvent
+		where TH : IIntegrationEventHandler<T>;
 
-	void SubscribeDynamic<TH>(string eventName) where TH : IDynamicIntegrationEventHandler;
-
-	void UnsubscribeDynamic<TH>(string eventName) where TH : IDynamicIntegrationEventHandler;
-
-	void Unsubscribe<T, TH>() where TH : IIntegrationEventHandler<T> where T : IntegrationEvent;
-
-	void AddConsumerChannel(string queueName);
-	void RemoveConsumerChannel(string queueName);
+	void Unsubscribe<T, TH>()
+		where TH : IIntegrationEventHandler<T>
+		where T : IntegrationEvent;
 }

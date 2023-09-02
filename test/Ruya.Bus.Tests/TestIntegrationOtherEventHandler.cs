@@ -6,16 +6,17 @@ namespace Ruya.Bus.Tests;
 
 public class TestIntegrationOtherEventHandler : IIntegrationEventHandler<TestIntegrationEvent>
 {
+	public bool Handled { get; private set; }
+
 	public TestIntegrationOtherEventHandler()
 	{
 		Handled = false;
 	}
 
-	public bool Handled { get; private set; }
 
-	public async Task Handle(TestIntegrationEvent @event, Dictionary<string, object> parameters)
+	public Task Handle(TestIntegrationEvent @event)
 	{
 		Handled = true;
-		await Task.CompletedTask;
+		return Task.CompletedTask;
 	}
 }

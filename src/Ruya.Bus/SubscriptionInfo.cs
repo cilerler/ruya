@@ -2,24 +2,27 @@
 
 namespace Ruya.Bus;
 
-public class SubscriptionInfo
+public partial class InMemoryEventBusSubscriptionsManager : IEventBusSubscriptionsManager
 {
-	private SubscriptionInfo(bool isDynamic, Type handlerType)
+	public class SubscriptionInfo
 	{
-		IsDynamic = isDynamic;
-		HandlerType = handlerType;
-	}
+		private SubscriptionInfo(bool isDynamic, Type handlerType)
+		{
+			IsDynamic = isDynamic;
+			HandlerType = handlerType;
+		}
 
-	public bool IsDynamic { get; }
-	public Type HandlerType { get; }
+		public bool IsDynamic { get; }
+		public Type HandlerType { get; }
 
-	public static SubscriptionInfo Dynamic(Type handlerType)
-	{
-		return new SubscriptionInfo(true, handlerType);
-	}
+		public static SubscriptionInfo Dynamic(Type handlerType)
+		{
+			return new SubscriptionInfo(true, handlerType);
+		}
 
-	public static SubscriptionInfo Typed(Type handlerType)
-	{
-		return new SubscriptionInfo(false, handlerType);
+		public static SubscriptionInfo Typed(Type handlerType)
+		{
+			return new SubscriptionInfo(false, handlerType);
+		}
 	}
 }

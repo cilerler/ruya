@@ -5,7 +5,7 @@ using Ruya.Bus;
 // ReSharper disable once CheckNamespace
 namespace Ruya;
 
-public static partial class StartupExtensions
+public static class StartupExtensions
 {
 	public static IServiceCollection AddEventBus(this IServiceCollection serviceCollection)
 	{
