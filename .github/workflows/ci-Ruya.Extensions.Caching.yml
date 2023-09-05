@@ -65,11 +65,11 @@ jobs:
     steps:
       - if: env.hasSha=='false'
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - if: env.hasSha=='true'
         name: CheckoutRepositoryDispatch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{github.event.client_payload.branch}}
 
