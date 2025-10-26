@@ -188,7 +188,7 @@ public class Client : ICloudFileService
 				{
 					output.Add(new CloudFileMetadata
 					{
-						Bucket = string.IsNullOrEmpty(bucketName) ? _containerName : bucketName,
+						Bucket = containerName,
 						Size = (ulong?)blobItem.Properties.ContentLength,
 						Name = blobItem.Name,
 						LastModified = blobItem.Properties.LastModified.Value.UtcDateTime,
