@@ -35,10 +35,10 @@
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">
-		<PackageReference Include="Ruya.Primitives" Version="[8.0.0,)">
+		<PackageReference Include="Ruya.Primitives" Version="[8.0.12,)">
 			<NoWarn>NU1604</NoWarn>
 		</PackageReference>
-		<PackageReference Include="Ruya.Services.CloudStorage.Abstractions" Version="[8.0.0,)">
+		<PackageReference Include="Ruya.Services.CloudStorage.Abstractions" Version="[8.0.3,)">
 			<NoWarn>NU1604</NoWarn>
 		</PackageReference>
 	</ItemGroup>

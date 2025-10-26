@@ -5,7 +5,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
-
+using System.Threading.Tasks;
 using Azure;
 using Azure.Identity;
 using Azure.Storage.Blobs;
@@ -23,54 +23,64 @@ namespace Ruya.Services.CloudStorage.Azure;
 public class Client : ICloudFileService
 {
 	private readonly ILogger _logger;
-	private readonly Setting _options;
-
-	private readonly BlobContainerClient _storageClient;
+	private readonly BlobServiceClient _serviceClient;
+	private string _containerName;
 
 	// ReSharper disable once SuggestBaseTypeForParameter
 	public Client(IConfiguration configuration, ILogger<Client> logger, IOptions<Setting> options)
 	{
 		_logger = logger;
-		_options = options.Value;
-		var connectionString = configuration.GetConnectionString(_options.ConnectionStringKey) ?? throw new ArgumentNullException(nameof(_options.ConnectionStringKey));
-		_storageClient = new BlobContainerClient(connectionString, _options.Container);
-		_storageClient.CreateIfNotExists();
+		_containerName = options.Value.Container;
+		var connectionString = configuration.GetConnectionString(options.Value.ConnectionStringKey) ?? throw new ArgumentNullException(nameof(Setting.ConnectionStringKey));
+		_serviceClient = new BlobServiceClient(connectionString);
+
+		try
+		{
+			if (!string.IsNullOrWhiteSpace(_containerName))
+				_serviceClient.GetBlobContainerClient(_containerName).CreateIfNotExists();
+		}
+		catch (RequestFailedException ex) when (ex.ErrorCode != BlobErrorCode.ContainerAlreadyExists)
+		{
+			throw;
+		}
 	}
 
 	public void SetBucket(string input)
 	{
-		throw new NotSupportedException();
+		_containerName = input;
 	}
 
 	public ICloudFileMetadata GetFileMetadata(string fileName, string bucketName = "")
 	{
-		EnsureContainerExist(bucketName);
-		try
+		return EnsureContainerExist(bucketName, (blobContainerClient, containerName) =>
 		{
-			BlobClient blobClient = _storageClient.GetBlobClient(fileName);
-			BlobProperties properties = blobClient.GetProperties();
-
-			var output = new CloudFileMetadata
+			try
 			{
-				Bucket = blobClient.BlobContainerName,
-				Size = (ulong?)properties.ContentLength,
-				Name = fileName,
-				LastModified = properties.LastModified.UtcDateTime,
-				ContentType = properties.ContentType,
-				SignedUrl = blobClient.GenerateSasUri(BlobSasPermissions.Read, DateTimeOffset.UtcNow.AddHours(1)).ToString()
-			};
-			return output;
-		}
-		catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
-		{
-			_logger.Log(LogLevel.Warning, "Not Found - {fileName} in container {containerName}", fileName, _options.Container);
-			throw new ArgumentException($"Not Found - {fileName} in container {_options.Container}", ex);
-		}
-		catch (RequestFailedException ex)
-		{
-			_logger.Log(LogLevel.Error, ex, ex.Message);
-			throw;
-		}
+				BlobClient blobClient = blobContainerClient.GetBlobClient(fileName);
+				BlobProperties properties = blobClient.GetProperties();
+
+				var output = new CloudFileMetadata
+				{
+					Bucket = blobClient.BlobContainerName,
+					Size = (ulong?)properties.ContentLength,
+					Name = fileName,
+					LastModified = properties.LastModified.UtcDateTime,
+					ContentType = properties.ContentType,
+					SignedUrl = blobClient.GenerateSasUri(BlobSasPermissions.Read, DateTimeOffset.UtcNow.AddHours(1)).ToString()
+				};
+				return output;
+			}
+			catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
+			{
+				_logger.Log(LogLevel.Warning, "Not Found - {fileName} in container {containerName}", fileName, containerName);
+				throw new ArgumentException($"Not Found - {fileName} in container {containerName}", ex);
+			}
+			catch (RequestFailedException ex)
+			{
+				_logger.Log(LogLevel.Error, ex, ex.Message);
+				throw;
+			}
+		});
 	}
 
 	public ICloudFileMetadata UploadFile(string sourcePath, string targetPath, string bucketName = "")
@@ -85,76 +95,80 @@ public class Client : ICloudFileService
 			_logger.Log(LogLevel.Warning, e, "An error occured while trying to retrieve MimeType");
 		}
 
-		BlobClient blob = _storageClient.GetBlobClient(targetPath);
 		using FileStream fileStream = File.OpenRead(sourcePath);
 		return UploadStream(fileStream, targetPath, bucketName: bucketName);
 	}
 
 	public ICloudFileMetadata UploadStream(Stream source, string targetPath, string contentType = "application/octet-stream", string bucketName = "")
 	{
-		EnsureContainerExist(bucketName);
-
-		string fileName = Path.GetFileName(targetPath);
-		string directoryName = Path.GetDirectoryName(targetPath);
-		string correctedDirectoryName = directoryName.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Trim(Path.AltDirectorySeparatorChar);
-		string destinationFileName = (correctedDirectoryName + Path.AltDirectorySeparatorChar + fileName).TrimStart(Path.AltDirectorySeparatorChar);
-
-		var progress = new Progress<long>(p => _logger.LogTrace("destination as://{container}/{destinationFileName}, progress: {progress}", _options.Container, destinationFileName, p));
-		BlobClient blobClient = _storageClient.GetBlobClient(targetPath);
-		source.Seek(0, SeekOrigin.Begin);
-		BlobContentInfo upload;
-		try
+		return EnsureContainerExist(bucketName, (blobContainerClient, containerName) =>
 		{
-			upload = blobClient.Upload(source, new BlobUploadOptions { ProgressHandler = progress }).Value;
-		}
-		catch (Exception e)
-		{
-			_logger.Log(LogLevel.Error, e, "Encountered an error while uploading file stream. {ContainerName} {FileName}", _options.Container, fileName);
-			throw;
-		}
+			string fileName = Path.GetFileName(targetPath);
+			string directoryName = Path.GetDirectoryName(targetPath);
+			string correctedDirectoryName = directoryName.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Trim(Path.AltDirectorySeparatorChar);
+			string destinationFileName = (correctedDirectoryName + Path.AltDirectorySeparatorChar + fileName).TrimStart(Path.AltDirectorySeparatorChar);
 
-		BlobProperties properties = blobClient.GetProperties().Value;
-		var output = new CloudFileMetadata
-		{
-			Bucket = blobClient.BlobContainerName,
-			Size = (ulong?)properties.ContentLength,
-			Name = destinationFileName,
-			LastModified = properties.LastModified.UtcDateTime,
-			ContentType = properties.ContentType,
-		};
-		return output;
+			var progress = new Progress<long>(p => _logger.LogTrace("destination as://{container}/{destinationFileName}, progress: {progress}", containerName, destinationFileName, p));
+			BlobClient blobClient = blobContainerClient.GetBlobClient(targetPath);
+			source.Seek(0, SeekOrigin.Begin);
+			BlobContentInfo upload;
+			try
+			{
+				upload = blobClient.Upload(source, new BlobUploadOptions { ProgressHandler = progress }).Value;
+			}
+			catch (Exception e)
+			{
+				_logger.Log(LogLevel.Error, e, "Encountered an error while uploading file stream. {ContainerName} {FileName}", containerName, fileName);
+				throw;
+			}
+
+			BlobProperties properties = blobClient.GetProperties().Value;
+			var output = new CloudFileMetadata
+			{
+				Bucket = blobClient.BlobContainerName,
+				Size = (ulong?)properties.ContentLength,
+				Name = destinationFileName,
+				LastModified = properties.LastModified.UtcDateTime,
+				ContentType = properties.ContentType,
+			};
+			return output;
+		});
 	}
 
 	public void DownloadFile(string fileName, Stream destinationStream, string bucketName = "")
 	{
-		EnsureContainerExist(bucketName);
-
-		try
+		EnsureContainerExist(bucketName, (blobContainerClient, containerName) =>
 		{
-			_storageClient.GetBlobClient(fileName).DownloadTo(destinationStream);
-		}
-		catch (Exception e)
-		{
-			_logger.Log(LogLevel.Error, e, "Encountered an error while dowloading file. {ContainerName} {FileName}", _options.Container, fileName);
-			throw;
-		}
+			try
+			{
+				blobContainerClient.GetBlobClient(fileName).DownloadTo(destinationStream);
+			}
+			catch (Exception e)
+			{
+				_logger.Log(LogLevel.Error, e, "Encountered an error while dowloading file. {ContainerName} {FileName}", containerName, fileName);
+				throw;
+			}
 
-		destinationStream.Seek(0, SeekOrigin.Begin);
+			destinationStream.Seek(0, SeekOrigin.Begin);
+			return Task.CompletedTask;
+		});
 	}
 
 	public void DeleteFile(string fileName, string bucketName = "")
 	{
-		EnsureContainerExist(bucketName);
-
-		try
+		EnsureContainerExist(bucketName, (blobContainerClient, containerName) =>
 		{
-			_storageClient.GetBlobClient(fileName).DeleteIfExists();
-		}
-		catch (Exception e)
-		{
-			_logger.Log(LogLevel.Error, e, "Encountered an error while deleting file. {ContainerName} {FileName}", _options.Container, fileName);
-			throw;
-		}
+			try
+			{
+				blobContainerClient.GetBlobClient(fileName).DeleteIfExists();
+				return Task.CompletedTask;
+			}
+			catch (Exception e)
+			{
+				_logger.Log(LogLevel.Error, e, "Encountered an error while deleting file. {ContainerName} {FileName}", containerName, fileName);
+				throw;
+			}
+		});
 	}
 
 	public void CopyFile(string sourceBucketName, string sourceFileName, string destinationBucketName, string destinationFileName)
@@ -164,39 +178,51 @@ public class Client : ICloudFileService
 
 	public List<ICloudFileMetadata> GetFileList(string prefix = null, string bucketName = "")
 	{
-		EnsureContainerExist(bucketName);
-
-		var output = new List<ICloudFileMetadata>();
-		try
+		return EnsureContainerExist(bucketName, (blobContainerClient, containerName) =>
 		{
-			var blobItems = _storageClient.GetBlobs(prefix: prefix);
-			foreach (var blobItem in blobItems)
+			var output = new List<ICloudFileMetadata>();
+			try
 			{
-				output.Add(new CloudFileMetadata
+				var blobItems = blobContainerClient.GetBlobs(prefix: prefix);
+				foreach (var blobItem in blobItems)
 				{
-					Bucket = _options.Container,
-					Size = (ulong?)blobItem.Properties.ContentLength,
-					Name = blobItem.Name,
-					LastModified = blobItem.Properties.LastModified.Value.UtcDateTime,
-					ContentType = blobItem.Properties.ContentType
-				});
+					output.Add(new CloudFileMetadata
+					{
+						Bucket = string.IsNullOrEmpty(bucketName) ? _containerName : bucketName,
+						Size = (ulong?)blobItem.Properties.ContentLength,
+						Name = blobItem.Name,
+						LastModified = blobItem.Properties.LastModified.Value.UtcDateTime,
+						ContentType = blobItem.Properties.ContentType
+					});
+				}
 			}
-		}
-		catch (Exception e)
-		{
-			_logger.Log(LogLevel.Error, e, "Encountered an error while getting file list. {Prefix} {ContainerName}", prefix, _options.Container);
-			throw;
-		}
+			catch (Exception e)
+			{
+				_logger.Log(LogLevel.Error, e, "Encountered an error while getting file list. {Prefix} {ContainerName}", prefix, containerName);
+				throw;
+			}
 
-		return output;
+			return output;
+		});
 	}
 
-	private static void EnsureContainerExist(string containerName)
+	private TRes EnsureContainerExist<TRes>(string bucketName, Func<BlobContainerClient, string, TRes> func)
 	{
-		if (!string.IsNullOrWhiteSpace(containerName))
+		if (!string.IsNullOrWhiteSpace(bucketName))
 		{
-			throw new NotSupportedException();
+			try
+			{
+				_serviceClient.GetBlobContainerClient(bucketName).CreateIfNotExists();
+			}
+			catch (RequestFailedException ex) when (ex.ErrorCode != BlobErrorCode.ContainerAlreadyExists)
+			{
+				throw;
+			}
+
+			return func(_serviceClient.GetBlobContainerClient(bucketName), bucketName);
 		}
+
+		return func(_serviceClient.GetBlobContainerClient(_containerName), _containerName);
 	}
 
 	public string GetSignedUploadUrl(string filename, string contentType, string bucketName, int expirationMinutes = 60)
