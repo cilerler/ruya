@@ -49,6 +49,10 @@
 ![](https://img.shields.io/nuget/dt/Ruya.Services.CloudStorage.Google.svg?logo=nuget&color=yellow)
 ![](https://github.com/cilerler/ruya/workflows/Ruya.Services.CloudStorage.Google/badge.svg)
 
+[![](https://img.shields.io/nuget/v/Ruya.Services.CloudStorage.Azure.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.CloudStorage.Azure)
+![](https://img.shields.io/nuget/dt/Ruya.Services.CloudStorage.Azure.svg?logo=nuget&color=yellow)
+![](https://github.com/cilerler/ruya/workflows/Ruya.Services.CloudStorage.Azure/badge.svg)
+
 [![](https://img.shields.io/nuget/v/Ruya.Services.CloudStorage.Local.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.CloudStorage.Local)
 ![](https://img.shields.io/nuget/dt/Ruya.Services.CloudStorage.Local.svg?logo=nuget&color=yellow)
 ![](https://github.com/cilerler/ruya/workflows/Ruya.Services.CloudStorage.Local/badge.svg)

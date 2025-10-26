@@ -42,6 +42,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ruya.Bus.RabbitMQ.Tests", "
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ruya.Services.CloudStorage.Local.Tests", "test\Ruya.Services.CloudStorage.Local.Tests\Ruya.Services.CloudStorage.Local.Tests.csproj", "{FCD063F6-C431-44FC-B557-0288B5AB3BDA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruya.Services.CloudStorage.Azure", "src\Ruya.Services.CloudStorage.Azure\Ruya.Services.CloudStorage.Azure.csproj", "{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -268,6 +270,18 @@ Global
 		{FCD063F6-C431-44FC-B557-0288B5AB3BDA}.Release|x64.Build.0 = Release|Any CPU
 		{FCD063F6-C431-44FC-B557-0288B5AB3BDA}.Release|x86.ActiveCfg = Release|Any CPU
 		{FCD063F6-C431-44FC-B557-0288B5AB3BDA}.Release|x86.Build.0 = Release|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Debug|x64.Build.0 = Debug|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Debug|x86.Build.0 = Debug|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Release|x64.ActiveCfg = Release|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Release|x64.Build.0 = Release|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Release|x86.ActiveCfg = Release|Any CPU
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -291,6 +305,7 @@ Global
 		{B89F8AE1-FBAA-49CE-BA98-240362CC3F06} = {D9FF0C38-FDA7-45D8-9E9D-BF7800FA6739}
 		{0C843583-6CA9-437F-AFA4-2A922050C1CD} = {D9FF0C38-FDA7-45D8-9E9D-BF7800FA6739}
 		{FCD063F6-C431-44FC-B557-0288B5AB3BDA} = {D9FF0C38-FDA7-45D8-9E9D-BF7800FA6739}
+		{05EAAF3F-16F9-FA68-27E5-B9328916A1E3} = {CB7634DD-E2AF-4F14-A701-8F741F038F80}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {9042ADAC-A909-4DCD-9B73-10BEC6762666}
