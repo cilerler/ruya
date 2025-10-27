@@ -65,11 +65,11 @@ jobs:
     steps:
       - if: env.hasSha=='false'
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - if: env.hasSha=='true'
         name: CheckoutRepositoryDispatch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{github.event.client_payload.branch}}
 
@@ -152,7 +152,7 @@ jobs:
         run: dotnet pack $projectFile --configuration $buildConfiguration --no-restore --no-build --output ${{env.packageOutputPath}}
 
       - name: Publish artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: packages
           path: ${{env.packageOutputPath}}/*.nupkg
@@ -161,7 +161,7 @@ jobs:
 
       - name: Create tag
         if: steps.extract_metadata_environment.outputs.isProduction == false
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
           script: |
             github.rest.git.createRef({
@@ -174,7 +174,7 @@ jobs:
       - name: Create Release
         if: steps.extract_metadata_environment.outputs.isProduction == true
         id: create_release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
         with:
@@ -195,7 +195,7 @@ jobs:
         run: dotnet nuget push '${{env.packageOutputPath}}/*.nupkg' --skip-duplicate --source "nuget.org" --api-key ${{secrets.NUGET_API_KEY}}
 
       - name: Publish artifacts (output)
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: output
@@ -211,7 +211,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Repository Dispatch
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{secrets.PAT}}
           repository: ${{matrix.repo}}
