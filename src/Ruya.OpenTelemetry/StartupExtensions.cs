@@ -69,8 +69,8 @@ public static class StartupExtensions
             .GetSection(OpenTelemetrySettings.ConfigurationSectionName)
             .Get<OpenTelemetrySettings>() ?? new OpenTelemetrySettings();
 
-        var serviceName = settings.Service.Name ?? Primitives.Startup.AssemblyName;
-        var serviceVersion = settings.Service.Version ?? Primitives.Startup.AssemblyVersion;
+        var serviceName = settings.Service.Name ?? Ruya.Primitives.Startup.AssemblyName;
+        var serviceVersion = settings.Service.Version ?? Ruya.Primitives.Startup.AssemblyVersion;
 
         var resourceBuilder = ResourceBuilder.CreateDefault()
             .AddService(
@@ -136,7 +136,7 @@ public static class StartupExtensions
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
                     .AddProcessInstrumentation()
-                    .AddMeter(Primitives.Startup.AssemblyName);
+                    .AddMeter(Ruya.Primitives.Startup.AssemblyName);
 
                 if (settings.Meters.Count > 0)
                 {
@@ -158,7 +158,7 @@ public static class StartupExtensions
             .WithTracing(tracing =>
             {
                 tracing.SetResourceBuilder(resourceBuilder)
-                    .AddSource(Primitives.Startup.AssemblyName)
+                    .AddSource(Ruya.Primitives.Startup.AssemblyName)
                     .AddProcessor(new EnvironmentTagProcessor(builder.Environment.EnvironmentName));
 
                 SamplerConfiguration.Configure(tracing, settings.Sampling, builder.Environment.IsDevelopment());
