@@ -277,7 +277,7 @@ jobs:
             --store-password-in-clear-text
 
       - name: Download Build Output
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: build-${{ inputs.project-name }}
           path: ./artifacts
@@ -348,7 +348,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Download Build Output
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: build-${{ inputs.project-name }}
           path: ./artifacts
@@ -403,7 +403,7 @@ jobs:
 
     steps:
       - name: Download Packages
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: packages-${{ inputs.project-name }}-${{ needs.build.outputs.branch-safe }}
           path: ./packages
