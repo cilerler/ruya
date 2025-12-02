@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+
+		<IsPackable>false</IsPackable>
+
+		<IsTestProject>true</IsTestProject>
+		<OutputType>Exe</OutputType>
+		<EnableMSTestRunner>true</EnableMSTestRunner>
+
+		<TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+		<TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+
+		<TestingExtensionsProfile>AllMicrosoft</TestingExtensionsProfile>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" />
+		<PackageReference Include="MSTest" />
+		<PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+		<PackageReference Include="Microsoft.Extensions.Configuration" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+		<PackageReference Include="Moq" />
+		<PackageReference Include="Testcontainers.MsSql" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Ruya.EntityFrameworkCore.SqlServer\Ruya.EntityFrameworkCore.SqlServer.csproj" />
+	</ItemGroup>
+
+</Project>

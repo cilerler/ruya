@@ -1,0 +1,60 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="azure-pipelines.yml" />
+    <File Path="CHANGELOG.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="Directory.Packages.props" />
+    <File Path="icon.png" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Ruya.Diagnostics.Abstractions/Ruya.Diagnostics.Abstractions.csproj" />
+    <Project Path="src/Ruya.Diagnostics/Ruya.Diagnostics.csproj" />
+    <Project Path="src/Ruya.EntityFrameworkCore.SqlServer/Ruya.EntityFrameworkCore.SqlServer.csproj" />
+    <Project Path="src/Ruya.Extensions.Configuration/Ruya.Extensions.Configuration.csproj" />
+    <Project Path="src/Ruya.OpenTelemetry/Ruya.OpenTelemetry.csproj" />
+    <Project Path="src/Ruya.Primitives/Ruya.Primitives.csproj" />
+    <Project Path="src/Ruya.Services.CloudStorage.Abstractions/Ruya.Services.CloudStorage.Abstractions.csproj" />
+    <Project Path="src/Ruya.Services.CloudStorage.Amazon/Ruya.Services.CloudStorage.Amazon.csproj" />
+    <Project Path="src/Ruya.Services.CloudStorage.Azure/Ruya.Services.CloudStorage.Azure.csproj" />
+    <Project Path="src/Ruya.Services.CloudStorage.Google/Ruya.Services.CloudStorage.Google.csproj" />
+    <Project Path="src/Ruya.Services.CloudStorage.Local/Ruya.Services.CloudStorage.Local.csproj" />
+    <Project Path="src/Ruya.Services.DistributedLock.Abstractions/Ruya.Services.DistributedLock.Abstractions.csproj" />
+    <Project Path="src/Ruya.Services.DistributedLock.InMemory/Ruya.Services.DistributedLock.InMemory.csproj" />
+    <Project Path="src/Ruya.Services.DistributedLock.MsSql/Ruya.Services.DistributedLock.MsSql.csproj" />
+    <Project Path="src/Ruya.Services.DistributedLock.Redis/Ruya.Services.DistributedLock.Redis.csproj" />
+    <Project Path="src/Ruya.Services.DistributedLock/Ruya.Services.DistributedLock.csproj" />
+    <Project Path="src/Ruya.Services.MessageQueue.InMemory/Ruya.Services.MessageQueue.InMemory.csproj" />
+    <Project Path="src/Ruya.Services.MessageQueue.MsSql/Ruya.Services.MessageQueue.MsSql.csproj" />
+    <Project Path="src/Ruya.Services.MessageQueue.RabbitMQ/Ruya.Services.MessageQueue.RabbitMQ.csproj" />
+    <Project Path="src/Ruya.Services.MessageQueue.Redis/Ruya.Services.MessageQueue.Redis.csproj" />
+    <Project Path="src/Ruya.Services.MessageQueue/Ruya.Services.MessageQueue.csproj" />
+    <Project Path="src/Ruya.System.Xml.Serialization/Ruya.System.Xml.Serialization.csproj" />
+    <Project Path="src/Ruya.Testing.Primitives/Ruya.Testing.Primitives.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.OpenTelemetry.Integration.Tests/Ruya.OpenTelemetry.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.CloudStorage.Azure.Integration.Tests/Ruya.Services.CloudStorage.Azure.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.CloudStorage.Google.Integration.Tests/Ruya.Services.CloudStorage.Google.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.CloudStorage.Integration.Tests/Ruya.Services.CloudStorage.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.CloudStorage.Local.Integration.Tests/Ruya.Services.CloudStorage.Local.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.CloudStorage.Tests.Common/Ruya.Services.CloudStorage.Tests.Common.csproj" />
+    <Project Path="tests/Ruya.Services.CloudStorage.Unit.Tests/Ruya.Services.CloudStorage.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.DistributedLock.Mssql.Integration.Tests/Ruya.Services.DistributedLock.Mssql.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.DistributedLock.Redis.Integration.Tests/Ruya.Services.DistributedLock.Redis.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.DistributedLock.Unit.Tests/Ruya.Services.DistributedLock.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests.csproj" />
+  </Folder>
+</Solution>

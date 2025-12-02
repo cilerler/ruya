@@ -1,0 +1,115 @@
+# ASP.NET Core (.NET Framework)
+# Build and test ASP.NET Core projects targeting the full .NET Framework.
+# Add steps that publish symbols, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+# You can also tell Azure Pipelines to skip running a pipeline that a commit would normally trigger. Just include [skip ci] in the commit message or description of the HEAD commit and Azure Pipelines will skip running CI. You can also use any of the variations below.
+#[skip ci] or [ci skip]
+#skip-checks: true or skip-checks:true
+#[skip azurepipelines] or [azurepipelines skip]
+#[skip azpipelines] or [azpipelines skip]
+#[skip azp] or [azp skip]
+#***NO_CI***
+
+# name: $(TeamProject)_$(BuildDefinitionName)_$(SourceBranchName)_$(Build.DefinitionVersion)_$(Build.BuildId)_$(Build.BuildNumber)_$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  batch: true
+  branches:
+    include:
+    - master
+  paths:
+    include:
+    - src/Ruya.Primitives
+    exclude:
+    - README.md
+
+pool:
+  vmImage: 'ubuntu-16.04'
+
+variables:
+  solution: '**/*.slnx'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  buildNumber: '$(MajorVersion).$(MinorVersion).$(Build.BuildId)'
+
+steps:
+- pwsh: |
+    Write-Host "##vso[build.updatebuildnumber]$(buildNumber)"
+  displayName: update the "Build Number"
+- script: |
+    git config --global --add filter.lfs.required true
+    git config --global --add filter.lfs.smudge "git-lfs smudge -- %f"
+    git config --global --add filter.lfs.process "git-lfs filter-process"
+    git config --global --add filter.lfs.clean "git-lfs clean -- %f"
+  displayName: Configure LFS for use with submodules
+- checkout: self
+  lfs: true
+  submodules: true
+- task: UseDotNet@2
+  displayName: dotnet sdk
+  inputs:
+    packageType: 'sdk'
+    version: '3.0.100'
+- task: DotNetCoreCLI@2
+  displayName: dotnet restore
+  inputs:
+    command: 'restore'
+    projects: '**/Ruya.Primitives.csproj'
+    # feedsToUse: config
+    # nugetConfigPath: NuGet.config    # Relative to root of the repository
+    # externalFeedCredentials: <Name of the NuGet service connection>
+- task: DotNetCoreCLI@2
+  displayName: dotnet build
+  inputs:
+    command: 'build'
+    projects: '**/Ruya.Primitives.csproj'
+    arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
+- task: DotNetCoreCLI@2
+  displayName: dotnet test
+  inputs:
+    command: 'test'
+    projects: '**/*Tests/Ruya.Primitives.Tests.csproj'
+    arguments: '--configuration $(BuildConfiguration) /p:BuildNumber=$(Build.BuildNumber)'
+- pwsh: |
+    Write-Host "##vso[build.addbuildtag]$(buildNumber)"
+- task: DotNetCoreCLI@2
+  displayName: dotnet publish
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: '**/Ruya.Helpers.Primitives.csproj'
+    arguments: '--configuration $(BuildConfiguration) --output $(build.artifactstagingdirectory)'
+    zipAfterPublish: false
+    modifyOutputPath: true
+- task: DotNetCoreCLI@2
+  displayName: dotnet pack
+  inputs:
+    command: 'pack'
+    packagesToPack: '**/Ruya.Primitives.csproj'
+    nobuild: true
+    includesymbols: false
+    includesource: false
+    versioningScheme: 'byBuildNumber'
+- task: DotNetCoreCLI@2
+  displayName: dotnet push
+  continueOnError: true
+  inputs:
+    command: 'push'
+    packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
+    nuGetFeedType: 'external'
+    publishFeedCredentials: 'NuGet'
+- task: PublishBuildArtifacts@1
+  displayName: Publish Artifact
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+# - task: GitHubRelease@1
+#   inputs:
+#     repositoryName: '$(Build.Repository.Name)'
+#     action: 'create'
+#     target: '$(Build.SourceVersion)'
+#     tagSource: 'gitTag'
+#     changeLogCompareToRelease: 'lastFullRelease'
+#     changeLogType: 'commitBased'

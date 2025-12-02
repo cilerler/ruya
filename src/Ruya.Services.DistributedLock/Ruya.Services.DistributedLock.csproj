@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Description>Core implementation of the distributed lock manager. Provides lock manager implementation with heartbeat support, health checks, and telemetry.</Description>
+		<PackageTags>distributed-lock;locking;concurrency;core</PackageTags>
+		<Version>8.1</Version>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+		<PackageReference Include="Microsoft.Extensions.Options" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+		<PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+		<PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Configuration)' == 'Release'">
+		<PackageReference Include="Ruya.Primitives" />
+		<PackageReference Include="Ruya.Services.DistributedLock.Abstractions" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+		<ProjectReference Include="..\Ruya.Primitives\Ruya.Primitives.csproj" />
+		<ProjectReference Include="..\Ruya.Services.DistributedLock.Abstractions\Ruya.Services.DistributedLock.Abstractions.csproj" />
+	</ItemGroup>
+
+</Project>

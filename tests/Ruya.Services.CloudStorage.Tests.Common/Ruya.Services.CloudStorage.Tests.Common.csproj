@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+
+		<IsPackable>false</IsPackable>
+
+		<IsTestProject>true</IsTestProject>
+		<OutputType>Exe</OutputType>
+		<EnableMSTestRunner>true</EnableMSTestRunner>
+
+		<TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+		<TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+
+		<TestingExtensionsProfile>AllMicrosoft</TestingExtensionsProfile>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Content Include="test_file.ignore.txt">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" />
+		<PackageReference Include="MSTest" />
+		<PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+		<PackageReference Include="Testcontainers" />
+		<PackageReference Include="Microsoft.Extensions.Diagnostics.Abstractions" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Ruya.Services.CloudStorage.Abstractions\Ruya.Services.CloudStorage.Abstractions.csproj" />
+		<ProjectReference Include="..\..\src\Ruya.Testing.Primitives\Ruya.Testing.Primitives.csproj" />
+		<ProjectReference Include="..\..\src\Ruya.Diagnostics.Abstractions\Ruya.Diagnostics.Abstractions.csproj" />
+	</ItemGroup>
+
+</Project>

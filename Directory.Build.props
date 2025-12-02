@@ -1,0 +1,104 @@
+<Project>
+
+	<!--
+		LicenseUrl → replaced by PackageLicenseExpression or PackageLicenseFile
+		Summary → replaced by Description
+		IconUrl → replaced by Icon (with a local file)
+		ReleaseNotes (the old nuspec element) → replaced by PackageReleaseNotes (csproj property)
+	-->
+
+	<PropertyGroup>
+		<Authors>Cengiz Ilerler</Authors>
+		<Company>Cengiz Ilerler</Company>
+		<Title>Ruya Common Libraries :: $(MSBuildProjectName)</Title>
+		<Copyright>Copyright © Cengiz Ilerler $([System.DateTime]::Now.Year)</Copyright>
+		<PackageProjectUrl>https://github.com/cilerler/ruya</PackageProjectUrl>
+		<RepositoryBranch>$(SourceBranchName)</RepositoryBranch>
+		<!--
+			<RepositoryUrl>https://github.com/cilerler/ruya</RepositoryUrl>
+			<RepositoryType>git</RepositoryType>
+		-->
+
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<!-- <PackageLicenseFile>LICENSE</PackageLicenseFile> -->
+
+		<PackageIcon>icon.png</PackageIcon>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+
+		<PackageId>$(MSBuildProjectName)</PackageId>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<ChangelogFile>$(MSBuildThisFileDirectory)CHANGELOG.md</ChangelogFile>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="Exists('$(ChangelogFile)')">
+		<PackageReleaseNotes>$([System.IO.File]::ReadAllText('$(ChangelogFile)'))</PackageReleaseNotes>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<InvariantGlobalization>false</InvariantGlobalization>
+		<LangVersion>latest</LangVersion>
+		<UseArtifactsOutput>true</UseArtifactsOutput>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<EnableNETAnalyzers>true</EnableNETAnalyzers>
+		<AnalysisLevel>latest</AnalysisLevel>
+		<AnalysisMode>All</AnalysisMode>
+		<TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+		<CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+		<HotReloadAutoRestart>true</HotReloadAutoRestart>
+		<!-- <NoWarn>$(NoWarn);CS1591</NoWarn> -->
+		<!-- <WarningsNotAsErrors>CA1305,CA1062</WarningsNotAsErrors>  -->
+    	<GenerateDocumentationFile>true</GenerateDocumentationFile>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+		<PlatformTarget>x64</PlatformTarget>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+		<PlatformTarget>x64</PlatformTarget>
+		<Optimize>true</Optimize>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Version Condition="'$(Configuration)' == 'Debug' ">0.0.0.0</Version>
+		<VersionSuffix Condition=" '$(Configuration)' == 'Debug' ">dev</VersionSuffix>
+	</PropertyGroup>
+
+	<!-- Detect CI -->
+	<PropertyGroup>
+		<IsCI>false</IsCI>
+		<IsCI Condition="'$(GITHUB_ACTIONS)' == 'true' Or '$(TF_BUILD)' != ''">true</IsCI>
+	</PropertyGroup>
+
+	<!-- Always-on for local and CI -->
+	<PropertyGroup>
+		<Deterministic>true</Deterministic>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+	</PropertyGroup>
+
+	<!-- CI-only -->
+	<PropertyGroup Condition="'$(IsCI)' == 'true'">
+		<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- <None Include="..\..\LICENSE" Pack="true" PackagePath="." /> -->
+		<None Include="..\..\README.md" Pack="true" PackagePath="." />
+		<None Include="..\..\icon.png" Pack="true" PackagePath="." />
+	</ItemGroup>
+
+</Project>

@@ -1,0 +1,20 @@
+<Project>
+
+	<!-- <Target Name="FormatCode" BeforeTargets="CoreCompile">
+		<Exec Command="dotnet format &#45;&#45;verify-no-changes &#45;&#45;verbosity diagnostic" ContinueOnError="false" />
+		<Exec Command="dotnet format whitespace &#45;&#45;verify-no-changes &#45;&#45;verbosity diagnostic" ContinueOnError="false" />
+	</Target> -->
+
+	<Target Name="SetRepositoryBranch" BeforeTargets="GenerateNuspec">
+		<Exec Command="git rev-parse &#45;&#45;abbrev-ref HEAD" ConsoleToMSBuild="true"
+			IgnoreExitCode="true">
+			<Output TaskParameter="ConsoleOutput" PropertyName="GitBranchName" />
+		</Exec>
+		<PropertyGroup>
+			<RepositoryBranch Condition="'$(GitBranchName)' != ''">$(GitBranchName)</RepositoryBranch>
+			<RepositoryBranch Condition="'$(GitBranchName)' == ''">unknown</RepositoryBranch>
+		</PropertyGroup>
+		<Message Importance="high" Text="RepositoryBranch set to: $(RepositoryBranch)" />
+	</Target>
+
+</Project>

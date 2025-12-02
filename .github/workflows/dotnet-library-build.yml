@@ -1,0 +1,520 @@
+# ============================================================================
+# Reusable .NET Library Build Workflow
+# ============================================================================
+# Jobs: branch-guard → build → test → pack → publish → dispatch
+# ============================================================================
+
+name: .NET Library Build (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      project-name:
+        description: 'Name of the project (e.g., MyLibrary.MyProject)'
+        required: true
+        type: string
+      project-path:
+        description: 'Path to the project file relative to repo root'
+        required: true
+        type: string
+      test-project-paths:
+        description: 'Paths to test project files (comma or newline separated, or glob pattern)'
+        required: false
+        type: string
+        default: ''
+      dispatch-event-type:
+        description: 'Event type for repository dispatch (used for chain builds)'
+        required: false
+        type: string
+        default: ''
+      dispatch-repos:
+        description: 'JSON array of additional repos to dispatch to. Current repo is always included.'
+        required: false
+        type: string
+        default: '[]'
+      use-testcontainers:
+        description: 'Tests require Testcontainers (affects test execution)'
+        required: false
+        type: boolean
+        default: false
+      triggered-branch:
+        description: 'Branch that triggered this workflow (for repository_dispatch)'
+        required: false
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: 'The computed version'
+        value: ${{ jobs.build.outputs.version }}
+      branch:
+        description: 'The branch that was built'
+        value: ${{ jobs.build.outputs.branch }}
+      environment-type:
+        description: 'Environment type (production, staging, testing, integration, development)'
+        value: ${{ jobs.build.outputs.environment-type }}
+    secrets:
+      PAT:
+        description: 'Required for repository dispatch (chain builds)'
+        required: false
+      NUGET_API_KEY:
+        required: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  PRODUCTION_BRANCH: 'master'
+  STAGING_BRANCH: 'release-preview'
+  TESTING_BRANCH: 'release-qa'
+  INTEGRATION_BRANCH: 'develop'
+
+defaults:
+  run:
+    shell: pwsh
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.triggered-branch || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # Branch Guard
+  # ============================================================================
+  branch-guard:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.check.outputs.should-run }}
+      target-branch: ${{ steps.check.outputs.target-branch }}
+
+    steps:
+      - name: Check Branch Alignment
+        id: check
+        run: |
+          $eventName = '${{ github.event_name }}'
+          $triggeredBranch = '${{ inputs.triggered-branch }}'
+          $shouldRun = 'true'
+
+          if ($eventName -eq 'repository_dispatch' -and $triggeredBranch) {
+            $targetBranch = $triggeredBranch
+          }
+          elseif ($eventName -eq 'push' -or $eventName -eq 'workflow_dispatch') {
+            $targetBranch = '${{ github.ref_name }}'
+          }
+          else {
+            $targetBranch = '${{ github.event.repository.default_branch }}'
+          }
+
+          "should-run=$shouldRun" >> $env:GITHUB_OUTPUT
+          "target-branch=$targetBranch" >> $env:GITHUB_OUTPUT
+          Write-Host "Target branch: $targetBranch"
+
+  # ============================================================================
+  # Build
+  # ============================================================================
+  build:
+    needs: branch-guard
+    if: needs.branch-guard.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute-version.outputs.version }}
+      branch: ${{ steps.extract-metadata.outputs.branch }}
+      branch-safe: ${{ steps.extract-metadata.outputs.branch-safe }}
+      environment-type: ${{ steps.extract-metadata.outputs.environment-type }}
+      is-production: ${{ steps.extract-metadata.outputs.is-production }}
+      dispatch-repos-json: ${{ steps.compute-dispatch-repos.outputs.repos-json }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.branch-guard.outputs.target-branch }}
+
+      - name: Extract Metadata
+        id: extract-metadata
+        run: |
+          $branch = '${{ needs.branch-guard.outputs.target-branch }}'
+          $environmentType = 'development'
+          $versionSuffix = 'dev'
+          $isProduction = $false
+
+          switch ($branch) {
+            '${{ env.PRODUCTION_BRANCH }}' {
+              $environmentType = 'production'
+              $versionSuffix = ''
+              $isProduction = $true
+            }
+            '${{ env.STAGING_BRANCH }}' {
+              $environmentType = 'staging'
+              $versionSuffix = 'preview'
+            }
+            '${{ env.TESTING_BRANCH }}' {
+              $environmentType = 'testing'
+              $versionSuffix = 'qa'
+            }
+            '${{ env.INTEGRATION_BRANCH }}' {
+              $environmentType = 'integration'
+              $versionSuffix = 'develop'
+            }
+          }
+
+          $branchSafe = $branch -replace '/', '-'
+
+          "branch=$branch" >> $env:GITHUB_OUTPUT
+          "branch-safe=$branchSafe" >> $env:GITHUB_OUTPUT
+          "environment-type=$environmentType" >> $env:GITHUB_OUTPUT
+          "version-suffix=$versionSuffix" >> $env:GITHUB_OUTPUT
+          "is-production=$($isProduction.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+
+      - name: Extract Version from Project
+        id: extract-project-version
+        run: |
+          [xml]$csproj = Get-Content '${{ inputs.project-path }}'
+
+          $version = $csproj.Project.PropertyGroup.Version |
+                     Where-Object { $_ } | Select-Object -First 1
+
+          if (-not $version) {
+            $version = $csproj.Project.PropertyGroup.VersionPrefix |
+                       Where-Object { $_ } | Select-Object -First 1
+          }
+
+          if (-not $version) { $version = '1.0.0' }
+
+          "base-version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Compute Version
+        id: compute-version
+        run: |
+          $baseVersion = '${{ steps.extract-project-version.outputs.base-version }}'
+          $versionSuffix = '${{ steps.extract-metadata.outputs.version-suffix }}'
+          $runNumber = $env:GITHUB_RUN_NUMBER
+
+          $versionParts = $baseVersion -split '\.'
+          $majorMinor = "$($versionParts[0]).$($versionParts[1])"
+          $versionWithBuild = "$majorMinor.$runNumber"
+
+          $finalVersion = if ($versionSuffix) { "$versionWithBuild-$versionSuffix" } else { $versionWithBuild }
+
+          "version=$finalVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $finalVersion"
+
+      - name: Compute Dispatch Repos
+        id: compute-dispatch-repos
+        run: |
+          $additionalRepos = '${{ inputs.dispatch-repos }}'
+          $currentRepo = '${{ github.repository }}'
+
+          try { $repoList = $additionalRepos | ConvertFrom-Json } catch { $repoList = @() }
+          if ($repoList -isnot [array]) { $repoList = @($repoList) }
+          if ($currentRepo -notin $repoList) { $repoList = @($currentRepo) + $repoList }
+
+          $reposJson = $repoList | ConvertTo-Json -Compress
+          if ($repoList.Count -eq 1) { $reposJson = "[$reposJson]" }
+
+          "repos-json=$reposJson" >> $env:GITHUB_OUTPUT
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Configure NuGet Sources
+        run: |
+          dotnet nuget add source `
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
+            --name github `
+            --username ${{ github.actor }} `
+            --password ${{ secrets.GITHUB_TOKEN }} `
+            --store-password-in-clear-text
+
+      - name: Restore
+        run: dotnet restore '${{ inputs.project-path }}' -p:Version=${{ steps.compute-version.outputs.version }}
+
+      - name: Build
+        run: |
+          dotnet build '${{ inputs.project-path }}' `
+            --configuration Release `
+            --no-restore `
+            -p:Version=${{ steps.compute-version.outputs.version }}
+
+      - name: Upload Build Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ inputs.project-name }}
+          path: |
+            artifacts/bin/${{ inputs.project-name }}/release/**
+            artifacts/obj/${{ inputs.project-name }}/release/**
+            artifacts/obj/${{ inputs.project-name }}/project.assets.json
+            artifacts/packages/release/${{ inputs.project-name }}.*.*
+          retention-days: 1
+
+  # ============================================================================
+  # Test
+  # ============================================================================
+  test:
+    needs: build
+    if: inputs.test-project-paths != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.branch }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Configure NuGet Sources
+        run: |
+          dotnet nuget add source `
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
+            --name github `
+            --username ${{ github.actor }} `
+            --password ${{ secrets.GITHUB_TOKEN }} `
+            --store-password-in-clear-text
+
+      - name: Download Build Output
+        uses: actions/download-artifact@v5
+        with:
+          name: build-${{ inputs.project-name }}
+          path: ./artifacts
+
+      - name: Run Tests
+        run: |
+          $testPaths = '${{ inputs.test-project-paths }}'
+
+          $paths = $testPaths -split '[,\r\n]' |
+                   ForEach-Object { $_.Trim() } |
+                   Where-Object { $_ }
+
+          $resolvedPaths = @()
+          foreach ($path in $paths) {
+            if ($path -match '\*') {
+              $resolved = Get-ChildItem -Path $path -ErrorAction SilentlyContinue
+              $resolvedPaths += $resolved.FullName
+            } else {
+              $resolvedPaths += $path
+            }
+          }
+
+          if ($resolvedPaths.Count -eq 0) {
+            Write-Warning "No test projects found"
+            exit 0
+          }
+
+          $failed = $false
+          foreach ($testProject in $resolvedPaths) {
+            Write-Host "`n===== Testing: $testProject =====" -ForegroundColor Cyan
+
+            $testArgs = @(
+              $testProject
+              '--configuration', 'Release'
+              '--verbosity', 'normal'
+              '-p:CollectCoverage=true'
+              '-p:CoverletOutputFormat=cobertura'
+            )
+
+            if ('${{ inputs.use-testcontainers }}' -eq 'true') {
+              $testArgs += '--', '--timeout', '300000'
+            }
+
+            dotnet test @testArgs
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+
+          if ($failed) { exit 1 }
+
+  # ============================================================================
+  # Pack
+  # ============================================================================
+  pack:
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      has-packages: ${{ steps.pack.outputs.has-packages }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.branch }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download Build Output
+        uses: actions/download-artifact@v5
+        with:
+          name: build-${{ inputs.project-name }}
+          path: ./artifacts
+
+      - name: Configure NuGet Sources
+        run: |
+          dotnet nuget add source `
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
+            --name github `
+            --username ${{ github.actor }} `
+            --password ${{ secrets.PAT }} `
+            --store-password-in-clear-text
+
+      - name: Restore
+        run: dotnet restore '${{ inputs.project-path }}' -p:Version=${{ needs.build.outputs.version }}
+
+
+      - name: Pack
+        id: pack
+        run: |
+          New-Item -ItemType Directory -Force -Path './artifacts/packages' | Out-Null
+
+          dotnet pack '${{ inputs.project-path }}' `
+            --configuration Release `
+            --no-restore `
+            --no-build `
+            --output './artifacts/packages' `
+            -p:Version=${{ needs.build.outputs.version }}
+
+          $packages = Get-ChildItem './artifacts/packages/*.nupkg'
+          "has-packages=$($packages.Count -gt 0)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ inputs.project-name }}-${{ needs.build.outputs.branch-safe }}
+          path: ./artifacts/packages/*.nupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  # ============================================================================
+  # Publish
+  # ============================================================================
+  publish:
+    needs: [build, test, pack]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      needs.pack.result == 'success' &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Packages
+        uses: actions/download-artifact@v5
+        with:
+          name: packages-${{ inputs.project-name }}-${{ needs.build.outputs.branch-safe }}
+          path: ./packages
+
+      - name: Configure NuGet Sources
+        run: |
+          dotnet nuget add source `
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
+            --name github `
+            --username ${{ github.actor }} `
+            --password ${{ secrets.GITHUB_TOKEN }} `
+            --store-password-in-clear-text
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Create Tag
+        if: needs.build.outputs.is-production != 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const tagName = `v${{ needs.build.outputs.version }}`;
+            try {
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/tags/${tagName}`,
+                sha: context.sha
+              });
+            } catch (error) {
+              if (error.status !== 422) throw error;
+            }
+
+      - name: Create Release
+        if: needs.build.outputs.is-production == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: ${{ inputs.project-name }} v${{ needs.build.outputs.version }}
+          draft: false
+          prerelease: false
+          files: ./packages/*.nupkg
+          body: |
+            ## ${{ inputs.project-name }} v${{ needs.build.outputs.version }}
+            [Changelog](https://github.com/${{ github.repository }}/blob/${{ needs.build.outputs.branch }}/CHANGELOG.md)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GitHub Packages
+        run: |
+          Get-ChildItem './packages/*.nupkg' | ForEach-Object {
+            Write-Host "Pushing: $($_.Name)"
+            dotnet nuget push $_.FullName `
+              --skip-duplicate `
+              --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
+              --api-key ${{ secrets.GITHUB_TOKEN }}
+          }
+
+      - name: Push to NuGet.org
+        if: needs.build.outputs.is-production == 'true'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if (-not $env:NUGET_API_KEY) {
+            Write-Host "NUGET_API_KEY not set, skipping NuGet.org push"
+            exit 0
+          }
+
+          Get-ChildItem './packages/*.nupkg' | ForEach-Object {
+            Write-Host "Pushing to NuGet.org: $($_.Name)"
+            dotnet nuget push $_.FullName `
+              --skip-duplicate `
+              --source "nuget.org" `
+              --api-key $env:NUGET_API_KEY
+          }
+
+  # ============================================================================
+  # Dispatch
+  # ============================================================================
+  dispatch:
+    needs: [build, publish]
+    if: |
+      always() &&
+      needs.publish.result == 'success' &&
+      inputs.dispatch-event-type != '' &&
+      (
+        contains(toJson(github.event.commits), '[rolling deployment]') ||
+        contains(toJson(github.event.client_payload), '"sha"') ||
+        github.event.inputs.rollingDeployment == 'true'
+      )
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo: ${{ fromJson(needs.build.outputs.dispatch-repos-json) }}
+      fail-fast: false
+
+    steps:
+      - name: Dispatch to ${{ matrix.repo }}
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.PAT }}
+          repository: ${{ matrix.repo }}
+          event-type: ${{ inputs.dispatch-event-type }}
+          client-payload: |
+            {
+              "sha": "${{ github.sha }}",
+              "version": "${{ needs.build.outputs.version }}",
+              "source-repo": "${{ github.repository }}",
+              "source-project": "${{ inputs.project-name }}",
+              "branch": "${{ needs.build.outputs.branch }}",
+              "environment-type": "${{ needs.build.outputs.environment-type }}"
+            }

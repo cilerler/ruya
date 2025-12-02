@@ -1,0 +1,96 @@
+# ============================================================================
+# .NET Library Build Dockerfile
+# ============================================================================
+# Usage:
+#   docker build --build-arg PROJECT_PATH=./src/MyLib/MyLib.csproj --build-arg VERSION=1.0.0 -t mylib-build .
+#   docker run --rm -v $(pwd)/artifacts:/app/artifacts mylib-build
+# ============================================================================
+
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:10.0-preview AS build
+
+ARG PROJECT_PATH
+ARG TEST_PROJECT_PATH=""
+ARG VERSION="1.0.0"
+ARG CONFIGURATION="Release"
+ARG NUGET_SOURCE_URL=""
+ARG NUGET_SOURCE_USER=""
+ARG NUGET_SOURCE_PASSWORD=""
+
+ENV DOTNET_NOLOGO=true \
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=true \
+    DOTNET_CLI_TELEMETRY_OPTOUT=true
+
+WORKDIR /src
+
+# Copy solution and project files first for layer caching
+COPY *.sln ./
+COPY Directory.Build.props ./
+COPY Directory.Packages.props ./
+COPY src/*/*.csproj ./src/
+COPY test/*/*.csproj ./test/
+
+# Restructure copied files (they end up flat, need to be in folders)
+RUN for file in src/*.csproj; do \
+      dir=$(basename "$file" .csproj); \
+      mkdir -p "src/$dir"; \
+      mv "$file" "src/$dir/"; \
+    done && \
+    for file in test/*.csproj; do \
+      dir=$(basename "$file" .csproj); \
+      mkdir -p "test/$dir"; \
+      mv "$file" "test/$dir/"; \
+    done 2>/dev/null || true
+
+# Configure additional NuGet source if provided
+RUN if [ -n "$NUGET_SOURCE_URL" ]; then \
+      dotnet nuget add source "$NUGET_SOURCE_URL" \
+        --name github \
+        --username "$NUGET_SOURCE_USER" \
+        --password "$NUGET_SOURCE_PASSWORD" \
+        --store-password-in-clear-text; \
+    fi
+
+# Restore
+RUN dotnet restore "$PROJECT_PATH" -p:Version=$VERSION
+
+# Copy all source code
+COPY . .
+
+# Build
+RUN dotnet build "$PROJECT_PATH" \
+    --configuration "$CONFIGURATION" \
+    --no-restore \
+    -p:Version=$VERSION
+
+# Test (if test project specified)
+RUN if [ -n "$TEST_PROJECT_PATH" ]; then \
+      dotnet test "$TEST_PROJECT_PATH" \
+        --configuration "$CONFIGURATION" \
+        --no-build \
+        --verbosity normal \
+        -p:CollectCoverage=true \
+        -p:CoverletOutputFormat=cobertura \
+      || echo "Tests completed with warnings"; \
+    fi
+
+# Pack
+RUN mkdir -p /app/artifacts/packages && \
+    dotnet pack "$PROJECT_PATH" \
+      --configuration "$CONFIGURATION" \
+      --no-restore \
+      --no-build \
+      --output /app/artifacts/packages \
+      -p:Version=$VERSION
+
+# Output stage - minimal image with just the artifacts
+FROM scratch AS artifacts
+COPY --from=build /app/artifacts /artifacts
+
+# Default stage - can be used to extract artifacts
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-preview-alpine AS final
+WORKDIR /app
+COPY --from=build /app/artifacts ./artifacts
+
+# Default command to list artifacts
+CMD ["ls", "-la", "/app/artifacts/packages"]

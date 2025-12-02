@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Description>In-memory provider using System.Threading.Channels</Description>
+		<PackageTags>messaging;in-memory;testing;channels;event-driven</PackageTags>
+		<Version>8.1</Version>
+	</PropertyGroup>
+
+	<ItemGroup Condition="'$(Configuration)' == 'Release'">
+		<PackageReference Include="Ruya.Services.MessageQueue" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+		<ProjectReference Include="..\Ruya.Services.MessageQueue\Ruya.Services.MessageQueue.csproj" />
+	</ItemGroup>
+
+</Project>

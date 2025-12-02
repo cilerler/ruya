@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Description>Provides core primitive types and interfaces used across the application ecosystem.</Description>
+		<PackageTags>primitives, core, interfaces, shared</PackageTags>
+		<Version>8.1</Version>
+	</PropertyGroup>
+
+</Project>
