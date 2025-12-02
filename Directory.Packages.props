@@ -124,13 +124,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageVersion Include="Ruya.Primitives" Version="[8.1.0,)">
-			<NoWarn>NU1604;NU1011</NoWarn>
-		</PackageVersion>
+		<PackageVersion Include="Ruya.Primitives" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Testing.Primitives" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Extensions.Configuration" Version="8.1.*" />
 		<PackageVersion Include="Ruya.System.Xml.Serialization" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Diagnostics.Abstractions" Version="8.1.*" />		
+		<PackageVersion Include="Ruya.Diagnostics.Abstractions" Version="8.1.*" />
 		<PackageVersion Include="Ruya.OpenTelemetry" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.CloudStorage.Abstractions" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.DistributedLock.Abstractions" Version="8.1.*" />
