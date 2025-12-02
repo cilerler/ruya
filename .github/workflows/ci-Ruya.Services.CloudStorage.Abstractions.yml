@@ -1,0 +1,31 @@
+name: Ruya.Services.CloudStorage.Abstractions
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: []
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.Services.CloudStorage.Abstractions.yml'
+      - 'src/Ruya.Services.CloudStorage.Abstractions/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.Services.CloudStorage.Abstractions'
+      project-path: './src/Ruya.Services.CloudStorage.Abstractions/Ruya.Services.CloudStorage.Abstractions.csproj'
+      # test-project-paths:
+      dispatch-event-type: 'Ruya.Services.CloudStorage.Abstractions'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

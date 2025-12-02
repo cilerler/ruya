@@ -1,0 +1,31 @@
+name: Ruya.System.Xml.Serialization
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: []
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.System.Xml.Serialization.yml'
+      - 'src/Ruya.System.Xml.Serialization/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.System.Xml.Serialization'
+      project-path: './src/Ruya.System.Xml.Serialization/Ruya.System.Xml.Serialization.csproj'
+      # test-project-paths:
+      dispatch-event-type: 'Ruya.System.Xml.Serialization'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

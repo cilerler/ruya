@@ -38,7 +38,6 @@
 		<PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
 		<PackageReference Include="OpenTelemetry.Instrumentation.SqlClient" />
 		<PackageReference Include="OpenTelemetry.Instrumentation.StackExchangeRedis" />
-		<PackageReference Include="Ruya.Primitives" />
 	</ItemGroup>
 
 </Project>

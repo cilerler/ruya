@@ -1,0 +1,31 @@
+name: Ruya.OpenTelemetry
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: [Ruya.Diagnostics]
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.OpenTelemetry.yml'
+      - 'src/Ruya.OpenTelemetry/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.OpenTelemetry'
+      project-path: './src/Ruya.OpenTelemetry/Ruya.OpenTelemetry.csproj'
+      test-project-paths: './test/Ruya.OpenTelemetry.Integration.Tests/Ruya.OpenTelemetry.Integration.Tests.csproj'
+      dispatch-event-type: 'Ruya.OpenTelemetry'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
