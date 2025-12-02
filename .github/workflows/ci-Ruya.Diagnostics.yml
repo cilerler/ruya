@@ -1,0 +1,32 @@
+name: Ruya.Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: [Ruya.Diagnostics.Abstractions]
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.Diagnostics.yml'
+      - 'src/Ruya.Diagnostics/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.Diagnostics'
+      project-path: './src/Ruya.Diagnostics/Ruya.Diagnostics.csproj'
+      # test-project-paths:
+      dispatch-event-type: 'Ruya.Diagnostics'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+      use-testcontainers: false
+    secrets:
+      PAT: ${{ secrets.PAT }}  # Required for dispatch (chain builds)
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

@@ -26,8 +26,8 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
-		<ProjectReference Include="..\Ruya.Diagnostics.Abstractions\Ruya.Diagnostics.Abstractions.csproj" />
 		<ProjectReference Include="..\Ruya.Primitives\Ruya.Primitives.csproj" />
+		<ProjectReference Include="..\Ruya.Diagnostics.Abstractions\Ruya.Diagnostics.Abstractions.csproj" />
 	</ItemGroup>
 
 </Project>

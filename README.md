@@ -32,6 +32,12 @@
 ![](https://github.com/cilerler/ruya/workflows/Ruya.Diagnostics.Abstractions/badge.svg)
 
 
+## Ruya.Diagnostics
+[![](https://img.shields.io/nuget/v/Ruya.Diagnostics.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Diagnostics)
+![](https://img.shields.io/nuget/dt/Ruya.Diagnostics.svg?logo=nuget&color=yellow)
+![](https://github.com/cilerler/ruya/workflows/Ruya.Diagnostics/badge.svg)
+
+
 ## Ruya.OpenTelemetry
 [![](https://img.shields.io/nuget/v/Ruya.OpenTelemetry.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.OpenTelemetry)
 ![](https://img.shields.io/nuget/dt/Ruya.OpenTelemetry.svg?logo=nuget&color=yellow)
