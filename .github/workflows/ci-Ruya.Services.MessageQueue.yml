@@ -23,7 +23,7 @@ jobs:
     with:
       project-name: 'Ruya.Services.MessageQueue'
       project-path: './src/Ruya.Services.MessageQueue/Ruya.Services.MessageQueue.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests.csproj'
       dispatch-event-type: 'Ruya.Services.MessageQueue'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:
