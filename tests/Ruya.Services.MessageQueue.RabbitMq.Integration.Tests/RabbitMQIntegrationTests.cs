@@ -2,7 +2,7 @@
 using Testcontainers.RabbitMq;
 using Ruya.Services.MessageQueue.Extensions;
 using Ruya.Services.MessageQueue.Configuration;
-using Ruya.Services.MessageQueue.RabbitMQ;
+using Ruya.Services.MessageQueue.RabbitMq;
 
 
 

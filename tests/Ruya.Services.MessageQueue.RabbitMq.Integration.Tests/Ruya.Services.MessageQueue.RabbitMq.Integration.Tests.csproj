@@ -29,7 +29,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\..\src\Ruya.Services.MessageQueue\Ruya.Services.MessageQueue.csproj" />
 		<ProjectReference Include="..\..\src\Ruya.Services.MessageQueue.InMemory\Ruya.Services.MessageQueue.InMemory.csproj" />
-		<ProjectReference Include="..\..\src\Ruya.Services.MessageQueue.RabbitMQ\Ruya.Services.MessageQueue.RabbitMQ.csproj" />
+		<ProjectReference Include="..\..\src\Ruya.Services.MessageQueue.RabbitMq\Ruya.Services.MessageQueue.RabbitMq.csproj" />
 
 	</ItemGroup>
 

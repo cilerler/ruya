@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Ruya.Services.MessageQueue.Abstractions;
 
-namespace Ruya.Services.MessageQueue.RabbitMQ;
+namespace Ruya.Services.MessageQueue.RabbitMq;
 
 internal sealed class RabbitMQPublisherBuilder<TMessage> : IMessagePublisherBuilder<TMessage> where TMessage : class
 {

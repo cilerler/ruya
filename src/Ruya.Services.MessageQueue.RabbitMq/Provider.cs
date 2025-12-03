@@ -9,7 +9,7 @@ using Ruya.Services.MessageQueue.Abstractions;
 using Ruya.Services.MessageQueue.Serialization;
 
 
-namespace Ruya.Services.MessageQueue.RabbitMQ;
+namespace Ruya.Services.MessageQueue.RabbitMq;
 
 /// <summary>
 /// RabbitMQ implementation of IMessageQueueProvider

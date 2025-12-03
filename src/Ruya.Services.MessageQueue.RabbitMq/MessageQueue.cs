@@ -14,7 +14,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Linq;
 
-namespace Ruya.Services.MessageQueue.RabbitMQ;
+namespace Ruya.Services.MessageQueue.RabbitMq;
 
 /// <summary>
 /// RabbitMQ implementation of IMessageQueue

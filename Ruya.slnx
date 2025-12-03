@@ -35,7 +35,7 @@
     <Project Path="src/Ruya.Services.DistributedLock/Ruya.Services.DistributedLock.csproj" />
     <Project Path="src/Ruya.Services.MessageQueue.InMemory/Ruya.Services.MessageQueue.InMemory.csproj" />
     <Project Path="src/Ruya.Services.MessageQueue.MsSql/Ruya.Services.MessageQueue.MsSql.csproj" />
-    <Project Path="src/Ruya.Services.MessageQueue.RabbitMQ/Ruya.Services.MessageQueue.RabbitMQ.csproj" />
+    <Project Path="src/Ruya.Services.MessageQueue.RabbitMq/Ruya.Services.MessageQueue.RabbitMq.csproj" />
     <Project Path="src/Ruya.Services.MessageQueue.Redis/Ruya.Services.MessageQueue.Redis.csproj" />
     <Project Path="src/Ruya.Services.MessageQueue/Ruya.Services.MessageQueue.csproj" />
     <Project Path="src/Ruya.System.Xml.Serialization/Ruya.System.Xml.Serialization.csproj" />

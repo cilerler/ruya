@@ -1,7 +1,7 @@
 using System;
 using Microsoft.Extensions.Options;
 
-namespace Ruya.Services.MessageQueue.RabbitMQ;
+namespace Ruya.Services.MessageQueue.RabbitMq;
 
 /// <summary>
 /// RabbitMQ-specific configuration options

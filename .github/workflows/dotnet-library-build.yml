@@ -224,11 +224,11 @@ jobs:
             "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
             --name github `
             --username ${{ github.actor }} `
-            --password ${{ secrets.GITHUB_TOKEN }} `
+            --password ${{ secrets.PAT }} `
             --store-password-in-clear-text
 
       - name: Restore
-        run: dotnet restore '${{ inputs.project-path }}' -p:Version=${{ steps.compute-version.outputs.version }}
+        run: dotnet restore '${{ inputs.project-path }}' -p:Configuration=Release -p:Version=${{ steps.compute-version.outputs.version }}
 
       - name: Build
         run: |
@@ -273,7 +273,7 @@ jobs:
             "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
             --name github `
             --username ${{ github.actor }} `
-            --password ${{ secrets.GITHUB_TOKEN }} `
+            --password ${{ secrets.PAT }} `
             --store-password-in-clear-text
 
       - name: Download Build Output
@@ -363,7 +363,7 @@ jobs:
             --store-password-in-clear-text
 
       - name: Restore
-        run: dotnet restore '${{ inputs.project-path }}' -p:Version=${{ needs.build.outputs.version }}
+        run: dotnet restore '${{ inputs.project-path }}' -p:Configuration=Release -p:Version=${{ needs.build.outputs.version }}
 
 
       - name: Pack
@@ -414,7 +414,7 @@ jobs:
             "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
             --name github `
             --username ${{ github.actor }} `
-            --password ${{ secrets.GITHUB_TOKEN }} `
+            --password ${{ secrets.PAT }} `
             --store-password-in-clear-text
 
       - name: Setup .NET
@@ -461,7 +461,7 @@ jobs:
             dotnet nuget push $_.FullName `
               --skip-duplicate `
               --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
-              --api-key ${{ secrets.GITHUB_TOKEN }}
+              --api-key ${{ secrets.PAT }}
           }
 
       - name: Push to NuGet.org

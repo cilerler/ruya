@@ -8,7 +8,7 @@ using RabbitMQ.Client.Events;
 
 using Ruya.Services.MessageQueue.Abstractions;
 
-namespace Ruya.Services.MessageQueue.RabbitMQ;
+namespace Ruya.Services.MessageQueue.RabbitMq;
 
 internal sealed class RabbitMQSubscription : IMessageSubscription
 {

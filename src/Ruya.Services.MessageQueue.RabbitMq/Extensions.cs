@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 using Ruya.Services.MessageQueue.Abstractions;
 using Ruya.Services.MessageQueue.Extensions;
 
-namespace Ruya.Services.MessageQueue.RabbitMQ;
+namespace Ruya.Services.MessageQueue.RabbitMq;
 
 /// <summary>
 /// Extension methods for configuring RabbitMQ provider
