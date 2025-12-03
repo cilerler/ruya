@@ -310,7 +310,7 @@ jobs:
             Write-Host "`n===== Testing: $testProject =====" -ForegroundColor Cyan
 
             $testArgs = @(
-              $testProject
+              '--project', $testProject
               '--configuration', 'Release'
               '--verbosity', 'normal'
               '-p:CollectCoverage=true'
