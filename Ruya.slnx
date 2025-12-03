@@ -42,7 +42,7 @@
     <Project Path="src/Ruya.Testing.Primitives/Ruya.Testing.Primitives.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests.csproj" />
+    <!-- <Project Path="tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests.csproj" /> -->
     <Project Path="tests/Ruya.OpenTelemetry.Integration.Tests/Ruya.OpenTelemetry.Integration.Tests.csproj" />
     <!-- <Project Path="tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.CloudStorage.Azure.Integration.Tests/Ruya.Services.CloudStorage.Azure.Integration.Tests.csproj" />

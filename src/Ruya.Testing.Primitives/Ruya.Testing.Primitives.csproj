@@ -12,6 +12,7 @@
 
 	<PropertyGroup>
 		<IsPackable>true</IsPackable>
+		<IsTestProject>false</IsTestProject>
 
 		<!--
 	  <IsTestProject>true</IsTestProject>
