@@ -23,7 +23,7 @@ jobs:
     with:
       project-name: 'Ruya.Primitives'
       project-path: './src/Ruya.Primitives/Ruya.Primitives.csproj'
-      # test-project-paths: './test/Ruya.Primitives.Unit.Tests/Ruya.Primitives.Unit.Tests.csproj'
+      # test-project-paths: './tests/Ruya.Primitives.Unit.Tests/Ruya.Primitives.Unit.Tests.csproj'
       dispatch-event-type: 'Ruya.Primitives'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

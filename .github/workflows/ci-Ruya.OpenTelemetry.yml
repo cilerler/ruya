@@ -23,7 +23,7 @@ jobs:
     with:
       project-name: 'Ruya.OpenTelemetry'
       project-path: './src/Ruya.OpenTelemetry/Ruya.OpenTelemetry.csproj'
-      test-project-paths: './test/Ruya.OpenTelemetry.Integration.Tests/Ruya.OpenTelemetry.Integration.Tests.csproj'
+      test-project-paths: './tests/Ruya.OpenTelemetry.Integration.Tests/Ruya.OpenTelemetry.Integration.Tests.csproj'
       dispatch-event-type: 'Ruya.OpenTelemetry'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:
