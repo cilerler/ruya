@@ -427,7 +427,7 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const tagName = `${{ inputs.project-name }}-v${{ needs.build.outputs.version }}`;
+            const tagName = `${{ inputs.project-name }}.${{ needs.build.outputs.version }}`;
             try {
               await github.rest.git.createRef({
                 owner: context.repo.owner,
@@ -443,7 +443,7 @@ jobs:
         if: needs.build.outputs.is-production == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.project-name }}-v${{ needs.build.outputs.version }}
+          tag_name: ${{ inputs.project-name }}.${{ needs.build.outputs.version }}
           name: ${{ inputs.project-name }} v${{ needs.build.outputs.version }}
           draft: false
           prerelease: false
