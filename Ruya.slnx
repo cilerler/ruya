@@ -21,6 +21,7 @@
     <Project Path="src/Ruya.Diagnostics/Ruya.Diagnostics.csproj" />
     <Project Path="src/Ruya.EntityFrameworkCore.SqlServer/Ruya.EntityFrameworkCore.SqlServer.csproj" />
     <Project Path="src/Ruya.Extensions.Configuration/Ruya.Extensions.Configuration.csproj" />
+    <Project Path="src/Ruya.Extensions.DependencyInjection/Ruya.Extensions.DependencyInjection.csproj" />
     <Project Path="src/Ruya.OpenTelemetry/Ruya.OpenTelemetry.csproj" />
     <Project Path="src/Ruya.Primitives/Ruya.Primitives.csproj" />
     <Project Path="src/Ruya.Services.CloudStorage.Abstractions/Ruya.Services.CloudStorage.Abstractions.csproj" />

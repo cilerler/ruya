@@ -22,10 +22,12 @@
 
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">
 		<PackageReference Include="Ruya.Diagnostics.Abstractions" />
+		<PackageReference Include="Ruya.Extensions.DependencyInjection" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
 		<ProjectReference Include="..\Ruya.Diagnostics.Abstractions\Ruya.Diagnostics.Abstractions.csproj" />
+		<ProjectReference Include="..\Ruya.Extensions.DependencyInjection\Ruya.Extensions.DependencyInjection.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

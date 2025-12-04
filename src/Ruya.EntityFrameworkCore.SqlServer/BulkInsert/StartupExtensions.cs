@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Ruya.Diagnostics.DistributedTracing;
 using Ruya.EntityFrameworkCore.ModelMetadata;
 using Ruya.EntityFrameworkCore.SqlServer.BulkInsert;
+using Ruya.Extensions.DependencyInjection;
 
 namespace Ruya.EntityFrameworkCore.SqlServer;
 
@@ -21,10 +22,7 @@ public static class StartupExtensions
     {
         ArgumentNullException.ThrowIfNull(serviceCollection);
 
-        if (!serviceCollection.Any(x => x.ServiceType == typeof(IDistributedTracing)))
-        {
-            throw new InvalidOperationException($"IDistributedTracing is not registered. Please register it before calling {nameof(AddBulkInsertOperations)}.");
-        }
+        serviceCollection.EnsureServicesRegistered(typeof(IDistributedTracing));
 
 		serviceCollection.AddOptions<BulkInsertOperationsSettings>()
 		.ValidateDataAnnotations()

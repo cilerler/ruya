@@ -1,11 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Ruya.Extensions.DependencyInjection;
 
 namespace Ruya.Diagnostics.DistributedTracing;
 
@@ -25,17 +24,7 @@ public static class StartupExtensions
 	{
 		ArgumentNullException.ThrowIfNull(serviceCollection);
 
-        var requiredServices = new[]
-        {
-            typeof(IDistributedCache),
-        };
-        var missingServices = requiredServices
-            .Where(t => !serviceCollection.Any(sd => sd.ServiceType == t))
-            .ToList();
-        if (missingServices.Count > 0)
-        {
-            throw new InvalidOperationException($"Missing required services: {string.Join(", ", missingServices.Select(t => t.Name))}");
-        }
+        serviceCollection.EnsureServicesRegistered(typeof(IDistributedCache));
 
 		serviceCollection.AddOptions<DistributedTracingSettings>()
 			.Configure<IConfiguration>((settings, configuration) =>

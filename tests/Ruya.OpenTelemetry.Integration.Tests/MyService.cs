@@ -1,17 +1,17 @@
 using System;
-using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using System.ComponentModel.DataAnnotations;
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ruya.Diagnostics.DistributedTracing;
+using Ruya.Extensions.DependencyInjection;
 using Ruya.Primitives;
 using Startup = Ruya.Primitives.Startup;
 
@@ -44,7 +44,7 @@ public class MyService : IMyService
     private readonly UpDownCounter<int> _myGauge;
     private readonly Counter<long> _workCounter;
     private readonly Histogram<double> _workDuration;
-        
+
     private readonly HttpClient _httpClient;
 
     public MyService(ILogger<MyService> logger, IDistributedTracing distributedTracing, IMeterFactory meterFactory, IOptions<MyServiceSettings> options, IHttpClientFactory httpClientFactory)
@@ -103,7 +103,7 @@ public class MyService : IMyService
                 activity.SetStatus(System.Diagnostics.ActivityStatusCode.Ok);
 
                 _logger.LogInformation("Work completed successfully");
-                
+
                 return requestUri;
             }
             catch (Exception ex)
@@ -132,21 +132,10 @@ public static class StartupExtensions
     {
         ArgumentNullException.ThrowIfNull(serviceCollection);
 
-        var requiredServices = new[]
-        {
-            //typeof(ILogger<MyService>),
+        serviceCollection.EnsureServicesRegistered(
             typeof(IDistributedTracing),
             typeof(IMeterFactory),
-            //typeof(IOptions<MyServiceSettings>),
-            typeof(IHttpClientFactory)
-        };
-        var missingServices = requiredServices
-            .Where(t => !serviceCollection.Any(sd => sd.ServiceType == t))
-            .ToList();
-        if (missingServices.Count > 0)
-        {
-            throw new InvalidOperationException($"Missing required services: {string.Join(", ", missingServices.Select(t => t.Name))}");
-        }
+            typeof(IHttpClientFactory));
 
         serviceCollection.AddOptions<MyServiceSettings>()
             .BindConfiguration(MyServiceSettings.ConfigurationSectionName)

@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Ruya.Diagnostics\Ruya.Diagnostics.csproj" />
     <ProjectReference Include="..\..\src\Ruya.OpenTelemetry\Ruya.OpenTelemetry.csproj" />
     <ProjectReference Include="..\..\src\Ruya.Extensions.Configuration\Ruya.Extensions.Configuration.csproj" />
+    <ProjectReference Include="..\..\src\Ruya.Extensions.DependencyInjection\Ruya.Extensions.DependencyInjection.csproj" />
   </ItemGroup>
 
 
