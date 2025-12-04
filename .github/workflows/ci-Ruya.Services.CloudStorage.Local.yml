@@ -1,0 +1,31 @@
+name: Ruya.Services.CloudStorage.Local
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: []
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/ci-Ruya.Services.CloudStorage.Local.yml'
+      - 'src/Ruya.Services.CloudStorage.Local/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.Services.CloudStorage.Local'
+      project-path: './src/Ruya.Services.CloudStorage.Local/Ruya.Services.CloudStorage.Local.csproj'
+      test-project-paths: './tests/Ruya.Services.CloudStorage.Local.Integration.Tests/Ruya.Services.CloudStorage.Local.Integration.Tests.csproj'
+      dispatch-event-type: 'Ruya.Services.CloudStorage.Local'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

@@ -1,0 +1,31 @@
+name: Ruya.EntityFrameworkCore.SqlServer
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: []
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.EntityFrameworkCore.SqlServer.yml'
+      - 'src/Ruya.EntityFrameworkCore.SqlServer/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.EntityFrameworkCore.SqlServer'
+      project-path: './src/Ruya.EntityFrameworkCore.SqlServer/Ruya.EntityFrameworkCore.SqlServer.csproj'
+      test-project-paths: './tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests.csproj'
+      dispatch-event-type: 'Ruya.EntityFrameworkCore.SqlServer'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
