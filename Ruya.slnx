@@ -52,7 +52,7 @@
     <Project Path="tests/Ruya.Services.CloudStorage.Tests.Common/Ruya.Services.CloudStorage.Tests.Common.csproj" />
     <Project Path="tests/Ruya.Services.CloudStorage.Unit.Tests/Ruya.Services.CloudStorage.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests.csproj" />
-    <Project Path="tests/Ruya.Services.DistributedLock.Mssql.Integration.Tests/Ruya.Services.DistributedLock.Mssql.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.DistributedLock.MsSql.Integration.Tests/Ruya.Services.DistributedLock.MsSql.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.DistributedLock.Redis.Integration.Tests/Ruya.Services.DistributedLock.Redis.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.DistributedLock.Unit.Tests/Ruya.Services.DistributedLock.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests.csproj" />

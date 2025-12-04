@@ -139,11 +139,11 @@
 		<PackageVersion Include="Ruya.Services.CloudStorage.Local" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.DistributedLock.Abstractions" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.DistributedLock.InMemory" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.DistributedLock.Mssql" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock.MsSql" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.DistributedLock.Redis" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.DistributedLock" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.MessageQueue.InMemory" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.MessageQueue.Mssql" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.MsSql" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.MessageQueue.RabbitMq" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.MessageQueue.Redis" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.MessageQueue" Version="8.1.*" />
