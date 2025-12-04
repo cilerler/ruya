@@ -131,6 +131,7 @@
 		<PackageVersion Include="Ruya.Diagnostics.Abstractions" Version="8.1.*" />
 		<PackageVersion Include="Ruya.EntityFrameworkCore.SqlServer" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Extensions.Configuration" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Extensions.DependencyInjection" Version="8.1.*" />
 		<PackageVersion Include="Ruya.OpenTelemetry" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.CloudStorage.Abstractions" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.CloudStorage.Amazon" Version="8.1.*" />
