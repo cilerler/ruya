@@ -5,6 +5,7 @@ using System.Diagnostics;
 // ReSharper disable once CheckNamespace
 namespace Ruya.Diagnostics.DistributedTracing;
 
+/// <summary>
 /// - Use StartActivity for the initiator (stores to cache)
 /// - Use ContinueActivity for followers (reads from cache, never stores)
 /// </summary>
