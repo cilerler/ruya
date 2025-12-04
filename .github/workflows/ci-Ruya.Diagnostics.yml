@@ -9,7 +9,7 @@ on:
         default: false
 
   repository_dispatch:
-    types: [Ruya.Diagnostics.Abstractions]
+    types: [Ruya.Primitives, Ruya.Extensions.DependencyInjection, Ruya.Diagnostics.Abstractions]
 
   push:
     branches: [main, release-preview, release-qa, develop]

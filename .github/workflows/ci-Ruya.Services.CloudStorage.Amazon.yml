@@ -9,7 +9,7 @@ on:
         default: false
 
   repository_dispatch:
-    types: []
+    types: [Ruya.Services.CloudStorage.Abstractions]
 
   push:
     branches: [main, release-preview, release-qa, develop]

@@ -9,7 +9,7 @@ on:
         default: false
 
   repository_dispatch:
-    types: []
+    types: [Ruya.Services.MessageQueue]
 
   push:
     branches: [main, release-preview, release-qa, develop]
