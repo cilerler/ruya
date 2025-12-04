@@ -127,13 +127,27 @@
 		<PackageVersion Include="Ruya.Primitives" Version="[8.1.0,)">
 			<NoWarn>NU1604;NU1011</NoWarn>
 		</PackageVersion>
-		<PackageVersion Include="Ruya.Testing.Primitives" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Extensions.Configuration" Version="8.1.*" />
-		<PackageVersion Include="Ruya.System.Xml.Serialization" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Diagnostics" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Diagnostics.Abstractions" Version="8.1.*" />
+		<PackageVersion Include="Ruya.EntityFrameworkCore.SqlServer" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Extensions.Configuration" Version="8.1.*" />
 		<PackageVersion Include="Ruya.OpenTelemetry" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.CloudStorage.Abstractions" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Amazon" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Azure" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Google" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Local" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.DistributedLock.Abstractions" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock.InMemory" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock.Mssql" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock.Redis" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.InMemory" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.Mssql" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.RabbitMq" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.Redis" Version="8.1.*" />
 		<PackageVersion Include="Ruya.Services.MessageQueue" Version="8.1.*" />
+		<PackageVersion Include="Ruya.System.Xml.Serialization" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Testing.Primitives" Version="8.1.*" />
 	</ItemGroup>
 </Project>
