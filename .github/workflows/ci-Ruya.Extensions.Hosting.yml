@@ -1,0 +1,31 @@
+name: Ruya.Extensions.Hosting
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: [Ruya.Diagnostics.Abstractions, Ruya.Extensions.Configuration, Ruya.Primitives]
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/ci-Ruya.Extensions.Hosting.yml'
+      - 'src/Ruya.Extensions.Hosting/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.Extensions.Hosting'
+      project-path: './src/Ruya.Extensions.Hosting/Ruya.Extensions.Hosting.csproj'
+      # test-project-paths:
+      dispatch-event-type: 'Ruya.Extensions.Hosting'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

@@ -22,6 +22,7 @@
     <Project Path="src/Ruya.EntityFrameworkCore.SqlServer/Ruya.EntityFrameworkCore.SqlServer.csproj" />
     <Project Path="src/Ruya.Extensions.Configuration/Ruya.Extensions.Configuration.csproj" />
     <Project Path="src/Ruya.Extensions.DependencyInjection/Ruya.Extensions.DependencyInjection.csproj" />
+    <Project Path="src/Ruya.Extensions.Hosting/Ruya.Extensions.Hosting.csproj" />
     <Project Path="src/Ruya.OpenTelemetry/Ruya.OpenTelemetry.csproj" />
     <Project Path="src/Ruya.Primitives/Ruya.Primitives.csproj" />
     <Project Path="src/Ruya.Services.CloudStorage.Abstractions/Ruya.Services.CloudStorage.Abstractions.csproj" />
@@ -44,6 +45,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Extensions.Hosting.Unit.Tests/Ruya.Extensions.Hosting.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.OpenTelemetry.Integration.Tests/Ruya.OpenTelemetry.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.CloudStorage.Azure.Integration.Tests/Ruya.Services.CloudStorage.Azure.Integration.Tests.csproj" />
