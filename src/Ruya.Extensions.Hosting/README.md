@@ -60,7 +60,6 @@ Configure the execution behavior using standard `appsettings.json`:
 ```json
 {
   "MyWorker": {
-    "Enabled": true,
     // "RunOnce": false,
     // "RunImmediately": true,
     // Leave Cron empty for continuous execution (loop)
