@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Hosting;
+using System;
+
 namespace Ruya.Primitives;
 
-// TODO: Move to Ruya.Hosting when it is created
 public static class HostEnvironmentExtensions
 {
-    //public static bool IsIntegration(this IHostEnvironment env) => env.IsEnvironment(EnvironmentNames.Integration);
+    public static bool IsIntegration(this IHostEnvironment env) => env.IsEnvironment(Constants.Environments.Integration);
 
-    //public static bool IsTesting(this IHostEnvironment env) => env.IsEnvironment(EnvironmentNames.Testing);
+    public static bool IsTesting(this IHostEnvironment env) => env.IsEnvironment(Constants.Environments.Testing);
 }

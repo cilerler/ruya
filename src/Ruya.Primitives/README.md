@@ -1,6 +1,6 @@
 # Ruya.Primitives
 
-Common primitives, constants, and extensions used across the Ruya framework.
+Common primitives, constants, and extensions used across the Ruya Common Libraries framework.
 
 ## Features
 

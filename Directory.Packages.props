@@ -37,6 +37,7 @@
 
 	<!-- .NET / ASP.NET Core -->
 	<ItemGroup>
+		<PackageVersion Include="System.Text.Json" Version="8.*" />
 		<PackageVersion Include="Microsoft.AspNetCore.Components.Web" Version="8.*" />
 		<PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.*" />
 		<PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.*" />
@@ -52,7 +53,6 @@
 		<PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Diagnostics.Abstractions" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="8.*" />
-		<PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Http" Version="8.*" />
@@ -64,7 +64,6 @@
 		<PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Options" Version="8.*" />
-		<PackageVersion Include="System.Text.Json" Version="8.*" />
 	</ItemGroup>
 
 	<!-- Security & Authentication -->
@@ -127,31 +126,29 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageVersion Include="Ruya.Primitives" Version="[8.1.0,)">
-			<NoWarn>NU1604;NU1011</NoWarn>
-		</PackageVersion>
-		<PackageVersion Include="Ruya.Diagnostics" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Diagnostics.Abstractions" Version="8.1.*" />
-		<PackageVersion Include="Ruya.EntityFrameworkCore.SqlServer" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Extensions.Configuration" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Extensions.DependencyInjection" Version="8.1.*" />
-		<PackageVersion Include="Ruya.OpenTelemetry" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.CloudStorage.Abstractions" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.CloudStorage.Amazon" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.CloudStorage.Azure" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.CloudStorage.Google" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.CloudStorage.Local" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.DistributedLock.Abstractions" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.DistributedLock.InMemory" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.DistributedLock.MsSql" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.DistributedLock.Redis" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.DistributedLock" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.MessageQueue.InMemory" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.MessageQueue.MsSql" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.MessageQueue.RabbitMq" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.MessageQueue.Redis" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Services.MessageQueue" Version="8.1.*" />
-		<PackageVersion Include="Ruya.System.Xml.Serialization" Version="8.1.*" />
-		<PackageVersion Include="Ruya.Testing.Primitives" Version="8.1.*" />
+		<PackageVersion Include="Ruya.Primitives" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Extensions.Configuration" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Extensions.DependencyInjection" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Diagnostics.Abstractions" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Diagnostics" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.OpenTelemetry" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.EntityFrameworkCore.SqlServer" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Abstractions" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Amazon" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Azure" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Google" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.CloudStorage.Local" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock.Abstractions" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock.InMemory" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock.MsSql" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock.Redis" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.DistributedLock" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.InMemory" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.MsSql" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.RabbitMq" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue.Redis" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.MessageQueue" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.System.Xml.Serialization" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Testing.Primitives" Version="8.1.*-*" />
 	</ItemGroup>
 </Project>
