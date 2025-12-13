@@ -449,3 +449,14 @@ _site
 *.ignore
 *.ignore/
 
+# =========================
+# AI Files
+# =========================
+.copilotignore
+.github/copilot-instructions.md
+.github/agents/
+.github/skills/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.geminiignore
