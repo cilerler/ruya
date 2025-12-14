@@ -23,6 +23,8 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+  	<PackageReference Include="Microsoft.Extensions.Configuration" />
+  	<PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
 		<ProjectReference Include="..\Ruya.Services.TokenBroker.Abstractions\Ruya.Services.TokenBroker.Abstractions.csproj" />
 	</ItemGroup>
 

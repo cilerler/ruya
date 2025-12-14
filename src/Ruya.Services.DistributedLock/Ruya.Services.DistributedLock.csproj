@@ -25,6 +25,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+  	<PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
 		<ProjectReference Include="..\Ruya.Services.DistributedLock.Abstractions\Ruya.Services.DistributedLock.Abstractions.csproj" />
 		<ProjectReference Include="..\Ruya.Primitives\Ruya.Primitives.csproj" />
 	</ItemGroup>

@@ -22,6 +22,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
+  	<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+  	<PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
 			<_Parameter1>Ruya.Services.MessageQueue.InMemory</_Parameter1>
 		</AssemblyAttribute>
