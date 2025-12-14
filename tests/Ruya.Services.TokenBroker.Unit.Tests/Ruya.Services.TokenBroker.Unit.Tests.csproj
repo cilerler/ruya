@@ -25,8 +25,6 @@
 	<ItemGroup>
 		<ProjectReference Include="..\..\src\Ruya.Services.TokenBroker\Ruya.Services.TokenBroker.csproj" />
 		<ProjectReference Include="..\..\src\Ruya.Services.TokenBroker.Client\Ruya.Services.TokenBroker.Client.csproj" />
-		<ProjectReference Include="..\..\src\Ruya.Services.TokenBroker.Validation\Ruya.Services.TokenBroker.Validation.csproj" />
-		<ProjectReference Include="..\..\src\Ruya.Services.TokenBroker.Abstractions\Ruya.Services.TokenBroker.Abstractions.csproj" />
 	</ItemGroup>
 
 </Project>
