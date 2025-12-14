@@ -27,6 +27,12 @@ public static class Startup
 	private const string _runningInKubernetes = "KUBERNETES_SERVICE_HOST";
 
 	/// <summary>
+	/// Gets the current environment name from ASPNETCORE_ENVIRONMENT or DOTNET_ENVIRONMENT.
+	/// Set by <see cref="ValidateAndLogStartupInfoAsync"/>.
+	/// </summary>
+	public static string EnvironmentName { get; private set; } = _unknown;
+
+	/// <summary>
 	/// Validates environment and prints diagnostic info. Call at the very start of Program.cs.
 	/// Exits with code 1 if environment is not properly configured.
 	/// </summary>
@@ -53,6 +59,12 @@ public static class Startup
 		{
 			Console.Error.WriteLine("Neither ASPNETCORE_ENVIRONMENT nor DOTNET_ENVIRONMENT are set.");
 			Environment.Exit(1);
+		}
+		else
+		{
+			EnvironmentName = !string.IsNullOrWhiteSpace(environmentVariables[_aspnetCoreEnvironment])
+				? environmentVariables[_aspnetCoreEnvironment]!
+				: environmentVariables[_dotnetEnvironment]!;
 		}
 	}
 

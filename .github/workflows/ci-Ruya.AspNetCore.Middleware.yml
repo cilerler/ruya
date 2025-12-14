@@ -1,0 +1,31 @@
+name: Ruya.AspNetCore.Middleware
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: []
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.AspNetCore.Middleware.yml'
+      - 'src/Ruya.AspNetCore.Middleware/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.AspNetCore.Middleware'
+      project-path: './src/Ruya.AspNetCore.Middleware/Ruya.AspNetCore.Middleware.csproj'
+      # test-project-paths:
+      dispatch-event-type: 'Ruya.AspNetCore.Middleware'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
