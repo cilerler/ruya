@@ -23,7 +23,7 @@ jobs:
     with:
       project-name: 'Ruya.AspNetCore.DataProtection.StackExchangeRedis'
       project-path: './src/Ruya.AspNetCore.DataProtection.StackExchangeRedis/Ruya.AspNetCore.DataProtection.StackExchangeRedis.csproj'
-      test-project-paths: './tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Tests.csproj'
+      test-project-paths: './tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests.csproj'
       dispatch-event-type: 'Ruya.AspNetCore.DataProtection.StackExchangeRedis'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:
