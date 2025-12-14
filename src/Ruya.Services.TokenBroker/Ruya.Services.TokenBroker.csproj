@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>JWT-based service-to-service authentication with API key validation and token exchange (on-behalf-of flow)</Description>
 		<PackageTags>token;service;authentication;jwt;api-key;security</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

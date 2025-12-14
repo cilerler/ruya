@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>SQL Server-based implementation of the distributed lock manager using sp_getapplock. Provides robust distributed locking for applications with SQL Server infrastructure.</Description>
 		<PackageTags>distributed-lock;locking;concurrency;sql-server;database</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">

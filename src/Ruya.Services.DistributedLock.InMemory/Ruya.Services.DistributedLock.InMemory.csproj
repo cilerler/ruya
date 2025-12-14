@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>In-memory implementation of the distributed lock manager. Ideal for testing and single-instance applications. Not suitable for distributed scenarios.</Description>
 		<PackageTags>distributed-lock;locking;concurrency;in-memory;testing</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">

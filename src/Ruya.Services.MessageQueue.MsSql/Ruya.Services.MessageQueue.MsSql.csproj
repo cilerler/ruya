@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>SQL Server provider implementation (table-based message queue)</Description>
 		<PackageTags>messaging;sqlserver;mssql;queue;event-driven</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">

@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Redis-based implementation of the distributed lock manager using StackExchange.Redis. Provides high-performance distributed locking for multi-instance applications.</Description>
 		<PackageTags>distributed-lock;locking;concurrency;redis;stackexchange</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">

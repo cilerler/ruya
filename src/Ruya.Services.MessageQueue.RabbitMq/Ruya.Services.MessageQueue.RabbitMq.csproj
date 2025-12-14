@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>RabbitMQ provider implementation</Description>
 		<PackageTags>messaging;rabbitmq;amqp;event-driven</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">
