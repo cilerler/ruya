@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Extensions for application configuration management.</Description>
 		<PackageTags>configuration, extensions, settings, config</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

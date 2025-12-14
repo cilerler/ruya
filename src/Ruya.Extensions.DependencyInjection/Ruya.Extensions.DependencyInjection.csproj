@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Extension methods for Microsoft.Extensions.DependencyInjection that provide service collection validation capabilities, including ensuring required services are registered before application startup.</Description>
 		<PackageTags>dependency-injection;di;service-collection;validation;ioc;extensions;dotnet;csharp</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
