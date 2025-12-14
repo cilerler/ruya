@@ -155,10 +155,10 @@
 		<PackageVersion Include="Ruya.Services.MessageQueue.RabbitMq" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.Services.MessageQueue.Redis" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.Services.MessageQueue" Version="8.1.*-*" />
-		<PackageVersion Include="Ruya.Services.TokenService.Abstractions" Version="8.1.*-*" />
-		<PackageVersion Include="Ruya.Services.TokenService.Client" Version="8.1.*-*" />
-		<PackageVersion Include="Ruya.Services.TokenService.Validation" Version="8.1.*-*" />
-		<PackageVersion Include="Ruya.Services.TokenService" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.TokenBroker.Abstractions" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.TokenBroker.Client" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.TokenBroker.Validation" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.Services.TokenBroker" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.System.Xml.Serialization" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.Testing.Primitives" Version="8.1.*-*" />
 	</ItemGroup>
