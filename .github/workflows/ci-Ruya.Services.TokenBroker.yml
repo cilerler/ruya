@@ -1,0 +1,31 @@
+name: Ruya.Services.TokenBroker
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: []
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.Services.TokenBroker.yml'
+      - 'src/Ruya.Services.TokenBroker/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.Services.TokenBroker'
+      project-path: './src/Ruya.Services.TokenBroker/Ruya.Services.TokenBroker.csproj'
+      test-project-paths: './tests/Ruya.Services.TokenBroker.Unit.Tests/Ruya.Services.TokenBroker.Unit.Tests.csproj'
+      dispatch-event-type: 'Ruya.Services.TokenBroker'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

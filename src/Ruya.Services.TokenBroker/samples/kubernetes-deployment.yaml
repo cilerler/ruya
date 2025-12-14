@@ -1,0 +1,121 @@
+# ============================================================================
+# WARNING: EXAMPLE MANIFESTS ONLY - DO NOT USE IN PRODUCTION AS-IS
+# ============================================================================
+# The secrets below contain placeholder values for demonstration purposes.
+# For production use:
+#   1. Generate cryptographically secure keys: openssl rand -base64 32
+#   2. Use a secrets management solution (Azure Key Vault, HashiCorp Vault,
+#      AWS Secrets Manager, Kubernetes External Secrets, etc.)
+#   3. Never commit real secrets to source control
+#   4. Consider using sealed-secrets or SOPS for GitOps workflows
+#   5. Rotate keys regularly according to your security policy
+# ============================================================================
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: token-service-secrets
+  namespace: ruya
+type: Opaque
+stringData:
+  # WARNING: PLACEHOLDER - Generate secure key with: openssl rand -base64 32
+  signing-key: "YOUR_BASE64_256_BIT_KEY_HERE"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: service-a-credentials
+  namespace: ruya
+type: Opaque
+stringData:
+  # WARNING: PLACEHOLDER - Generate secure key with: openssl rand -base64 32
+  api-key: "service-a-api-key-here"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: service-b-credentials
+  namespace: ruya
+type: Opaque
+stringData:
+  # WARNING: PLACEHOLDER - Generate secure key with: openssl rand -base64 32
+  api-key: "service-b-api-key-here"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: token-service-config
+  namespace: ruya
+data:
+  appsettings.json: |
+    {
+      "TokenBroker": {
+        "Issuer": "ruya-token-service",
+        "Audiences": ["ruya-api", "ruya-services"],
+        "TokenLifetime": "00:15:00",
+        "ClockSkew": "00:00:30"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: token-service
+  namespace: ruya
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: token-service
+  template:
+    metadata:
+      labels:
+        app: token-service
+    spec:
+      containers:
+        - name: token-service
+          image: ruya/token-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: TokenBroker__SigningKeyBase64
+              valueFrom:
+                secretKeyRef:
+                  name: token-service-secrets
+                  key: signing-key
+            - name: ConnectionStrings__Redis
+              value: "redis-master.ruya.svc.cluster.local:6379"
+          volumeMounts:
+            - name: config
+              mountPath: /app/appsettings.json
+              subPath: appsettings.json
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: token-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: token-service
+  namespace: ruya
+spec:
+  # ClusterIP only - internal access only, no external ingress
+  type: ClusterIP
+  selector:
+    app: token-service
+  ports:
+    - port: 8080
+      targetPort: 8080
