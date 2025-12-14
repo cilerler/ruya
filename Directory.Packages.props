@@ -136,6 +136,8 @@
 		<PackageVersion Include="Ruya.Diagnostics.Abstractions" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.Diagnostics" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.OpenTelemetry" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.AspNetCore.Diagnostics" Version="8.1.*-*" />
+		<PackageVersion Include="Ruya.AspNetCore.Middleware" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.Extensions.Hosting" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.EntityFrameworkCore.SqlServer" Version="8.1.*-*" />
 		<PackageVersion Include="Ruya.Services.CloudStorage.Abstractions" Version="8.1.*-*" />
