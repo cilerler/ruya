@@ -23,7 +23,7 @@ jobs:
     with:
       project-name: 'Ruya.AspNetCore.Diagnostics'
       project-path: './src/Ruya.AspNetCore.Diagnostics/Ruya.AspNetCore.Diagnostics.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.AspNetCore.Diagnostics.Tests/Ruya.AspNetCore.Diagnostics.Tests.csproj'
       dispatch-event-type: 'Ruya.AspNetCore.Diagnostics'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

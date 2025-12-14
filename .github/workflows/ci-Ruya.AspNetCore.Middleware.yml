@@ -23,7 +23,7 @@ jobs:
     with:
       project-name: 'Ruya.AspNetCore.Middleware'
       project-path: './src/Ruya.AspNetCore.Middleware/Ruya.AspNetCore.Middleware.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.AspNetCore.Middleware.Tests/Ruya.AspNetCore.Middleware.Tests.csproj'
       dispatch-event-type: 'Ruya.AspNetCore.Middleware'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:
