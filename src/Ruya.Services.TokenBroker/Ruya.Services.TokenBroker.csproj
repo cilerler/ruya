@@ -28,12 +28,10 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">
-		<PackageReference Include="Ruya.Services.TokenBroker.Abstractions" />
 		<PackageReference Include="Ruya.Services.TokenBroker.Validation" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
-		<ProjectReference Include="..\Ruya.Services.TokenBroker.Abstractions\Ruya.Services.TokenBroker.Abstractions.csproj" />
 		<ProjectReference Include="..\Ruya.Services.TokenBroker.Validation\Ruya.Services.TokenBroker.Validation.csproj" />
 	</ItemGroup>
 
