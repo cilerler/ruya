@@ -32,6 +32,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+  	<PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
 		<ProjectReference Include="..\Ruya.Services.TokenBroker.Validation\Ruya.Services.TokenBroker.Validation.csproj" />
 	</ItemGroup>
 
