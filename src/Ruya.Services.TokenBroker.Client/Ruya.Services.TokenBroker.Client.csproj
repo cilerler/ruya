@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Client library for Token Service - requests and exchanges JWT tokens</Description>
 		<PackageTags>token;service;client;http;jwt</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

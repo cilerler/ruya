@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Core implementation of the distributed lock manager. Provides lock manager implementation with heartbeat support, health checks, and telemetry.</Description>
 		<PackageTags>distributed-lock;locking;concurrency;core</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

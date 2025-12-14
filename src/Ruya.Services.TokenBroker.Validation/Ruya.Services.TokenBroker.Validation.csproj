@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Lightweight JWT validation library for Token Service - validates incoming tokens without token issuance dependencies</Description>
 		<PackageTags>token;service;validation;jwt;authentication</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -14,7 +14,7 @@ on:
   push:
     branches: [main, release-preview, release-qa, develop]
     paths:
-      - '.github/workflows/ci-Ruya.Services.CloudStorage.Amazon.yml'
+      - '.github/workflows/Ruya.Services.CloudStorage.Amazon.yml'
       - 'src/Ruya.Services.CloudStorage.Amazon/**'
 
 jobs:

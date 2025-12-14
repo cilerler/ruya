@@ -14,7 +14,7 @@ on:
   push:
     branches: [main, release-preview, release-qa, develop]
     paths:
-      - '.github/workflows/ci-Ruya.Services.CloudStorage.Local.yml'
+      - '.github/workflows/Ruya.Services.CloudStorage.Local.yml'
       - 'src/Ruya.Services.CloudStorage.Local/**'
 
 jobs:
