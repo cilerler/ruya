@@ -1,0 +1,31 @@
+name: Ruya.AspNetCore.DataProtection.StackExchangeRedis
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: []
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.AspNetCore.DataProtection.StackExchangeRedis.yml'
+      - 'src/Ruya.AspNetCore.DataProtection.StackExchangeRedis/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.AspNetCore.DataProtection.StackExchangeRedis'
+      project-path: './src/Ruya.AspNetCore.DataProtection.StackExchangeRedis/Ruya.AspNetCore.DataProtection.StackExchangeRedis.csproj'
+      test-project-paths: './tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Tests.csproj'
+      dispatch-event-type: 'Ruya.AspNetCore.DataProtection.StackExchangeRedis'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

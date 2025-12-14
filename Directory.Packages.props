@@ -42,6 +42,7 @@
 		<PackageVersion Include="Microsoft.AspNetCore.Components.Web" Version="8.*" />
 		<PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.*" />
 		<PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.*" />
+		<PackageVersion Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.*" />
 		<PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="8.*" />
