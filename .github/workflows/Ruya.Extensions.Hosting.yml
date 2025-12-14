@@ -14,7 +14,7 @@ on:
   push:
     branches: [main, release-preview, release-qa, develop]
     paths:
-      - '.github/workflows/ci-Ruya.Extensions.Hosting.yml'
+      - '.github/workflows/Ruya.Extensions.Hosting.yml'
       - 'src/Ruya.Extensions.Hosting/**'
 
 jobs:

@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Data protection service with Redis key persistence for ASP.NET Core applications</Description>
 		<PackageTags>dataprotection;redis;aspnetcore;encryption;security</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

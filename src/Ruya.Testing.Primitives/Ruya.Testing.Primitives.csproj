@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Primitive types and helpers for testing.</Description>
 		<PackageTags>testing, primitives, helpers, unit-test</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<PropertyGroup>

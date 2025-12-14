@@ -11,7 +11,7 @@
 	<PropertyGroup>
 		<Description>ASP.NET Core middleware for adding application environment information to HTTP response headers including version, name, and environment.</Description>
 		<PackageTags>aspnetcore, middleware, response-headers, environment</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

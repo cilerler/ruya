@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Diagnostic tools and utilities for application monitoring and logging.</Description>
 		<PackageTags>diagnostics, logging, monitoring, telemetry</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

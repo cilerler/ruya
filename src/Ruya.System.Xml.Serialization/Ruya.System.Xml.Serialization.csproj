@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>XML serialization utilities and extensions.</Description>
 		<PackageTags>xml, serialization, utilities</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

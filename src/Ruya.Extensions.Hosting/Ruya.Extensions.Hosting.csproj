@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Extensions for hosting background worker services with advanced scheduling and reliability features.</Description>
 		<PackageTags>hosting, background-service, worker, cron, resilience, health-check</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">
