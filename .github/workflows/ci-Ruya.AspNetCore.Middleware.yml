@@ -9,7 +9,7 @@ on:
         default: false
 
   repository_dispatch:
-    types: []
+    types: [Ruya.Extensions.Configuration, Ruya.Primitives]
 
   push:
     branches: [main, release-preview, release-qa, develop]
