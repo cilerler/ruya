@@ -460,3 +460,4 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 .geminiignore
+.claude/

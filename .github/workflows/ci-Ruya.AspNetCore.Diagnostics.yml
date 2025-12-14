@@ -1,0 +1,31 @@
+name: Ruya.AspNetCore.Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: []
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.AspNetCore.Diagnostics.yml'
+      - 'src/Ruya.AspNetCore.Diagnostics/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.AspNetCore.Diagnostics'
+      project-path: './src/Ruya.AspNetCore.Diagnostics/Ruya.AspNetCore.Diagnostics.csproj'
+      # test-project-paths:
+      dispatch-event-type: 'Ruya.AspNetCore.Diagnostics'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

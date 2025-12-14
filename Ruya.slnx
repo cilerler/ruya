@@ -17,6 +17,7 @@
     <File Path="README.md" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Ruya.AspNetCore.Diagnostics/Ruya.AspNetCore.Diagnostics.csproj" />
     <Project Path="src/Ruya.Diagnostics.Abstractions/Ruya.Diagnostics.Abstractions.csproj" />
     <Project Path="src/Ruya.Diagnostics/Ruya.Diagnostics.csproj" />
     <Project Path="src/Ruya.EntityFrameworkCore.SqlServer/Ruya.EntityFrameworkCore.SqlServer.csproj" />
@@ -44,6 +45,7 @@
     <Project Path="src/Ruya.Testing.Primitives/Ruya.Testing.Primitives.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Ruya.AspNetCore.Diagnostics.Unit.Tests/Ruya.AspNetCore.Diagnostics.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Extensions.Hosting.Unit.Tests/Ruya.Extensions.Hosting.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.OpenTelemetry.Integration.Tests/Ruya.OpenTelemetry.Integration.Tests.csproj" />
