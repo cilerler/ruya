@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Shared models, constants, and interfaces for Token Service</Description>
 		<PackageTags>token;service;abstractions;interfaces</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

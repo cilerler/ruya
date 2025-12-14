@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Core abstractions and interfaces for the distributed lock manager. This package provides the foundational types required for implementing distributed locking mechanisms.</Description>
 		<PackageTags>distributed-lock;locking;concurrency;abstractions</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 </Project>

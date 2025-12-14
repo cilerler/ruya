@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Amazon S3 implementation for cloud storage services.</Description>
 		<PackageTags>aws, s3, cloud, storage, amazon</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -7,7 +7,7 @@
 	<PropertyGroup>
 		<Description>Core abstractions and infrastructure for a messaging framework - A modern, provider-agnostic messaging framework for .NET</Description>
 		<PackageTags>messaging;rabbitmq;redis;service-bus;pub-sub;event-driven</PackageTags>
-		<Version>8.1</Version>
+		<Version>8.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
