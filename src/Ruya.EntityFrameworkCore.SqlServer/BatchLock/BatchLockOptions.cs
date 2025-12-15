@@ -73,4 +73,9 @@ public sealed class BatchLockOptions
 	/// Name of the processing order field. Defaults to "ProcessingOrder".
 	/// </summary>
 	public string ProcessingOrderField { get; init; } = "ProcessingOrder";
+
+	/// <summary>
+	/// Name of the primary key field. Defaults to "Id".
+	/// </summary>
+	public string PrimaryKeyField { get; init; } = "Id";
 }

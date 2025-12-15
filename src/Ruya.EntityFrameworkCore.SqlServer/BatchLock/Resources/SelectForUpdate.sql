@@ -36,6 +36,7 @@ DECLARE @ProcessStatusCodeField NVARCHAR(128) = COALESCE(@p9, 'ProcessStatusCode
 DECLARE @ProcessStatusCodeValue TINYINT = COALESCE(@p10, NULL);
 DECLARE @ProcessingOrderField NVARCHAR(128) = COALESCE(@p11, 'ProcessingOrder');
 DECLARE @Debug BIT = COALESCE(@p12, 0);
+DECLARE @PrimaryKeyField NVARCHAR(128) = COALESCE(@p13, 'Id');
 
 -- Declare variables needed later
 DECLARE @TempTableColumns NVARCHAR(MAX);
@@ -192,7 +193,7 @@ DECLARE @UpdatedRows TABLE (
 
 WITH TargetBatch AS (
     SELECT TOP (' + CAST(@BatchSize AS NVARCHAR(10)) + ')
-        t.Id
+        t.' + QUOTENAME(@PrimaryKeyField) + '
     FROM ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + ' AS t WITH (ROWLOCK, UPDLOCK, READPAST)
     WHERE ' + @WhereClause;
 
@@ -212,7 +213,7 @@ INTO @UpdatedRows (
     ' + @InsertColumns + '
 )
 FROM ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + ' t
-INNER JOIN TargetBatch tb ON t.Id = tb.Id;
+INNER JOIN TargetBatch tb ON t.' + QUOTENAME(@PrimaryKeyField) + ' = tb.' + QUOTENAME(@PrimaryKeyField) + ';
 
 SELECT * FROM @UpdatedRows;';
 

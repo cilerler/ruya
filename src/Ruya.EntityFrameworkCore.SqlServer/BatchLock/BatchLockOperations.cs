@@ -57,7 +57,8 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 				new("@p10", (object)options.ProcessStatusCodeValue ?? DBNull.Value),
 				new("@p11", (object)options.ProcessingOrderField ?? DBNull.Value),
 				//new SqlParameter("@p12", (object)options.Debug ?? DBNull.Value),
-				new("@p12", DBNull.Value)
+				new("@p12", DBNull.Value),
+				new("@p13", (object)options.PrimaryKeyField ?? DBNull.Value)
 		];
 	}
 }
