@@ -6,7 +6,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<GlobalPackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.100"
+		<GlobalPackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.101"
 			PrivateAssets="All"
 			IncludeAssets="runtime;build;native;contentfiles;analyzers;buildtransitive" />
 
