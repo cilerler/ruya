@@ -23,16 +23,26 @@
 	<ItemGroup Condition="'$(Configuration)' == 'Release'">
 		<PackageReference Include="Ruya.Diagnostics.Abstractions" />
 		<PackageReference Include="Ruya.Extensions.DependencyInjection" />
+		<PackageReference Include="Ruya.Primitives" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
 		<ProjectReference Include="..\Ruya.Diagnostics.Abstractions\Ruya.Diagnostics.Abstractions.csproj" />
 		<ProjectReference Include="..\Ruya.Extensions.DependencyInjection\Ruya.Extensions.DependencyInjection.csproj" />
+		<ProjectReference Include="..\Ruya.Primitives\Ruya.Primitives.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
 			<_Parameter1>Ruya.EntityFrameworkCore.SqlServer.Tests</_Parameter1>
 		</AssemblyAttribute>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Remove="BatchLock\Resources\*.sql" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Include="BatchLock\Resources\*.sql" />
 	</ItemGroup>
 </Project>
