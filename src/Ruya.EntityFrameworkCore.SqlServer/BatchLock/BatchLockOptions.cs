@@ -21,21 +21,21 @@ public sealed class BatchLockOptions
 	public string TableName { get; init; } = null!;
 
 	/// <summary>
-	/// Number of rows to lock in a single batch.
+	/// Number of rows to lock in a single batch. Defaults to 1.
 	/// </summary>
 	[Range(1, 10000)]
-	public int BatchSize { get; init; } = 100;
+	public int? BatchSize { get; init; }
 
 	/// <summary>
-	/// Identifier of the process locking the rows.
+	/// Identifier of the process locking the rows. Defaults to hostname.
 	/// </summary>
 	[Required]
-	public string LockedBy { get; init; } = null!;
+	public string LockedBy { get; init; } = System.Net.Dns.GetHostName();
 
 	/// <summary>
-	/// Lock state value to set on locked rows.
+	/// Lock state value to set on locked rows. Defaults to 1.
 	/// </summary>
-	public byte LockState { get; init; } = 1;
+	public byte LockState { get; init; }
 
 	/// <summary>
 	/// Lock timestamp. Defaults to UTC now if not specified.
@@ -62,7 +62,7 @@ public sealed class BatchLockOptions
 	/// <summary>
 	/// Name of the process status code field. Defaults to "ProcessStatusCode".
 	/// </summary>
-	public string ProcessStatusCodeField { get; init; } = "ProcessStatusCode";
+	public string? ProcessStatusCodeField { get; init; }
 
 	/// <summary>
 	/// Value of process status code to filter by.
@@ -72,10 +72,10 @@ public sealed class BatchLockOptions
 	/// <summary>
 	/// Name of the processing order field. Defaults to "ProcessingOrder".
 	/// </summary>
-	public string ProcessingOrderField { get; init; } = "ProcessingOrder";
+	public string? ProcessingOrderField { get; init; }
 
 	/// <summary>
 	/// Name of the primary key field. Defaults to "Id".
 	/// </summary>
-	public string PrimaryKeyField { get; init; } = "Id";
+	public string? PrimaryKeyField { get; init; }
 }
