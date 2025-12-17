@@ -40,6 +40,7 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>disable</ImplicitUsings>
 		<InvariantGlobalization>false</InvariantGlobalization>
+		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 		<LangVersion>latest</LangVersion>
 		<UseArtifactsOutput>true</UseArtifactsOutput>
 	</PropertyGroup>
