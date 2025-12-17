@@ -147,7 +147,7 @@
 		<PackageVersion Include="Azure.Storage.Blobs" Version="12.26.0" />
 		<PackageVersion Include="Google.Cloud.Storage.V1" Version="4.13.0" />
 		<PackageVersion Include="AWSSDK.S3" Version="4.0.14" />
-		<PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3" />
+		<PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.17" />
 	</ItemGroup>
 
 	<!-- Ruya Packages -->
