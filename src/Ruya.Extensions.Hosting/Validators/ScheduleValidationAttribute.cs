@@ -22,7 +22,7 @@ public sealed class ScheduleValidationAttribute : ValidationAttribute
 
         try
         {
-            CronExpression.Parse(expression);
+            CronExpression.Parse(expression, CronFormat.IncludeSeconds);
             return ValidationResult.Success;
         }
         catch
