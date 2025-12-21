@@ -37,6 +37,7 @@ DECLARE @ProcessStatusCodeValue TINYINT = COALESCE(@p10, NULL);
 DECLARE @ProcessingOrderField NVARCHAR(128) = COALESCE(@p11, 'ProcessingOrder');
 DECLARE @Debug BIT = COALESCE(@p12, 0);
 DECLARE @PrimaryKeyField NVARCHAR(128) = COALESCE(@p13, 'Id');
+DECLARE @ReturnPrimaryKeyOnly BIT = COALESCE(@p14, 0);
 
 -- Declare variables needed later
 DECLARE @TempTableColumns NVARCHAR(MAX);
@@ -215,6 +216,9 @@ INTO @UpdatedRows (
 FROM ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + ' t
 INNER JOIN TargetBatch tb ON t.' + QUOTENAME(@PrimaryKeyField) + ' = tb.' + QUOTENAME(@PrimaryKeyField) + ';
 
+IF @ReturnPrimaryKeyOnly = 1
+    SELECT ' + QUOTENAME(@PrimaryKeyField) + ' FROM @UpdatedRows;
+ELSE
 SELECT * FROM @UpdatedRows;';
 
 -- For security logging and debugging
@@ -229,6 +233,6 @@ ELSE
 BEGIN
     -- Execute the dynamic SQL with parameters
     EXEC sp_executesql @SQL,
-        N'@BatchSize INT, @LockState TINYINT, @LockTime DATETIME2(7), @LockedBy VARCHAR(261)',
-        @BatchSize, @LockState, @LockTime, @LockedBy;
+        N'@BatchSize INT, @LockState TINYINT, @LockTime DATETIME2(7), @LockedBy VARCHAR(261), @ReturnPrimaryKeyOnly BIT',
+        @BatchSize, @LockState, @LockTime, @LockedBy, @ReturnPrimaryKeyOnly;
 END

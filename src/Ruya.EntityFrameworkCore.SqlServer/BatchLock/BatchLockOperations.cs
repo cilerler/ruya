@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -29,18 +32,37 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 		ArgumentNullException.ThrowIfNull(options);
 
 		_logger.LogDebug(
-			"Building SelectForUpdate query for {SchemaName}.{TableName} with BatchSize={BatchSize}, LockedBy={LockedBy},  called by {CallerMethod}",
+			"Building SelectForUpdate query for {SchemaName}.{TableName} with BatchSize={BatchSize}, LockedBy={LockedBy}, called by {CallerMethod}",
 			options.SchemaName,
 			options.TableName,
 			options.BatchSize,
 			options.LockedBy,
 			callerMethod);
 
-		var parameters = BuildParameters(options);
+		var parameters = BuildParameters(options, returnPrimaryKeyOnly: false);
 		return _dbContext.Set<T>().FromSqlRaw(SqlQuery.SelectForUpdate, parameters);
 	}
 
-	private static SqlParameter[] BuildParameters(BatchLockOptions options)
+	/// <inheritdoc />
+	public async Task<List<TKey>> SelectForUpdateKeysAsync<TKey>(BatchLockOptions options, CancellationToken cancellationToken = default, [System.Runtime.CompilerServices.CallerMemberName] string callerMethod = "")
+	{
+		ArgumentNullException.ThrowIfNull(options);
+
+		_logger.LogDebug(
+			"Building SelectForUpdateKeys query for {SchemaName}.{TableName} with BatchSize={BatchSize}, LockedBy={LockedBy}, called by {CallerMethod}",
+			options.SchemaName,
+			options.TableName,
+			options.BatchSize,
+			options.LockedBy,
+			callerMethod);
+
+		var parameters = BuildParameters(options, returnPrimaryKeyOnly: true);
+		return await _dbContext.Database
+			.SqlQueryRaw<TKey>(SqlQuery.SelectForUpdate, parameters)
+			.ToListAsync(cancellationToken);
+	}
+
+	private static SqlParameter[] BuildParameters(BatchLockOptions options, bool returnPrimaryKeyOnly)
 	{
 		return
 		[
@@ -58,7 +80,8 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 				new("@p11", (object)options.ProcessingOrderField ?? DBNull.Value),
 				//new SqlParameter("@p12", (object)options.Debug ?? DBNull.Value),
 				new("@p12", DBNull.Value),
-				new("@p13", (object)options.PrimaryKeyField ?? DBNull.Value)
+				new("@p13", (object)options.PrimaryKeyField ?? DBNull.Value),
+				new("@p14", returnPrimaryKeyOnly)
 		];
 	}
 }

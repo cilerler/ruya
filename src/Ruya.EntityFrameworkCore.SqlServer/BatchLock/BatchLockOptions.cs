@@ -35,7 +35,7 @@ public sealed class BatchLockOptions
 	/// <summary>
 	/// Lock state value to set on locked rows. Defaults to 1.
 	/// </summary>
-	public byte LockState { get; init; }
+	public byte LockState { get; init; } = 1;
 
 	/// <summary>
 	/// Lock timestamp. Defaults to UTC now if not specified.
@@ -78,4 +78,10 @@ public sealed class BatchLockOptions
 	/// Name of the primary key field. Defaults to "Id".
 	/// </summary>
 	public string? PrimaryKeyField { get; init; }
+
+	/// <summary>
+	/// When true, only returns the primary key column instead of all columns.
+	/// Useful for reducing data transfer when you only need the IDs.
+	/// </summary>
+	public bool ReturnPrimaryKeyOnly { get; init; }
 }
