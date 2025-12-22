@@ -64,7 +64,7 @@ public class SettingsTests
         // Arrange
         var settings = new TestWorkerSettings();
         SetEnabled(settings, true);
-        settings.ScheduleCronExpression = "* * * * *"; // Every minute
+        settings.ScheduleCronExpression = "* * * * * *"; // Every second (6-field cron with seconds)
 
         // Act
         var next = settings.NextOccurrence;
