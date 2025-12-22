@@ -5,7 +5,7 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<Description>SQL Server extensions and utilities for Entity Framework Core.</Description>
+		<Description>SQL Server extensions and utilities</Description>
 		<PackageTags>efcore, sqlserver, entityframework, database</PackageTags>
 		<Version>8.2</Version>
 	</PropertyGroup>
