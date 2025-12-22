@@ -23,7 +23,7 @@ jobs:
     with:
       project-name: 'Ruya.Extensions.Hosting'
       project-path: './src/Ruya.Extensions.Hosting/Ruya.Extensions.Hosting.csproj'
-      test-project-paths: './tests/Ruya.Extensions.Hosting.Tests/Ruya.Extensions.Hosting.Unit.Tests.csproj'
+      test-project-paths: './tests/Ruya.Extensions.Hosting.Unit.Tests/Ruya.Extensions.Hosting.Unit.Tests.csproj'
       dispatch-event-type: 'Ruya.Extensions.Hosting'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:
