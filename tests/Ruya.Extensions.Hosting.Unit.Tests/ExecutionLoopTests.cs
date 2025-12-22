@@ -1,10 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Metrics;
-using System.Threading;
-using System.Threading.Tasks;
-using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -156,5 +152,102 @@ public class ExecutionLoopTests
 
         // Assert
         Assert.AreEqual(1, service.ExecutionCount, "Should have executed exactly once because RunOnce=true");
+    }
+
+    [TestMethod]
+    public async Task RunScheduleLoopAsync_DelayBetweenExecutions_ShouldDelayInContinuousMode()
+    {
+        // Arrange
+        _settings.ScheduleCronExpression = null; // Continuous mode
+        _settings.DelayBetweenExecutions = TimeSpan.FromMilliseconds(500);
+
+        using var service = CreateService();
+        var executionTimes = new List<DateTime>();
+        var tcs = new TaskCompletionSource();
+
+        service.DoWorkAction = (ct) =>
+        {
+            executionTimes.Add(DateTime.UtcNow);
+            if (executionTimes.Count >= 3) tcs.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Act
+        var stopwatch = Stopwatch.StartNew();
+        await service.StartedAsync(default);
+        await Task.WhenAny(tcs.Task, Task.Delay(5000));
+        stopwatch.Stop();
+
+        // Assert
+        Assert.IsTrue(executionTimes.Count >= 3, "Should have executed at least 3 times");
+
+        // Verify delays between executions (should be at least 500ms apart)
+        for (int i = 1; i < executionTimes.Count; i++)
+        {
+            var gap = executionTimes[i] - executionTimes[i - 1];
+            Assert.IsTrue(gap >= TimeSpan.FromMilliseconds(400),
+                $"Gap between execution {i - 1} and {i} was {gap.TotalMilliseconds}ms, expected at least 400ms");
+        }
+
+        await service.StopAsync(default);
+    }
+
+    [TestMethod]
+    public async Task RunScheduleLoopAsync_DelayBetweenExecutions_ShouldNotDelayWhenZero()
+    {
+        // Arrange
+        _settings.ScheduleCronExpression = null; // Continuous mode
+        _settings.DelayBetweenExecutions = TimeSpan.Zero; // No delay
+
+        using var service = CreateService();
+        var tcs = new TaskCompletionSource();
+
+        service.DoWorkAction = (ct) =>
+        {
+            if (service.ExecutionCount >= 5) tcs.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Act
+        var stopwatch = Stopwatch.StartNew();
+        await service.StartedAsync(default);
+        await Task.WhenAny(tcs.Task, Task.Delay(2000));
+        stopwatch.Stop();
+
+        // Assert
+        Assert.IsTrue(service.ExecutionCount >= 5, "Should have executed at least 5 times quickly");
+        Assert.IsTrue(stopwatch.ElapsedMilliseconds < 1000,
+            $"Should complete quickly without delays, took {stopwatch.ElapsedMilliseconds}ms");
+
+        await service.StopAsync(default);
+    }
+
+    [TestMethod]
+    public async Task RunScheduleLoopAsync_DelayBetweenExecutions_ShouldRespectCancellation()
+    {
+        // Arrange
+        _settings.ScheduleCronExpression = null; // Continuous mode
+        _settings.DelayBetweenExecutions = TimeSpan.FromSeconds(10); // Long delay
+
+        using var service = CreateService();
+        var firstExecutionDone = new TaskCompletionSource();
+
+        service.DoWorkAction = (ct) =>
+        {
+            firstExecutionDone.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Act
+        await service.StartedAsync(default);
+        await firstExecutionDone.Task; // Wait for first execution
+
+        var stopwatch = Stopwatch.StartNew();
+        await service.StoppingAsync(default); // Request stop during delay
+        stopwatch.Stop();
+
+        // Assert - Should stop quickly, not wait for the full 10 second delay
+        Assert.IsTrue(stopwatch.ElapsedMilliseconds < 1000,
+            $"Should cancel delay quickly, took {stopwatch.ElapsedMilliseconds}ms");
     }
 }
