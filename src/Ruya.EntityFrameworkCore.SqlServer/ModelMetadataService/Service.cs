@@ -18,23 +18,44 @@ public interface IModelMetadata
 
 public partial class ModelMetadataService<TContext> : IModelMetadata where TContext : DbContext
 {
+	public const string DefaultSchema = "dbo";
+
     public List<ColumnDefinition> ColumnDefinitions => _columnDefinitions.Value;
     private readonly Lazy<List<ColumnDefinition>> _columnDefinitions;
 
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly string _defaultSchema;
 
-	public ModelMetadataService(IServiceScopeFactory scopeFactory, string defaultSchema = "dbo")
+	/// <summary>
+	/// Creates a ModelMetadataService that resolves DbContext from DI.
+	/// Requires TContext to be registered in the service collection.
+	/// </summary>
+	public ModelMetadataService(IServiceScopeFactory scopeFactory, string defaultSchema = DefaultSchema)
 	{
-		_scopeFactory = scopeFactory;
         _defaultSchema = defaultSchema;
 		_columnDefinitions = new Lazy<List<ColumnDefinition>>(() =>
         {
-            using var scope = _scopeFactory.CreateScope();
+            using var scope = scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
-			//using var dbContext = new MyDbContext(new DbContextOptionsBuilder<MyDbContext>().UseSqlServer(string.Empty).Options);
             return GenerateColumnDefinitions(dbContext);
         }, LazyThreadSafetyMode.ExecutionAndPublication);
+	}
+
+	/// <summary>
+	/// Creates a ModelMetadataService without requiring DbContext in DI.
+	/// Uses an empty SQL Server connection to build the EF Core model in memory.
+	/// TContext must have a constructor that accepts DbContextOptions&lt;TContext&gt;.
+	/// </summary>
+	public ModelMetadataService(string defaultSchema = DefaultSchema)
+	{
+		_defaultSchema = defaultSchema;
+		_columnDefinitions = new Lazy<List<ColumnDefinition>>(() =>
+		{
+			var options = new DbContextOptionsBuilder<TContext>()
+				.UseSqlServer(string.Empty)
+				.Options;
+			using var dbContext = (TContext)Activator.CreateInstance(typeof(TContext), options)!;
+			return GenerateColumnDefinitions(dbContext);
+		}, LazyThreadSafetyMode.ExecutionAndPublication);
 	}
 
 	private List<ColumnDefinition> GenerateColumnDefinitions(DbContext context)
