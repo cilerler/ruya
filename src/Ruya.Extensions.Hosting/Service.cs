@@ -193,6 +193,22 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
 
             if (cancellationToken.IsCancellationRequested) break;
 
+            // Apply artificial delay between executions if configured
+            if (_settings.DelayBetweenExecutions > TimeSpan.Zero)
+            {
+                _logger.LogDebug("Waiting {Delay} before next execution.", _settings.DelayBetweenExecutions);
+                try
+                {
+                    await Task.Delay(_settings.DelayBetweenExecutions, cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
+            }
+
+            if (cancellationToken.IsCancellationRequested) break;
+
             var delay = _settings.NextOccurrence;
             if (delay == Timeout.InfiniteTimeSpan)
             {

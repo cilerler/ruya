@@ -32,6 +32,9 @@ public class WorkerBackgroundServiceSettings
     // Shutdown settings
     public int ShutdownTimeoutSeconds { get; set; } = 30;
 
+    // Delay settings
+    public TimeSpan DelayBetweenExecutions { get; set; } = TimeSpan.Zero;
+
     public bool RunContinuously => string.IsNullOrWhiteSpace(ScheduleCronExpression);
 
     public TimeSpan NextOccurrence
