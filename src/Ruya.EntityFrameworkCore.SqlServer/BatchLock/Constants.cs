@@ -1,6 +1,6 @@
 namespace Ruya.EntityFrameworkCore.SqlServer.BatchLock;
 
-public class Constants
+public static class Constants
 {
 	public const string SelectForUpdate = "SelectForUpdate.sql";
 }

@@ -96,7 +96,7 @@ public partial class ModelMetadataService<TContext> : IModelMetadata where TCont
 						ModelType = entityType.ClrType.AssemblyQualifiedName ?? entityType.Name,
 						PropertyType = GetCleanTypeName(property.PropertyType),
 						IsNavigation = true,
-						IsCollection = navigation.IsCollection,
+						IsCollection = GetIsCollection(navigation),
 						ForeignKeyPropertyName = foreignKey?.Properties.FirstOrDefault()?.Name,
 						InversePropertyName = inverseProperty?.Property,
 						InverseTypeName = navigation.TargetEntityType.Name
@@ -186,6 +186,21 @@ public partial class ModelMetadataService<TContext> : IModelMetadata where TCont
 			return Nullable.GetUnderlyingType(type)?.FullName ?? type.FullName;
 		}
 		return type.FullName;
+	}
+
+	/// <summary>
+	/// Gets the IsCollection value from INavigation using reflection to support both EF Core 8 and 10.
+	/// In EF Core 8, IsCollection was on IReadOnlyNavigationBase. In EF Core 10, the interface hierarchy changed.
+	/// Using reflection ensures binary compatibility across versions.
+	/// </summary>
+	/// <remarks>
+	/// TODO: When this library is upgraded to target .NET 10 / EF Core 10, remove this method
+	/// and replace the call site with direct property access: navigation.IsCollection
+	/// </remarks>
+	private static bool GetIsCollection(INavigation navigation)
+	{
+		PropertyInfo? isCollectionProperty = navigation.GetType().GetProperty("IsCollection", BindingFlags.Public | BindingFlags.Instance);
+		return isCollectionProperty?.GetValue(navigation) as bool? ?? false;
 	}
 
 	[GeneratedRegex(@"decimal\((\d+),\s*(\d+)\)|numeric\((\d+),\s*(\d+)\)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
