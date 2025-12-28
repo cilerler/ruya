@@ -161,17 +161,20 @@ END
 SELECT
     @TempTableColumns = STRING_AGG(
         QUOTENAME(ColumnName) + ' ' +
-        TYPE_NAME(system_type_id) +
         CASE
-            WHEN TYPE_NAME(system_type_id) LIKE '%char%' OR TYPE_NAME(system_type_id) LIKE '%binary%'
-            THEN '(' + CASE WHEN max_length = -1 THEN 'MAX' ELSE CAST(CASE WHEN TYPE_NAME(system_type_id) LIKE 'n%' THEN max_length/2 ELSE max_length END AS NVARCHAR(10)) END + ')'
-            WHEN TYPE_NAME(system_type_id) IN ('decimal', 'numeric')
-            THEN '(' + CAST(precision AS NVARCHAR(10)) + ',' + CAST(scale AS NVARCHAR(10)) + ')'
-            WHEN TYPE_NAME(system_type_id) IN ('datetime2', 'datetimeoffset', 'time')
-            THEN '(' + CAST(scale AS NVARCHAR(10)) + ')'
-            ELSE ''
+            WHEN system_type_id = 189 THEN 'binary(8)'  -- timestamp/rowversion
+            ELSE TYPE_NAME(system_type_id) +
+                CASE
+                    WHEN TYPE_NAME(system_type_id) LIKE '%char%' OR TYPE_NAME(system_type_id) LIKE '%binary%'
+                    THEN '(' + CASE WHEN max_length = -1 THEN 'MAX' ELSE CAST(CASE WHEN TYPE_NAME(system_type_id) LIKE 'n%' THEN max_length/2 ELSE max_length END AS NVARCHAR(10)) END + ')'
+                    WHEN TYPE_NAME(system_type_id) IN ('decimal', 'numeric')
+                    THEN '(' + CAST(precision AS NVARCHAR(10)) + ',' + CAST(scale AS NVARCHAR(10)) + ')'
+                    WHEN TYPE_NAME(system_type_id) IN ('datetime2', 'datetimeoffset', 'time')
+                    THEN '(' + CAST(scale AS NVARCHAR(10)) + ')'
+                    ELSE ''
+                END
         END +
-        CASE WHEN is_nullable = 1 THEN ' NULL' ELSE ' NOT NULL' END,
+        CASE WHEN is_nullable = 1 OR system_type_id = 189 THEN ' NULL' ELSE ' NOT NULL' END,
         ',' + CHAR(13) + CHAR(10) + '    '
     ),
     @OutputColumns = STRING_AGG(
