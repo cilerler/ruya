@@ -210,7 +210,8 @@ UPDATE t
 SET
     t.LockState = @LockState,
     t.LockTime = @LockTime,
-    t.LockedBy = @LockedBy
+    t.LockedBy = @LockedBy,
+    t.ModifiedAt = SYSUTCDATETIME()
 OUTPUT
     ' + @OutputColumns + '
 INTO @UpdatedRows (
