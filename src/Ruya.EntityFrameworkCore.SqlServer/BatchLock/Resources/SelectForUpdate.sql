@@ -22,6 +22,7 @@ DECLARE @p11 NVARCHAR(128);  -- ProcessingOrderField
 DECLARE @p12 BIT            = 1;  -- Debug
 DECLARE @p13 NVARCHAR(128);  -- PrimaryKeyField
 DECLARE @p14 BIT;            -- ReturnPrimaryKeyOnly
+DECLARE @p15 BIT;            -- PreserveModifiedAt
 */
 
 -- Initialize parameters with improved declaration style
@@ -40,6 +41,7 @@ DECLARE @ProcessingOrderField NVARCHAR(128) = COALESCE(@p11, 'ProcessingOrder');
 DECLARE @Debug BIT = COALESCE(@p12, 0);
 DECLARE @PrimaryKeyField NVARCHAR(128) = COALESCE(@p13, 'Id');
 DECLARE @ReturnPrimaryKeyOnly BIT = COALESCE(@p14, 0);
+DECLARE @PreserveModifiedAt BIT = COALESCE(@p15, 0);
 
 -- Declare variables needed later
 DECLARE @TempTableColumns NVARCHAR(MAX);
@@ -162,8 +164,14 @@ IF @LockTimeExists = 1
 IF @LockedByExists = 1
     INSERT INTO @SetClauseItems VALUES ('[LockedBy] = ' + CHAR(39) + REPLACE(@LockedBy, CHAR(39), CHAR(39) + CHAR(39)) + CHAR(39));
 
+-- If PreserveModifiedAt is set, assign ModifiedAt to itself to prevent trigger from updating it
 IF @ModifiedAtExists = 1
-    INSERT INTO @SetClauseItems VALUES ('[ModifiedAt] = SYSUTCDATETIME()');
+    INSERT INTO @SetClauseItems VALUES (
+        CASE WHEN @PreserveModifiedAt = 1
+            THEN '[ModifiedAt] = t.[ModifiedAt]'
+            ELSE '[ModifiedAt] = SYSUTCDATETIME()'
+        END
+    );
 
 DECLARE @SetClause NVARCHAR(MAX);
 SELECT @SetClause = STRING_AGG('t.' + SetItem, ',' + CHAR(13) + CHAR(10) + '    ') FROM @SetClauseItems;

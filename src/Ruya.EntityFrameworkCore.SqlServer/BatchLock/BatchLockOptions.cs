@@ -9,7 +9,7 @@ namespace Ruya.EntityFrameworkCore.SqlServer.BatchLock;
 public sealed class BatchLockOptions
 {
 	/// <summary>
-	/// Schema name of the target table.
+	/// Schema name of the target table. Defaults to "dbo".
 	/// </summary>
 	[Required]
 	public string SchemaName { get; init; } = "dbo";
@@ -81,7 +81,13 @@ public sealed class BatchLockOptions
 
 	/// <summary>
 	/// When true, only returns the primary key column instead of all columns.
-	/// Useful for reducing data transfer when you only need the IDs.
+	/// This is set internally by the method being called (SelectForUpdate vs SelectForUpdateKeysAsync).
 	/// </summary>
-	public bool ReturnPrimaryKeyOnly { get; init; }
+	internal bool ReturnPrimaryKeyOnly { get; set; }
+
+	/// <summary>
+	/// When true, sets ModifiedAt = ModifiedAt instead of SYSUTCDATETIME().
+	/// This prevents the table trigger from updating the timestamp.
+	/// </summary>
+	public bool PreserveModifiedAt { get; init; }
 }

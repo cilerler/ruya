@@ -30,6 +30,7 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 	public IQueryable<T> SelectForUpdate<T>(BatchLockOptions options, [System.Runtime.CompilerServices.CallerMemberName] string callerMethod = "") where T : class
 	{
 		ArgumentNullException.ThrowIfNull(options);
+		options.ReturnPrimaryKeyOnly = false;
 
 		_logger.LogDebug(
 			"Building SelectForUpdate query for {SchemaName}.{TableName} with BatchSize={BatchSize}, LockedBy={LockedBy}, called by {CallerMethod}",
@@ -39,7 +40,7 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 			options.LockedBy,
 			callerMethod);
 
-		var parameters = BuildParameters(options, returnPrimaryKeyOnly: false);
+		var parameters = BuildParameters(options);
 		return _dbContext.Set<T>().FromSqlRaw(SqlQuery.SelectForUpdate, parameters);
 	}
 
@@ -47,6 +48,7 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 	public async Task<List<TKey>> SelectForUpdateKeysAsync<TKey>(BatchLockOptions options, CancellationToken cancellationToken = default, [System.Runtime.CompilerServices.CallerMemberName] string callerMethod = "")
 	{
 		ArgumentNullException.ThrowIfNull(options);
+		options.ReturnPrimaryKeyOnly = true;
 
 		_logger.LogDebug(
 			"Building SelectForUpdateKeys query for {SchemaName}.{TableName} with BatchSize={BatchSize}, LockedBy={LockedBy}, called by {CallerMethod}",
@@ -56,13 +58,13 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 			options.LockedBy,
 			callerMethod);
 
-		var parameters = BuildParameters(options, returnPrimaryKeyOnly: true);
+		var parameters = BuildParameters(options);
 		return await _dbContext.Database
 			.SqlQueryRaw<TKey>(SqlQuery.SelectForUpdate, parameters)
 			.ToListAsync(cancellationToken);
 	}
 
-	private static SqlParameter[] BuildParameters(BatchLockOptions options, bool returnPrimaryKeyOnly)
+	private static SqlParameter[] BuildParameters(BatchLockOptions options)
 	{
 		return
 		[
@@ -81,7 +83,8 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 				//new SqlParameter("@p12", (object)options.Debug ?? DBNull.Value),
 				new("@p12", DBNull.Value),
 				new("@p13", (object)options.PrimaryKeyField ?? DBNull.Value),
-				new("@p14", returnPrimaryKeyOnly)
+				new("@p14", (object)options.ReturnPrimaryKeyOnly ?? DBNull.Value),
+				new("@p15", (object)options.PreserveModifiedAt ?? DBNull.Value)
 		];
 	}
 }
