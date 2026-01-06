@@ -108,10 +108,6 @@ internal static partial class LoggerExtensions
     // Scope definition
     public static IDisposable? BeginLockScope(this ILogger logger, string lockKey, string lockValue)
     {
-        return logger.BeginScope(new Dictionary<string, object>
-        {
-            ["LockKey"] = lockKey,
-            ["LockValue"] = lockValue
-        });
+        return logger.BeginScope("LockKey={LockKey}, LockValue={LockValue}", lockKey, lockValue);
     }
 }
