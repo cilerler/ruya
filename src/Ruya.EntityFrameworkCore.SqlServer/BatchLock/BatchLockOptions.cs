@@ -90,4 +90,10 @@ public sealed class BatchLockOptions
 	/// This prevents the table trigger from updating the timestamp.
 	/// </summary>
 	public bool PreserveModifiedAt { get; init; }
+
+	/// <summary>
+	/// When true, omits ModifiedAt from the SET clause entirely.
+	/// This allows table triggers that check IF NOT UPDATE(ModifiedAt) to fire.
+	/// </summary>
+	public bool OmitModifiedAt { get; init; }
 }

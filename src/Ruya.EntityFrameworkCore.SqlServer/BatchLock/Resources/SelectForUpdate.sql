@@ -42,6 +42,7 @@ DECLARE @Debug BIT = COALESCE(@p12, 0);
 DECLARE @PrimaryKeyField NVARCHAR(128) = COALESCE(@p13, 'Id');
 DECLARE @ReturnPrimaryKeyOnly BIT = COALESCE(@p14, 0);
 DECLARE @PreserveModifiedAt BIT = COALESCE(@p15, 0);
+DECLARE @OmitModifiedAt BIT = COALESCE(@p16, 0);
 
 -- Declare variables needed later
 DECLARE @TempTableColumns NVARCHAR(MAX);
@@ -164,8 +165,11 @@ IF @LockTimeExists = 1
 IF @LockedByExists = 1
     INSERT INTO @SetClauseItems VALUES ('[LockedBy] = ' + CHAR(39) + REPLACE(@LockedBy, CHAR(39), CHAR(39) + CHAR(39)) + CHAR(39));
 
--- If PreserveModifiedAt is set, assign ModifiedAt to itself to prevent trigger from updating it
-IF @ModifiedAtExists = 1
+-- Handle ModifiedAt based on OmitModifiedAt and PreserveModifiedAt flags
+-- OmitModifiedAt = 1: Do not include ModifiedAt in SET clause (allows triggers with IF NOT UPDATE(ModifiedAt) to fire)
+-- PreserveModifiedAt = 1: Set ModifiedAt = ModifiedAt (prevents trigger from updating timestamp)
+-- Default: Set ModifiedAt = SYSUTCDATETIME()
+IF @ModifiedAtExists = 1 AND @OmitModifiedAt = 0
     INSERT INTO @SetClauseItems VALUES (
         CASE WHEN @PreserveModifiedAt = 1
             THEN '[ModifiedAt] = t.[ModifiedAt]'

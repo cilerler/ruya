@@ -84,7 +84,8 @@ public sealed class BatchLockOperations<TContext> : IBatchLockOperations where T
 				new("@p12", DBNull.Value),
 				new("@p13", (object)options.PrimaryKeyField ?? DBNull.Value),
 				new("@p14", (object)options.ReturnPrimaryKeyOnly ?? DBNull.Value),
-				new("@p15", (object)options.PreserveModifiedAt ?? DBNull.Value)
+				new("@p15", (object)options.PreserveModifiedAt ?? DBNull.Value),
+				new("@p16", (object)options.OmitModifiedAt ?? DBNull.Value)
 		];
 	}
 }
