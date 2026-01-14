@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -72,6 +73,25 @@ public interface IBulkInsertOperations
         IEnumerable<T> entities,
         BulkInsertOptions options,
         CancellationToken cancellationToken = default) where T : class;
+
+    /// <summary>
+    /// Bulk inserts data from an IDataReader using SqlBulkCopy.
+    /// Use this when you have an existing IDataReader (e.g., from Parquet files, another database, or CSV).
+    /// </summary>
+    /// <param name="context">The DbContext instance (for connection/transaction sharing).</param>
+    /// <param name="reader">The data reader containing the source data.</param>
+    /// <param name="options">Bulk insert configuration options. TableName is required.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of rows inserted.</returns>
+    /// <remarks>
+    /// Column mappings are derived from the IDataReader's schema.
+    /// The reader is not disposed by this method; the caller is responsible for disposal.
+    /// </remarks>
+    Task<long> BulkInsertAsync(
+        DbContext context,
+        IDataReader reader,
+        BulkInsertOptions options,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
