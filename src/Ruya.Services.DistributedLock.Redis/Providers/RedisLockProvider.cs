@@ -137,5 +137,25 @@ public sealed class RedisLockProvider : IDistributedLockProvider
     }
 
     /// <inheritdoc />
+    public async Task<bool> ForceReleaseLockAsync(
+        string lockKey,
+        CancellationToken cancellationToken = default)
+    {
+        LockValidation.ValidateLockKey(lockKey);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            return await _database.KeyDeleteAsync(lockKey);
+        }
+        catch (RedisException ex)
+        {
+            _logger.LogError(ex, "Redis error force releasing lock for key: {LockKey}", lockKey);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
     public string GetProviderName() => "Redis";
 }

@@ -61,6 +61,17 @@ public interface IDistributedLockProvider
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Forcibly releases a distributed lock regardless of who holds it.
+    /// Use with caution - this bypasses ownership verification.
+    /// </summary>
+    /// <param name="lockKey">The unique identifier for the lock.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if the lock was deleted; otherwise, false.</returns>
+    Task<bool> ForceReleaseLockAsync(
+        string lockKey,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets the name of the provider implementation.
     /// Used for telemetry, logging, and diagnostics.
     /// </summary>

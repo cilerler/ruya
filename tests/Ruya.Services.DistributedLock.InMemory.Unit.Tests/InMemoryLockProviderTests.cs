@@ -576,4 +576,80 @@ public class InMemoryLockProviderTests
         var successCount = results.Count(r => r);
         Assert.AreEqual(1, successCount, "Only one concurrent release should succeed");
     }
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldSucceed_WhenLockExists()
+    {
+        // Arrange
+        var lockKey = "force-release-lock";
+        var lockValue = "test-value";
+        await _provider.AcquireLockAsync(lockKey, lockValue, TimeSpan.FromMinutes(1));
+
+        // Act
+        var result = await _provider.ForceReleaseLockAsync(lockKey);
+
+        // Assert
+        Assert.IsTrue(result, "Force release should succeed when lock exists");
+        var exists = await _provider.LockExistsAsync(lockKey);
+        Assert.IsFalse(exists, "Lock should not exist after force release");
+    }
+
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldReturnFalse_WhenLockDoesNotExist()
+    {
+        // Arrange
+        var lockKey = "non-existent-lock";
+
+        // Act
+        var result = await _provider.ForceReleaseLockAsync(lockKey);
+
+        // Assert
+        Assert.IsFalse(result, "Force release should return false when lock doesn't exist");
+    }
+
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldSucceed_WhenLockExpired()
+    {
+        // Arrange
+        var lockKey = "expired-lock";
+        var lockValue = "test-value";
+        await _provider.AcquireLockAsync(lockKey, lockValue, TimeSpan.FromMilliseconds(50));
+        await Task.Delay(100); // Wait for expiration
+
+        // Act
+        var result = await _provider.ForceReleaseLockAsync(lockKey);
+
+        // Assert
+        // Depending on implementation, force releasing an expired lock might return true (removed) or false (was already effectively gone)
+        // In InMemoryLockProvider, we typically remove it if it's there.
+        // If the cleanup timer hasn't run yet, it's still in the dictionary.
+        // If it WAS there, TryRemove returns true.
+        // Given the short delay, cleanup timer (10s) probably hasn't run.
+        Assert.IsTrue(result, "Force release should succeed (remove entry) even if expired but not yet cleaned up");
+        
+        var exists = await _provider.LockExistsAsync(lockKey);
+        Assert.IsFalse(exists, "Lock should not exist after force release");
+    }
+
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldThrow_WhenLockKeyIsNull()
+    {
+         // Act & Assert
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+        {
+            await _provider.ForceReleaseLockAsync(null!);
+        });
+    }
+
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldThrow_WhenProviderIsDisposed()
+    {
+        // Arrange
+        _provider.Dispose();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            await _provider.ForceReleaseLockAsync("key");
+        });
+    }
 }

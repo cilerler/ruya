@@ -414,4 +414,62 @@ public class SqlServerLockProviderTests
     }
 
     #endregion
+    #region ForceReleaseLockAsync Validation Tests
+
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldThrow_WhenLockKeyIsNull()
+    {
+        // Arrange
+        var provider = new SqlServerLockProvider(TestConnectionString, _mockLogger.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+        {
+            await provider.ForceReleaseLockAsync(null!);
+        });
+    }
+
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldThrow_WhenLockKeyIsEmpty()
+    {
+        // Arrange
+        var provider = new SqlServerLockProvider(TestConnectionString, _mockLogger.Object);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        {
+            await provider.ForceReleaseLockAsync(string.Empty);
+        });
+    }
+
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldReturnFalse_WhenLockIsNotTrackedLocally()
+    {
+        // Arrange
+        var provider = new SqlServerLockProvider(TestConnectionString, _mockLogger.Object);
+
+        // Act
+        // Since we can't spin up a real SQL connection in unit tests without mocking deep internals or using integration tests,
+        // we test the "not found" path which depends only on the internal dictionary state (which is empty).
+        var result = await provider.ForceReleaseLockAsync("non-tracked-lock");
+
+        // Assert
+        Assert.IsFalse(result, "ForceRelease should return false for lock not tracked by this instance");
+    }
+
+    [TestMethod]
+    public async Task ForceReleaseLockAsync_ShouldThrow_WhenDisposed()
+    {
+        // Arrange
+        var provider = new SqlServerLockProvider(TestConnectionString, _mockLogger.Object);
+        provider.Dispose();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            await provider.ForceReleaseLockAsync("key");
+        });
+    }
+
+    #endregion
 }

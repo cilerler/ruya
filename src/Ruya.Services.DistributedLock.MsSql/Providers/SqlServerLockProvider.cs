@@ -279,6 +279,63 @@ public sealed class SqlServerLockProvider : IDistributedLockProvider, IDisposabl
     }
 
     /// <inheritdoc />
+    public async Task<bool> ForceReleaseLockAsync(
+        string lockKey,
+        CancellationToken cancellationToken = default)
+    {
+        LockValidation.ValidateLockKey(lockKey);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // We can only force release locks that are tracked by this instance.
+        // SQL Server sp_getapplock is session/transaction scoped.
+        // If we don't have the connection, we can't release it without KILLing the session (which requires high privs).
+        if (!_activeLocks.TryGetValue(lockKey, out var lockInfo))
+        {
+            return false;
+        }
+
+        // Atomic removal attempt
+        if (!_activeLocks.TryRemove(new KeyValuePair<string, LockInfo>(lockKey, lockInfo)))
+        {
+            _logger.LogWarning(
+                 "Failed to atomically remove lock during force release. Another thread may have modified it. [LockKey = {LockKey}]",
+                 lockKey);
+            return false;
+        }
+
+        try
+        {
+            // Dispose the timer
+            lockInfo.ExpiryTimer?.Dispose();
+
+            if (lockInfo.Connection?.State == ConnectionState.Open)
+            {
+                // Force release by closing the connection.
+                // We could call sp_releaseapplock, but closing connection is the ultimate "force" for session locks.
+                await lockInfo.Connection.CloseAsync();
+                await lockInfo.Connection.DisposeAsync();
+                
+                _logger.LogDebug("Force released SQL Server lock for key: {LockKey}", lockKey);
+                return true;
+            }
+
+            if (lockInfo.Connection != null)
+            {
+                await lockInfo.Connection.DisposeAsync();
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error force releasing SQL Server lock for key: {LockKey}", lockKey);
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
     public string GetProviderName() => "SqlServer";
 
     private async Task AutoReleaseLockAsync(string lockKey, string lockValue)

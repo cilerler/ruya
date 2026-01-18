@@ -172,6 +172,31 @@ public sealed class InMemoryLockProvider : IDistributedLockProvider, IDisposable
     }
 
     /// <inheritdoc />
+    public Task<bool> ForceReleaseLockAsync(
+        string lockKey,
+        CancellationToken cancellationToken = default)
+    {
+        LockValidation.ValidateLockKey(lockKey);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Safely remove the lock if it exists, regardless of value or state
+        if (_locks.TryRemove(lockKey, out var entry))
+        {
+            return Task.FromResult(true);
+        }
+
+        // Lock didn't exist, so technically it's "released" (or wasn't there)
+        // Returning true because the end state (lock is gone) is achieved.
+        // However, many "Force" implementations return true if they *actually* deleted something.
+        // Looking at Redis implementation: return deletedCount >= _quorum.
+        // So if it returns 0 deleted, it returns false.
+        // Let's mimic that behavior: return true only if we actually removed it.
+        return Task.FromResult(false);
+    }
+
+    /// <inheritdoc />
     public string GetProviderName() => "InMemory";
 
     /// <summary>

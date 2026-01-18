@@ -215,6 +215,37 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
     }
 
     /// <inheritdoc />
+    public async Task<bool> ForceReleaseLockAsync(
+        string lockKey,
+        CancellationToken cancellationToken = default)
+    {
+        LockValidation.ValidateLockKey(lockKey);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Force delete on ALL instances
+        var tasks = _connections.Select(async conn =>
+        {
+            try
+            {
+                var db = conn.GetDatabase();
+                return await db.KeyDeleteAsync(lockKey);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error force releasing lock on Redis instance: {Endpoint}", conn.Configuration);
+                return false;
+            }
+        });
+
+        var results = await Task.WhenAll(tasks);
+        var deletedCount = results.Count(r => r);
+
+        return deletedCount >= _quorum;
+    }
+
+    /// <inheritdoc />
     public string GetProviderName() => "Redlock";
 
     /// <inheritdoc />
