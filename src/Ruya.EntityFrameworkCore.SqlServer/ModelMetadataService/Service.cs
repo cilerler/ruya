@@ -71,6 +71,26 @@ public partial class ModelMetadataService<TContext> : IModelMetadata where TCont
 			IKey? primaryKey = entityType.FindPrimaryKey();
 			HashSet<string> primaryKeyPropertyNames = primaryKey?.Properties.Select(x => x.Name).ToHashSet() ?? new HashSet<string>();
 
+			// Check for temporal table configuration and get period property names
+			// Note: IsTemporal() and related methods may throw InvalidOperationException when
+			// the configuration is not stored in the read-optimized model (e.g., in tests)
+			HashSet<string> temporalPropertyNames = new(StringComparer.OrdinalIgnoreCase);
+			try
+			{
+				if (entityType.IsTemporal())
+				{
+					string? periodStart = entityType.GetPeriodStartPropertyName();
+					string? periodEnd = entityType.GetPeriodEndPropertyName();
+					if (!string.IsNullOrEmpty(periodStart)) temporalPropertyNames.Add(periodStart);
+					if (!string.IsNullOrEmpty(periodEnd)) temporalPropertyNames.Add(periodEnd);
+				}
+			}
+			catch (InvalidOperationException)
+			{
+				// Temporal table configuration is not available in this model (e.g., in-memory or unit tests)
+				// Proceed without temporal period column support
+			}
+
 			// Get all EF Core navigations for this entity
 			var navigations = entityType.GetNavigations().ToDictionary(n => n.Name);
 
@@ -102,30 +122,18 @@ public partial class ModelMetadataService<TContext> : IModelMetadata where TCont
 						InverseTypeName = navigation.TargetEntityType.Name
 					});
 				}
-				else
-				{
-					// This is a regular property, check if it's an actual column
-					IProperty? efProperty = entityType.FindProperty(property.Name);
-					if (efProperty == null)
-						continue;
+			}
 
-					ColumnAttribute? columnAttribute = property.GetCustomAttribute<ColumnAttribute>(false);
+			// Process all EF Core properties (includes both CLR and shadow properties like temporal columns)
+			foreach (IProperty efProperty in entityType.GetProperties())
+			{
+				PropertyInfo? clrProperty = entityType.ClrType.GetProperty(efProperty.Name);
+				ColumnAttribute? columnAttribute = clrProperty?.GetCustomAttribute<ColumnAttribute>(false);
+				bool isTemporalProperty = temporalPropertyNames.Contains(efProperty.Name);
 
-
-					// Extract precision and scale from TypeName if it exists
-					int? precision = null;
-					int? scale = null;
-
-					// Try to get precision and scale from EF Core metadata
-					if (efProperty.GetPrecision().HasValue)
-					{
-						precision = efProperty.GetPrecision();
-					}
-
-					if (efProperty.GetScale().HasValue)
-					{
-						scale = efProperty.GetScale();
-					}
+				// Extract precision and scale
+				int? precision = efProperty.GetPrecision();
+				int? scale = efProperty.GetScale();
 
 					// If not found in metadata, try to extract from TypeName attribute
 					if ((!precision.HasValue || !scale.HasValue) && columnAttribute?.TypeName != null)
@@ -156,22 +164,22 @@ public partial class ModelMetadataService<TContext> : IModelMetadata where TCont
 						}
 					}
 
-					output.Add(new ColumnDefinition
-					{
-						Schema = schema,
-						TableName = tableName,
-						ColumnName = columnAttribute?.Name ?? property.Name,
-						ValueGenerated = efProperty.ValueGenerated.ToString(),
-						IsPrimaryKey = primaryKeyPropertyNames.Contains(property.Name),
-						IsNullable = efProperty.IsNullable,
-						PropertyName = property.Name,
-						ModelType = entityType.ClrType.AssemblyQualifiedName ?? entityType.Name,
-						PropertyType = GetCleanTypeName(property.PropertyType),
-						IsNavigation = false,
-						Precision = precision,
-						Scale = scale
-					});
-				}
+				output.Add(new ColumnDefinition
+				{
+					Schema = schema,
+					TableName = tableName,
+					ColumnName = efProperty.GetColumnName() ?? columnAttribute?.Name ?? efProperty.Name,
+					ValueGenerated = efProperty.ValueGenerated.ToString(),
+					IsPrimaryKey = primaryKeyPropertyNames.Contains(efProperty.Name),
+					IsNullable = efProperty.IsNullable,
+					PropertyName = efProperty.Name,
+					ModelType = entityType.ClrType.AssemblyQualifiedName ?? entityType.Name,
+					PropertyType = clrProperty != null ? GetCleanTypeName(clrProperty.PropertyType) : efProperty.ClrType.FullName,
+					IsNavigation = false,
+					Precision = precision,
+					Scale = scale,
+					IsTemporalProperty = isTemporalProperty
+				});
 			}
 		}
 

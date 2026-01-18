@@ -22,4 +22,7 @@ public record ColumnDefinition
 	public string? ForeignKeyPropertyName { get; set; }
 	public string? InversePropertyName { get; set; }
 	public string? InverseTypeName { get; set; }
+
+	// Temporal table specific fields
+	public bool IsTemporalProperty { get; set; }
 }
