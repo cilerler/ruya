@@ -206,6 +206,16 @@ public sealed class HttpInstrumentationSettings
 public sealed class SqlInstrumentationSettings
 {
     /// <summary>
+    /// Record SQL exceptions in trace spans. Default is true.
+    /// </summary>
+    /// <remarks>
+    /// Set to false to suppress SQL exceptions from appearing in telemetry.
+    /// This is useful when exceptions are expected and handled in code
+    /// (e.g., duplicate key violations from race conditions).
+    /// </remarks>
+    public bool RecordException { get; set; } = true;
+
+    /// <summary>
     /// Capture SQL command text.
     /// </summary>
     public bool CaptureCommandText { get; set; } = true;

@@ -144,7 +144,7 @@ internal static class TracingInstrumentation
     {
         tracing.AddSqlClientInstrumentation(options =>
         {
-            options.RecordException = true;
+            options.RecordException = settings.RecordException;
 
             options.EnrichWithSqlCommand = (activity, command) =>
             {
