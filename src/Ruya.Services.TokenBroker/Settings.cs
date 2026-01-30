@@ -26,7 +26,7 @@ public class TokenBrokerSettings
     [Ruya.Services.TokenBroker.Validation.Base64String(MinimumDecodedLength = 32)] // 256 bits minimum for HMAC-SHA256
     public required string SigningKeyBase64 { get; set; }
 
-    [Range(typeof(TimeSpan), "00:01:00", "24:00:00")]
+    [Range(typeof(TimeSpan), "00:01:00", "1.00:00:00")]
     public TimeSpan TokenLifetime { get; set; } = TimeSpan.FromMinutes(15);
 
     [Range(typeof(TimeSpan), "00:00:00", "00:05:00")]

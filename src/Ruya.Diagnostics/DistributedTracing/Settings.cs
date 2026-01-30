@@ -16,7 +16,7 @@ public sealed class DistributedTracingSettings
     /// Activity continues the trace if accessed within this window.
     /// </summary>
     [Required]
-    [Range(typeof(TimeSpan), "00:00:30", "24:00:00", ErrorMessage = "CacheSlidingExpiration must be between 30 seconds and 24 hours")]
+    [Range(typeof(TimeSpan), "00:00:30", "1.00:00:00", ErrorMessage = "CacheSlidingExpiration must be between 30 seconds and 24 hours")]
     public TimeSpan CacheSlidingExpiration { get; set; } = TimeSpan.FromMinutes(30);
 
     /// <summary>
