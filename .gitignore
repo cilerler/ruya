@@ -450,14 +450,23 @@ _site
 *.ignore/
 
 # =========================
+# local paths
+# =========================
+Directory.Build.local.props
+*.local.slnx
+
+# =========================
 # AI Files
 # =========================
 .copilotignore
 .github/copilot-instructions.md
 .github/agents/
+.github/instructions/
+.github/prompts/
 .github/skills/
 AGENTS.md
 CLAUDE.md
 GEMINI.md
 .geminiignore
 .claude/
+.agent/
