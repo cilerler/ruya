@@ -95,6 +95,22 @@ var options = new BatchLockOptions
 };
 ```
 
+### With State Transition
+
+```csharp
+var options = new BatchLockOptions
+{
+    SchemaName = "dbo",
+    TableName = "ProcessingQueue",
+    BatchSize = 10,
+    LockedBy = "WorkerNode",
+    ProcessStatusCodeField = "ProcessStatusCode",
+    ProcessStatusCodeValue = 0,         // Only lock rows where status is 0
+    UpdateProcessStatusCode = true,     // Enable updating the status column
+    ProcessStatusCodeNextValue = 1      // Set the status to 1 atomically upon lock
+};
+```
+
 ### Excluding Columns from Result
 
 ```csharp
@@ -123,12 +139,14 @@ var options = new BatchLockOptions
 | `OrderByClause` | string? | null | Custom ORDER BY clause |
 | `ProcessStatusCodeField` | string | `"ProcessStatusCode"` | Status field name |
 | `ProcessStatusCodeValue` | byte? | null | Status value to filter by |
+| `UpdateProcessStatusCode` | bool | `false` | Enables tracking state transitions during lock |
+| `ProcessStatusCodeNextValue`| byte? | null | Target value to update `ProcessStatusCodeField` |
 | `ProcessingOrderField` | string | `"ProcessingOrder"` | Order field name |
 
 ## How It Works
 
 1. **CTE Selection**: Selects `TOP(BatchSize)` rows with `ROWLOCK, UPDLOCK, READPAST` hints
-2. **Atomic Update**: Updates `LockState`, `LockTime`, and `LockedBy` columns
+2. **Atomic Update**: Updates `LockState`, `LockTime`, `LockedBy`, and conditionally `ProcessStatusCode` columns
 3. **OUTPUT Clause**: Returns all columns of the locked rows
 
 ### Default WHERE Conditions

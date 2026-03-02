@@ -70,6 +70,17 @@ public sealed class BatchLockOptions
 	public byte? ProcessStatusCodeValue { get; init; }
 
 	/// <summary>
+	/// If true, the ProcessStatusCodeField will be updated with the value of ProcessStatusCodeNextValue when acquiring the lock.
+	/// This permits explicit nullification by supplying a null ProcessStatusCodeNextValue value.
+	/// </summary>
+	public bool UpdateProcessStatusCode { get; init; }
+
+	/// <summary>
+	/// The next process status code value to set on the locked rows if UpdateProcessStatusCode is true.
+	/// </summary>
+	public byte? ProcessStatusCodeNextValue { get; init; }
+
+	/// <summary>
 	/// Name of the processing order field. Defaults to "ProcessingOrder".
 	/// </summary>
 	public string? ProcessingOrderField { get; init; }

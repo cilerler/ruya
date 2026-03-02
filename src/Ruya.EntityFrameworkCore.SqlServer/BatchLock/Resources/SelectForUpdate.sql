@@ -23,6 +23,9 @@ DECLARE @p12 BIT            = 1;  -- Debug
 DECLARE @p13 NVARCHAR(128);  -- PrimaryKeyField
 DECLARE @p14 BIT;            -- ReturnPrimaryKeyOnly
 DECLARE @p15 BIT;            -- PreserveModifiedAt
+DECLARE @p16 BIT;            -- OmitModifiedAt
+DECLARE @p17 BIT;            -- UpdateProcessStatusCode
+DECLARE @p18 TINYINT;        -- ProcessStatusCodeNextValue
 */
 
 -- Initialize parameters with improved declaration style
@@ -43,6 +46,8 @@ DECLARE @PrimaryKeyField NVARCHAR(128) = COALESCE(@p13, 'Id');
 DECLARE @ReturnPrimaryKeyOnly BIT = COALESCE(@p14, 0);
 DECLARE @PreserveModifiedAt BIT = COALESCE(@p15, 0);
 DECLARE @OmitModifiedAt BIT = COALESCE(@p16, 0);
+DECLARE @UpdateProcessStatusCode BIT = COALESCE(@p17, 0);
+DECLARE @ProcessStatusCodeNextValue TINYINT = COALESCE(@p18, NULL);
 
 -- Declare variables needed later
 DECLARE @TempTableColumns NVARCHAR(MAX);
@@ -178,6 +183,16 @@ IF @ModifiedAtExists = 1 AND @OmitModifiedAt = 0
     );
 
 DECLARE @SetClause NVARCHAR(MAX);
+
+-- Handle explicit ProcessStatusCode update
+IF @ProcessStatusCodeFieldExists = 1 AND @UpdateProcessStatusCode = 1
+BEGIN
+    IF @ProcessStatusCodeNextValue IS NULL
+        INSERT INTO @SetClauseItems VALUES (QUOTENAME(@ProcessStatusCodeField) + ' = NULL');
+    ELSE
+        INSERT INTO @SetClauseItems VALUES (QUOTENAME(@ProcessStatusCodeField) + ' = ' + CAST(@ProcessStatusCodeNextValue AS VARCHAR(3)));
+END
+
 SELECT @SetClause = STRING_AGG('t.' + SetItem, ',' + CHAR(13) + CHAR(10) + '    ') FROM @SetClauseItems;
 
 -- Flag to track if we have updatable columns
