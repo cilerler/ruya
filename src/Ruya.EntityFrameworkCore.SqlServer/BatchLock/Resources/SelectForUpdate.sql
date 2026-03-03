@@ -261,7 +261,8 @@ SELECT
         QUOTENAME(ColumnName),
         ',' + CHAR(13) + CHAR(10) + '    '
     ) WITHIN GROUP (ORDER BY column_id)
-FROM @ColumnInfo;
+FROM @ColumnInfo
+WHERE @ReturnPrimaryKeyOnly = 0 OR ColumnName = @PrimaryKeyField;
 
 -- Build the dynamic SQL based on whether we have updatable columns
 IF @HasUpdatableColumns = 1
