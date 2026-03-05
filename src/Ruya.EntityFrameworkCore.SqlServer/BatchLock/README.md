@@ -95,6 +95,8 @@ var options = new BatchLockOptions
 };
 ```
 
+> **NOTE**: If no custom `OrderByClause` is specified, the `ProcessingOrder` field is used by default if it exists. If neither are available, no ordering is enforced by SQL Server.
+
 ### With State Transition
 
 ```csharp
@@ -124,13 +126,30 @@ var options = new BatchLockOptions
 };
 ```
 
+### Selecting Only Primary Keys
+
+When you only need the IDs of the locked rows, use `SelectForUpdateKeysAsync`:
+
+```csharp
+var options = new BatchLockOptions
+{
+    SchemaName = "dbo",
+    TableName = "PendingOrders",
+    BatchSize = 100, // Optional, defaults to 1
+    LockedBy = "OrderProcessor",
+    PrimaryKeyField = "OrderId" // Optional, defaults to "Id"
+};
+
+List<long> lockedIds = await _batchLock.SelectForUpdateKeysAsync<long>(options, cancellationToken);
+```
+
 ## Configuration Options
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `SchemaName` | string | `"dbo"` | Database schema name |
 | `TableName` | string | required | Target table name |
-| `BatchSize` | int | `100` | Number of rows to lock per batch |
+| `BatchSize` | int? | `1` | Number of rows to lock per batch |
 | `LockedBy` | string | required | Identifier of the locking process |
 | `LockState` | byte | `1` | Value to set on `LockState` column |
 | `LockTime` | DateTime? | UTC now | Timestamp for the lock |
@@ -142,6 +161,9 @@ var options = new BatchLockOptions
 | `UpdateProcessStatusCode` | bool | `false` | Enables tracking state transitions during lock |
 | `ProcessStatusCodeNextValue`| byte? | null | Target value to update `ProcessStatusCodeField` |
 | `ProcessingOrderField` | string | `"ProcessingOrder"` | Order field name |
+| `PrimaryKeyField` | string | `"Id"` | Primary key field name |
+| `PreserveModifiedAt` | bool | `false` | When true, preserves `ModifiedAt` value instead of updating to avoid trigger issues |
+| `OmitModifiedAt` | bool | `false` | When true, omits `ModifiedAt` from the internal SET clause to let SQL triggers manage it |
 
 ## How It Works
 
@@ -151,11 +173,13 @@ var options = new BatchLockOptions
 
 ### Default WHERE Conditions
 
-If `WhereClause` is not provided, the following conditions are applied automatically based on column existence:
+If `WhereClause` is not provided, the following conditions are applied automatically (joined with `AND`) based on column existence:
 
-- `SoftDelete = 0` (if column exists)
-- `IsLocked = 0` (if column exists)
-- `ProcessStatusCode = @value` (if column and value provided)
+- `[SoftDelete] = 0` (if `SoftDelete` column exists)
+- `[IsLocked] = 0` (if `IsLocked` column exists)
+- `[ProcessStatusCode] = @ProcessStatusCodeValue` (if configured and column exists)
+
+If none of these conditions apply, it defaults to `1=1`.
 
 ### Locking Hints
 
@@ -189,13 +213,17 @@ catch (SqlException ex)
 
 The target table must have:
 
-- `Id` column (used for joining in the UPDATE)
-- `LockState` column (tinyint)
-- `LockTime` column (datetime2)
-- `LockedBy` column (varchar)
+- A Primary Key column (defaults to `Id`, used for joining in the UPDATE).
+- At least **one** updatable column to mark locked rows from the following list:
+  - `LockState` (tinyint)
+  - `LockTime` (datetime2)
+  - `LockedBy` (varchar)
+  - `ModifiedAt` (datetime2) - Unless `OmitModifiedAt` is set to true
+  - Or another field configured with `UpdateProcessStatusCode = true`
 
-Optional columns that enable automatic filtering:
+Optional columns that enable automatic filtering or tracking:
 
+- `ModifiedAt` (datetime2) - Automatically updated unless `OmitModifiedAt` or `PreserveModifiedAt` is set.
 - `SoftDelete` (bit)
 - `IsLocked` (bit)
 - `ProcessStatusCode` (tinyint)
