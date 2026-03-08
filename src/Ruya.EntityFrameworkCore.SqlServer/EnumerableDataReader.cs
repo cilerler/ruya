@@ -1,8 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
-using System.Data.Common;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -19,6 +19,7 @@ public sealed class EnumerableDataReader<T> : IDataReader
 {
     private readonly IEnumerator<T> _enumerator;
     private readonly Func<T, object>[] _accessors;
+    private readonly Type[] _fieldTypes;
     private readonly string[] _names;
     private readonly Dictionary<string, int> _ordinalMap;
     private bool _closed;
@@ -32,50 +33,86 @@ public sealed class EnumerableDataReader<T> : IDataReader
         ArgumentNullException.ThrowIfNull(members);
 
         _enumerator = source.GetEnumerator();
-        _names = members.ToArray();
-
-        if (_names.Length == 0)
-            throw new ArgumentException("At least one member must be specified.", nameof(members));
-
-        _ordinalMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        _accessors = new Func<T, object>[_names.Length];
-
-        var type = typeof(T);
-
-        for (int i = 0; i < _names.Length; i++)
+        try
         {
-            var name = _names[i];
-            _ordinalMap[name] = i;
+            _names = members.ToArray();
 
-            // Get accessor from cache or create new
-            _accessors[i] = GetOrAddAccessor(type, name);
+            if (_names.Length == 0)
+                throw new ArgumentException("At least one member must be specified.", nameof(members));
+
+            _ordinalMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            _accessors = new Func<T, object>[_names.Length];
+            _fieldTypes = new Type[_names.Length];
+
+            var type = typeof(T);
+
+            for (int i = 0; i < _names.Length; i++)
+            {
+                var name = _names[i];
+                _ordinalMap[name] = i;
+
+                // Resolve member once for both accessor and type info
+                var property = FindPropertyOrField(type, name, out var field);
+
+                if (property != null)
+                {
+                    _fieldTypes[i] = property.PropertyType;
+                    _accessors[i] = GetOrAddAccessor(name, () => CreatePropertyAccessor(property));
+                }
+                else if (field != null)
+                {
+                    _fieldTypes[i] = field.FieldType;
+                    _accessors[i] = GetOrAddAccessor(name, () => CreateFieldAccessor(field));
+                }
+                else
+                {
+                    throw new ArgumentException($"Property or field '{name}' not found on type '{type.FullName}'.");
+                }
+            }
+        }
+        catch
+        {
+            _enumerator.Dispose();
+            throw;
         }
     }
 
-    private static Func<T, object> GetOrAddAccessor(Type type, string propertyName)
+    private static Func<T, object> GetOrAddAccessor(string propertyName, Func<Func<T, object>> factory)
     {
-        // Cache key includes type and property name
-        // Note: For a generic class, the static cache is per-T, so we just need property name as key?
-        // Actually, static fields in generic types are per-closed-generic-type.
-        // So EnumerableDataReader<Product>.AccessorCache is different from EnumerableDataReader<Order>.AccessorCache.
-        // So we only need property name as key.
+        // Static fields in generic types are per-closed-generic-type.
+        // So EnumerableDataReader<Product>._accessorCache is separate from EnumerableDataReader<Order>._accessorCache.
+        // Property name alone is sufficient as key.
+        return _accessorCache.GetOrAdd(propertyName, _ => factory());
+    }
 
-        return _accessorCache.GetOrAdd(propertyName, name =>
+    /// <summary>
+    /// Resolves a member by name using the following strategy:
+    /// 1. Exact property name match (case-sensitive)
+    /// 2. Property with matching [Column] attribute name (case-insensitive)
+    /// 3. Public field match (case-sensitive)
+    /// </summary>
+    private static PropertyInfo? FindPropertyOrField(Type type, string name, out FieldInfo? field)
+    {
+        // 1. Direct property name match
+        var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
+        if (property != null)
         {
-            var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
-            if (property == null)
-            {
-                var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public);
-                if (field != null)
-                {
-                    return CreateFieldAccessor(field);
-                }
+            field = null;
+            return property;
+        }
 
-                throw new ArgumentException($"Property or field '{name}' not found on type '{type.FullName}'.");
-            }
+        // 2. Fallback: search by [Column] attribute (supports EF Core entities where C# property name differs from DB column name)
+        property = type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(p => string.Equals(p.GetCustomAttribute<ColumnAttribute>()?.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (property != null)
+        {
+            field = null;
+            return property;
+        }
 
-            return CreatePropertyAccessor(property);
-        });
+        // 3. Field fallback
+        field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public);
+        return null;
     }
 
     private static Func<T, object> CreatePropertyAccessor(PropertyInfo property)
@@ -120,8 +157,8 @@ public sealed class EnumerableDataReader<T> : IDataReader
     {
         if (!_closed)
         {
-            _enumerator.Dispose();
             _closed = true;
+            _enumerator.Dispose();
         }
     }
 
@@ -144,20 +181,7 @@ public sealed class EnumerableDataReader<T> : IDataReader
 
     public string GetDataTypeName(int i) => GetFieldType(i).Name;
 
-    public Type GetFieldType(int i)
-    {
-        // We need to look up the property info again or cache it.
-        // For simplicity/perf, we can assume the accessor returns object.
-        // But GetFieldType might be called by SqlBulkCopy.
-
-        var name = _names[i];
-        var member = typeof(T).GetProperty(name, BindingFlags.Instance | BindingFlags.Public) as MemberInfo
-                     ?? typeof(T).GetField(name, BindingFlags.Instance | BindingFlags.Public);
-
-        if (member is PropertyInfo p) return p.PropertyType;
-        if (member is FieldInfo f) return f.FieldType;
-        return typeof(object);
-    }
+    public Type GetFieldType(int i) => _fieldTypes[i];
 
     public object this[int i] => GetValue(i);
 
