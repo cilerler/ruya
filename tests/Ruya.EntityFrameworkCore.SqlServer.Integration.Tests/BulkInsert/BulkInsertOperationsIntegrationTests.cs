@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -477,6 +477,70 @@ public class BulkInsertOperationsIntegrationTests
         await using var verifyContext = _fixture.CreateDbContext();
         var totalCount = await verifyContext.Products.CountAsync();
         Assert.AreEqual(500, totalCount);
+    }
+
+    #endregion
+
+    #region Column Attribute Mapping Tests
+
+    [TestMethod]
+    public async Task BulkInsertAsync_WithColumnAttribute_MapsNameofToDbColumnName()
+    {
+        // Arrange — use nameof() for column names, just like darkseid does with NormalizedVendor
+        var entities = new[]
+        {
+            new ColumnMappedProduct { OrganizationId = 42, FullName = "Acme Corp", Price = 99.99m, Quantity = 10 },
+            new ColumnMappedProduct { OrganizationId = 7, FullName = "Globex Inc", Price = 50.00m, Quantity = 5 }
+        };
+
+        var columns = new[]
+        {
+            nameof(ColumnMappedProduct.OrganizationId), // [Column("OrgId")] — C# name differs from DB
+            nameof(ColumnMappedProduct.FullName),        // [Column("DisplayName")] — C# name differs from DB
+            nameof(ColumnMappedProduct.Price),           // [Column(TypeName=...)] only — name unchanged
+            nameof(ColumnMappedProduct.Quantity)          // no [Column] — pass-through
+        };
+
+        // Act
+        var result = await _bulkOperations.BulkInsertAsync(_context, entities, "dbo.ColumnMappedProducts", columns);
+
+        // Assert — data landed in the correct DB columns
+        Assert.AreEqual(2, result);
+
+        var inserted = await _context.ColumnMappedProducts.OrderBy(p => p.OrganizationId).ToListAsync();
+        Assert.AreEqual(2, inserted.Count);
+
+        Assert.AreEqual(7, inserted[0].OrganizationId);
+        Assert.AreEqual("Globex Inc", inserted[0].FullName);
+        Assert.AreEqual(50.00m, inserted[0].Price);
+        Assert.AreEqual(5, inserted[0].Quantity);
+
+        Assert.AreEqual(42, inserted[1].OrganizationId);
+        Assert.AreEqual("Acme Corp", inserted[1].FullName);
+        Assert.AreEqual(99.99m, inserted[1].Price);
+        Assert.AreEqual(10, inserted[1].Quantity);
+    }
+
+    [TestMethod]
+    public async Task BulkInsertAsync_WithColumnAttribute_AutoDetectedColumns_MapsCorrectly()
+    {
+        // Arrange — let EF Core auto-detect columns (no explicit column list)
+        var entities = new[]
+        {
+            new ColumnMappedProduct { OrganizationId = 100, FullName = "Auto Detect Co", Price = 25.50m, Quantity = 3 }
+        };
+
+        // Act — auto-detect path: GetEntityMetadata resolves columns from EF model
+        var result = await _context.BulkInsertAsync(entities);
+
+        // Assert
+        Assert.AreEqual(1, result);
+
+        var inserted = await _context.ColumnMappedProducts.SingleAsync();
+        Assert.AreEqual(100, inserted.OrganizationId);
+        Assert.AreEqual("Auto Detect Co", inserted.FullName);
+        Assert.AreEqual(25.50m, inserted.Price);
+        Assert.AreEqual(3, inserted.Quantity);
     }
 
     #endregion

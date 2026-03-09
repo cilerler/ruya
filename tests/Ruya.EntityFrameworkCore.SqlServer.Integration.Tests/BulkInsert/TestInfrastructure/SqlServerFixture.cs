@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -95,12 +95,14 @@ public sealed class SqlServerFixture : IAsyncDisposable
         await using var context = CreateDbContext();
 
         // Delete in correct order due to FK constraints
+        await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.ColumnMappedProducts");
         await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.OrderItems");
         await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Orders");
         await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Products");
         await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Categories");
 
         // Reset identity seeds
+        await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('dbo.ColumnMappedProducts', RESEED, 0)");
         await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('dbo.OrderItems', RESEED, 0)");
         await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('dbo.Orders', RESEED, 0)");
         await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('dbo.Products', RESEED, 0)");

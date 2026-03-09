@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -107,6 +107,30 @@ public class ProductImportDto
     public int CategoryId { get; set; }
 }
 
+/// <summary>
+/// Entity with [Column] name mappings to verify that BulkInsert resolves
+/// C# property names to DB column names via the [Column] attribute.
+/// </summary>
+[Table("ColumnMappedProducts", Schema = "dbo")]
+public class ColumnMappedProduct
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public int Id { get; set; }
+
+    [Column("OrgId")]
+    public int OrganizationId { get; set; }
+
+    [Column("DisplayName")]
+    [MaxLength(200)]
+    public string FullName { get; set; } = string.Empty;
+
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal Price { get; set; }
+
+    public int Quantity { get; set; }
+}
+
 public class TestDbContext : DbContext
 {
     public TestDbContext(DbContextOptions<TestDbContext> options) : base(options)
@@ -117,6 +141,7 @@ public class TestDbContext : DbContext
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<ColumnMappedProduct> ColumnMappedProducts => Set<ColumnMappedProduct>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
