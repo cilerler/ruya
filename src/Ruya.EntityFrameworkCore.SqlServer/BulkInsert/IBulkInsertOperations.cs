@@ -105,7 +105,9 @@ public sealed class BulkInsertOptions
     public string? TableName { get; set; }
 
     /// <summary>
-    /// Column names to map. If null, auto-detected from DbContext or type properties.
+    /// Column names to map. Accepts either DB column names or C# property names
+    /// (properties with [Column] attributes are resolved automatically).
+    /// If null, auto-detected from DbContext or type properties.
     /// </summary>
     public string[]? Columns { get; set; }
 

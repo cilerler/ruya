@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
@@ -33,6 +35,12 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 	/// for the same entity across different DbContext configurations (e.g., multi-tenant schemas).
 	/// </summary>
 	private readonly ConcurrentDictionary<(Type EntityType, string TableName), string[]> _columnCache = new();
+
+	/// <summary>
+	/// Cache for resolved DB column names to avoid repeated reflection.
+	/// Key: (EntityType, PropertyName) → DB column name.
+	/// </summary>
+	private static readonly ConcurrentDictionary<(Type, string), string> _dbColumnNameCache = new();
 
 	public BulkInsertOperations(ILogger<BulkInsertOperations> logger, IDistributedTracing tracing, IOptions<BulkInsertOperationsSettings> options, IModelMetadata modelMetadata)
 	{
@@ -190,10 +198,10 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		{
 			stopwatch.Stop();
 			activity.SetStatus(ActivityStatusCode.Error, ex.Message);
-                activity.SetTag("exception.type", ex.GetType().FullName);
-                activity.SetTag("exception.message", ex.Message);
-                activity.SetTag("exception.stacktrace", ex.StackTrace);
-                activity.AddEvent("exception", DateTimeOffset.UtcNow);
+			activity.SetTag("exception.type", ex.GetType().FullName);
+			activity.SetTag("exception.message", ex.Message);
+			activity.SetTag("exception.stacktrace", ex.StackTrace);
+			activity.AddEvent("exception", DateTimeOffset.UtcNow);
 
 			_logger.LogError(ex,
 				"BulkInsert failed: {TableName} after {ElapsedMs}ms - {Message}",
@@ -364,10 +372,11 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			EnableStreaming = true
 		};
 
-		// Map columns
+		// Map columns: source = name used by EnumerableDataReader, destination = actual DB column name
 		foreach (var column in columns)
 		{
-			bulkCopy.ColumnMappings.Add(column, column);
+			var dbColumn = ResolveDbColumnName<T>(column);
+			bulkCopy.ColumnMappings.Add(column, dbColumn);
 		}
 
 		// Set up progress notification
@@ -452,6 +461,26 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		});
 
 		return (tableName, columns);
+	}
+
+	/// <summary>
+	/// Resolves the DB column name for a C# property.
+	/// If the property has a [Column("Name")] attribute, returns that name.
+	/// Otherwise returns the input name as-is (backward-compatible with DB column names).
+	/// </summary>
+	private static string ResolveDbColumnName<T>(string propertyName)
+	{
+		return ResolveDbColumnName(typeof(T), propertyName);
+	}
+
+	/// <inheritdoc cref="ResolveDbColumnName{T}(string)"/>
+	internal static string ResolveDbColumnName(Type type, string propertyName)
+	{
+		return _dbColumnNameCache.GetOrAdd((type, propertyName), static key =>
+		{
+			var property = key.Item1.GetProperty(key.Item2, BindingFlags.Instance | BindingFlags.Public);
+			return property?.GetCustomAttribute<ColumnAttribute>()?.Name ?? key.Item2;
+		});
 	}
 
 	private class Counter { public long Value; }

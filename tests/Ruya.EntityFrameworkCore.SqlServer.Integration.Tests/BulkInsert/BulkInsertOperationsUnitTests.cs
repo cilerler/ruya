@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -359,6 +360,53 @@ public class BulkInsertOperationsUnitTests
             It.IsAny<string?>(),
             It.IsAny<string?>(),
             It.IsAny<IEnumerable<KeyValuePair<string, object?>>?>()), Times.Once);
+    }
+
+    #endregion
+
+    #region ResolveDbColumnName Tests
+
+    public class ColumnMappedTestEntity
+    {
+        public int Id { get; set; }
+
+        [Column("OrgId")]
+        public int OrganizationId { get; set; }
+
+        [Column("DisplayName")]
+        public string FullName { get; set; } = string.Empty;
+
+        public string UnmappedProperty { get; set; } = string.Empty;
+    }
+
+    [TestMethod]
+    public void ResolveDbColumnName_WithColumnAttribute_ReturnsAttributeName()
+    {
+        // Act
+        var result = BulkInsertOperations.ResolveDbColumnName(typeof(ColumnMappedTestEntity), "OrganizationId");
+
+        // Assert
+        Assert.AreEqual("OrgId", result);
+    }
+
+    [TestMethod]
+    public void ResolveDbColumnName_WithoutColumnAttribute_ReturnsPropertyName()
+    {
+        // Act
+        var result = BulkInsertOperations.ResolveDbColumnName(typeof(ColumnMappedTestEntity), "Id");
+
+        // Assert
+        Assert.AreEqual("Id", result);
+    }
+
+    [TestMethod]
+    public void ResolveDbColumnName_WithDbColumnNameInput_PassesThrough()
+    {
+        // Act — "OrgId" is a DB column name, not a C# property name
+        var result = BulkInsertOperations.ResolveDbColumnName(typeof(ColumnMappedTestEntity), "OrgId");
+
+        // Assert
+        Assert.AreEqual("OrgId", result);
     }
 
     #endregion

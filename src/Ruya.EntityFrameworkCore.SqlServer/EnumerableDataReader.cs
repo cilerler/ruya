@@ -205,11 +205,7 @@ public sealed class EnumerableDataReader<T> : IDataReader
     public decimal GetDecimal(int i) => (decimal)GetValue(i);
     public DateTime GetDateTime(int i) => (DateTime)GetValue(i);
 
-    public bool IsDBNull(int i)
-    {
-        var val = GetValue(i);
-        return val == null || val == DBNull.Value;
-    }
+    public bool IsDBNull(int i) => GetValue(i) == DBNull.Value;
 
     public DataTable? GetSchemaTable()
     {
