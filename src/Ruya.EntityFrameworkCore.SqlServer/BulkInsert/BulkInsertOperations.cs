@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -35,7 +35,6 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 	/// for the same entity across different DbContext configurations (e.g., multi-tenant schemas).
 	/// </summary>
 	private readonly ConcurrentDictionary<(Type EntityType, string TableName), string[]> _columnCache = new();
-
 	/// <summary>
 	/// Cache for resolved DB column names to avoid repeated reflection.
 	/// Key: (EntityType, PropertyName) → DB column name.
@@ -108,16 +107,16 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		activity.SetTag("db.operation", "BulkInsert");
 		activity.SetTag("db.sql.table", options.TableName);
 
-		// Optimization: If we can cheaply determine empty, do it. But don't iterate.
-		if (entities.TryGetNonEnumeratedCount(out var count))
+		// Materialize for retry safety — IEnumerable may be single-pass
+		var entityList = entities as IList<T> ?? entities.ToList();
+
+		if (entityList.Count == 0)
 		{
-			if (count == 0)
-			{
-				_logger.LogDebug("BulkInsert skipped: no entities provided");
-				return 0;
-			}
-			activity.SetTag("db.bulk.count", count);
+			_logger.LogDebug("BulkInsert skipped: no entities provided");
+			return 0;
 		}
+
+		activity.SetTag("db.bulk.count", entityList.Count);
 
 		// Resolve table name and columns if not provided
 		var tableName = options.TableName;
@@ -140,59 +139,64 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			throw new InvalidOperationException($"Could not determine columns for type {typeof(T).Name}. Provide Columns in options.");
 		}
 
-		// Wrap entities to count them as we stream
-		var counter = new Counter();
-		var wrappedEntities = CountItems(entities, counter);
-
 		_logger.LogDebug("BulkInsert starting to {TableName}", tableName);
 		var stopwatch = Stopwatch.StartNew();
 
 		try
 		{
-			var connection = context.Database.GetDbConnection() as SqlConnection
-				?? throw new InvalidOperationException("BulkInsert requires a SqlConnection. Ensure you're using SQL Server provider.");
-
-			var transaction = context.Database.CurrentTransaction?.GetDbTransaction() as SqlTransaction;
-
-			var wasConnectionClosed = connection.State == ConnectionState.Closed;
-			if (wasConnectionClosed)
+			// Use EF Core's execution strategy for transient fault retry (e.g., Azure SQL 40197)
+			var strategy = context.Database.CreateExecutionStrategy();
+			var rowsProcessed = await strategy.ExecuteAsync(async ct =>
 			{
-				await connection.OpenAsync(cancellationToken);
-			}
+				var connection = context.Database.GetDbConnection() as SqlConnection
+					?? throw new InvalidOperationException("BulkInsert requires a SqlConnection. Ensure you're using SQL Server provider.");
 
-			try
-			{
-				await ExecuteBulkCopyAsync(
-					connection,
-					transaction,
-					wrappedEntities,
-					tableName,
-					columns,
-					options,
-					cancellationToken);
+				var transaction = context.Database.CurrentTransaction?.GetDbTransaction() as SqlTransaction;
 
-				stopwatch.Stop();
-
-				var rowsProcessed = counter.Value;
-
-				// Update trace with actual count
-				activity.SetTag("db.bulk.count", rowsProcessed);
-				activity.SetTag("db.bulk.rows_affected", rowsProcessed); // SqlBulkCopy doesn't return rows affected accurately without event, but assuming success means all processed.
-				activity.SetStatus(ActivityStatusCode.Ok);
-
-				_logger.LogInformation(
-					"BulkInsert completed: {RowsCopied} rows to {TableName} in {ElapsedMs}ms",
-					rowsProcessed, tableName, stopwatch.ElapsedMilliseconds);
-
-				return rowsProcessed;
-			}
-			finally
-			{
-				if (wasConnectionClosed && connection.State == ConnectionState.Open)
+				// On retry after transient error, connection may be Broken — treat same as Closed
+				var needsOpen = connection.State is ConnectionState.Closed or ConnectionState.Broken;
+				if (needsOpen)
 				{
-					await connection.CloseAsync();
+					if (connection.State == ConnectionState.Broken)
+					{
+						await connection.CloseAsync();
+					}
+					await connection.OpenAsync(ct);
 				}
-			}
+
+				try
+				{
+					await ExecuteBulkCopyAsync(
+						connection,
+						transaction,
+						entityList,
+						tableName,
+						columns,
+						options,
+						ct);
+
+					return (long)entityList.Count;
+				}
+				finally
+				{
+					if (needsOpen && connection.State == ConnectionState.Open)
+					{
+						await connection.CloseAsync();
+					}
+				}
+			}, cancellationToken);
+
+			stopwatch.Stop();
+
+			activity.SetTag("db.bulk.count", rowsProcessed);
+			activity.SetTag("db.bulk.rows_affected", rowsProcessed);
+			activity.SetStatus(ActivityStatusCode.Ok);
+
+			_logger.LogInformation(
+				"BulkInsert completed: {RowsCopied} rows to {TableName} in {ElapsedMs}ms",
+				rowsProcessed, tableName, stopwatch.ElapsedMilliseconds);
+
+			return rowsProcessed;
 		}
 		catch (Exception ex)
 		{
@@ -372,7 +376,7 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			EnableStreaming = true
 		};
 
-		// Map columns: source = name used by EnumerableDataReader, destination = actual DB column name
+		// Map columns — resolve [Column] attribute for DB destination name
 		foreach (var column in columns)
 		{
 			var dbColumn = ResolveDbColumnName<T>(column);
@@ -483,14 +487,4 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		});
 	}
 
-	private class Counter { public long Value; }
-
-	private static IEnumerable<T> CountItems<T>(IEnumerable<T> source, Counter counter)
-	{
-		foreach (var item in source)
-		{
-			counter.Value++;
-			yield return item;
-		}
-	}
 }
