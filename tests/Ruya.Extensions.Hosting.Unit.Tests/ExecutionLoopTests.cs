@@ -223,6 +223,183 @@ public class ExecutionLoopTests
     }
 
     [TestMethod]
+    public async Task RunScheduleLoopAsync_IdleBackoff_ShouldDelayWhenIdleCycleIsTrue()
+    {
+        // Arrange
+        _settings.ScheduleCronExpression = null; // Continuous mode
+        _settings.IdleBackoffDuration = TimeSpan.FromMilliseconds(500);
+
+        using var service = CreateService();
+        var executionTimes = new List<DateTime>();
+        var tcs = new TaskCompletionSource();
+
+        service.DoWorkAction = (ct) =>
+        {
+            executionTimes.Add(DateTime.UtcNow);
+            service.SetIdleCycle(true); // Simulate no data found
+            if (executionTimes.Count >= 3) tcs.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Act
+        await service.StartedAsync(default);
+        await Task.WhenAny(tcs.Task, Task.Delay(5000));
+
+        // Assert
+        Assert.IsTrue(executionTimes.Count >= 3, "Should have executed at least 3 times");
+
+        for (int i = 1; i < executionTimes.Count; i++)
+        {
+            var gap = executionTimes[i] - executionTimes[i - 1];
+            Assert.IsTrue(gap >= TimeSpan.FromMilliseconds(400),
+                $"Gap between execution {i - 1} and {i} was {gap.TotalMilliseconds}ms, expected at least 400ms due to idle backoff");
+        }
+
+        await service.StopAsync(default);
+    }
+
+    [TestMethod]
+    public async Task RunScheduleLoopAsync_IdleBackoff_ShouldNotDelayWhenIdleCycleIsFalse()
+    {
+        // Arrange
+        _settings.ScheduleCronExpression = null; // Continuous mode
+        _settings.IdleBackoffDuration = TimeSpan.FromSeconds(10); // Large backoff, but should not apply
+
+        using var service = CreateService();
+        var tcs = new TaskCompletionSource();
+
+        service.DoWorkAction = (ct) =>
+        {
+            // IdleCycle defaults to false (reset by base class), so no backoff
+            if (service.ExecutionCount >= 5) tcs.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Act
+        var stopwatch = Stopwatch.StartNew();
+        await service.StartedAsync(default);
+        await Task.WhenAny(tcs.Task, Task.Delay(2000));
+        stopwatch.Stop();
+
+        // Assert
+        Assert.IsTrue(service.ExecutionCount >= 5, "Should have executed at least 5 times quickly");
+        Assert.IsTrue(stopwatch.ElapsedMilliseconds < 1000,
+            $"Should complete quickly without idle backoff, took {stopwatch.ElapsedMilliseconds}ms");
+
+        await service.StopAsync(default);
+    }
+
+    [TestMethod]
+    public async Task RunScheduleLoopAsync_IdleBackoff_ShouldNotDelayWhenDurationIsZero()
+    {
+        // Arrange
+        _settings.ScheduleCronExpression = null; // Continuous mode
+        _settings.IdleBackoffDuration = TimeSpan.Zero; // Disabled
+
+        using var service = CreateService();
+        var tcs = new TaskCompletionSource();
+
+        service.DoWorkAction = (ct) =>
+        {
+            service.SetIdleCycle(true); // Idle, but backoff is disabled
+            if (service.ExecutionCount >= 5) tcs.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Act
+        var stopwatch = Stopwatch.StartNew();
+        await service.StartedAsync(default);
+        await Task.WhenAny(tcs.Task, Task.Delay(2000));
+        stopwatch.Stop();
+
+        // Assert
+        Assert.IsTrue(service.ExecutionCount >= 5, "Should have executed at least 5 times quickly");
+        Assert.IsTrue(stopwatch.ElapsedMilliseconds < 1000,
+            $"Should complete quickly with zero backoff duration, took {stopwatch.ElapsedMilliseconds}ms");
+
+        await service.StopAsync(default);
+    }
+
+    [TestMethod]
+    public async Task RunScheduleLoopAsync_IdleBackoff_ShouldRespectCancellation()
+    {
+        // Arrange
+        _settings.ScheduleCronExpression = null; // Continuous mode
+        _settings.IdleBackoffDuration = TimeSpan.FromSeconds(10); // Long backoff
+
+        using var service = CreateService();
+        var firstExecutionDone = new TaskCompletionSource();
+
+        service.DoWorkAction = (ct) =>
+        {
+            service.SetIdleCycle(true); // Trigger idle backoff
+            firstExecutionDone.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Act
+        await service.StartedAsync(default);
+        await firstExecutionDone.Task;
+
+        var stopwatch = Stopwatch.StartNew();
+        await service.StoppingAsync(default);
+        stopwatch.Stop();
+
+        // Assert - Should stop quickly, not wait for the full 10 second backoff
+        Assert.IsTrue(stopwatch.ElapsedMilliseconds < 1000,
+            $"Should cancel idle backoff quickly, took {stopwatch.ElapsedMilliseconds}ms");
+    }
+
+    [TestMethod]
+    public async Task RunScheduleLoopAsync_IdleBackoff_ShouldResetBetweenExecutions()
+    {
+        // Arrange
+        _settings.ScheduleCronExpression = null; // Continuous mode
+        _settings.IdleBackoffDuration = TimeSpan.FromMilliseconds(500);
+
+        using var service = CreateService();
+        var executionTimes = new List<DateTime>();
+        var tcs = new TaskCompletionSource();
+
+        service.DoWorkAction = (ct) =>
+        {
+            executionTimes.Add(DateTime.UtcNow);
+            // Alternate: idle on odd executions, active on even
+            service.SetIdleCycle(service.ExecutionCount % 2 != 0);
+            if (executionTimes.Count >= 4) tcs.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Act
+        await service.StartedAsync(default);
+        await Task.WhenAny(tcs.Task, Task.Delay(5000));
+
+        // Assert
+        Assert.IsTrue(executionTimes.Count >= 4, "Should have executed at least 4 times");
+
+        // Odd executions (1st, 3rd) set IdleCycle=true, so gaps after them should be >= 400ms
+        // Even executions (2nd, 4th) set IdleCycle=false, so gaps after them should be fast
+        for (int i = 1; i < executionTimes.Count; i++)
+        {
+            var gap = executionTimes[i] - executionTimes[i - 1];
+            bool previousWasIdle = i % 2 != 0; // execution 1,3 are odd (idle)
+
+            if (previousWasIdle)
+            {
+                Assert.IsTrue(gap >= TimeSpan.FromMilliseconds(400),
+                    $"Gap after idle execution {i - 1} was {gap.TotalMilliseconds}ms, expected >= 400ms");
+            }
+            else
+            {
+                Assert.IsTrue(gap < TimeSpan.FromMilliseconds(400),
+                    $"Gap after active execution {i - 1} was {gap.TotalMilliseconds}ms, expected < 400ms");
+            }
+        }
+
+        await service.StopAsync(default);
+    }
+
+    [TestMethod]
     public async Task RunScheduleLoopAsync_DelayBetweenExecutions_ShouldRespectCancellation()
     {
         // Arrange

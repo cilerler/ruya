@@ -30,6 +30,8 @@ public class TestWorkerService : WorkerBackgroundService<TestWorkerSettings>
     {
     }
 
+    public void SetIdleCycle(bool value) => IdleCycle = value;
+
     public override Task DoWorkAsync(CancellationToken cancellationToken)
     {
         ExecutionCount++;

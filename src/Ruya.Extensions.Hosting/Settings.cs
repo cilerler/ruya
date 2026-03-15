@@ -35,6 +35,9 @@ public class WorkerBackgroundServiceSettings
     // Delay settings
     public TimeSpan DelayBetweenExecutions { get; set; } = TimeSpan.Zero;
 
+    // Idle backoff settings
+    public TimeSpan IdleBackoffDuration { get; set; } = TimeSpan.Zero;
+
     public bool RunContinuously => string.IsNullOrWhiteSpace(ScheduleCronExpression);
 
     public TimeSpan NextOccurrence

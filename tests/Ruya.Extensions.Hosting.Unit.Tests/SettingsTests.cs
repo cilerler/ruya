@@ -75,6 +75,16 @@ public class SettingsTests
     }
 
     [TestMethod]
+    public void IdleBackoffDuration_ShouldDefaultToZero()
+    {
+        // Arrange & Act
+        var settings = new TestWorkerSettings();
+
+        // Assert
+        Assert.AreEqual(TimeSpan.Zero, settings.IdleBackoffDuration);
+    }
+
+    [TestMethod]
     public void NextOccurrence_ShouldThrow_WhenCronIsInvalid()
     {
         // Arrange

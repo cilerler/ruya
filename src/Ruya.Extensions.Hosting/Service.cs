@@ -84,6 +84,8 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             $"app_{serviceName}_duration_seconds", "s", "Execution duration");
     }
 
+    protected bool IdleCycle { get; set; }
+
     public abstract Task DoWorkAsync(CancellationToken cancellationToken);
 
     #region IHostedLifecycleService
@@ -182,6 +184,7 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             var shouldExecute = !isFirstExecution || _settings.RunImmediately || _settings.RunContinuously;
             if (shouldExecute)
             {
+                IdleCycle = false;
                 await ExecuteWorkAsync(cancellationToken);
             }
             else
@@ -190,6 +193,22 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             }
 
             isFirstExecution = false;
+
+            if (cancellationToken.IsCancellationRequested) break;
+
+            // Apply idle backoff if no data was found
+            if (IdleCycle && _settings.IdleBackoffDuration > TimeSpan.Zero)
+            {
+                _logger.LogDebug("Idle cycle detected. Backing off for {Duration}.", _settings.IdleBackoffDuration);
+                try
+                {
+                    await Task.Delay(_settings.IdleBackoffDuration, cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
+            }
 
             if (cancellationToken.IsCancellationRequested) break;
 
