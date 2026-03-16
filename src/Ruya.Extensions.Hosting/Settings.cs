@@ -30,7 +30,7 @@ public class WorkerBackgroundServiceSettings
     public TimeSpan? HealthHardTimeout { get; set; }
 
     // Shutdown settings
-    public int ShutdownTimeoutSeconds { get; set; } = 30;
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     // Delay settings
     public TimeSpan DelayBetweenExecutions { get; set; } = TimeSpan.Zero;

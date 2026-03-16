@@ -73,7 +73,7 @@ Configure the execution behavior using standard `appsettings.json`:
     "RetryCount": 3,
     "RetryBaseDelaySeconds": 2,
 
-    "ShutdownTimeoutSeconds": 60,
+    "ShutdownTimeout": "00:01:00",
 
     // When IdleCycle is set to true in DoWorkAsync, wait this long before next execution.
     // Set to "00:00:00" (default) to disable.

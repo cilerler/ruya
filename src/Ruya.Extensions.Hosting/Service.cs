@@ -128,12 +128,11 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             return;
         }
 
-        var timeout = TimeSpan.FromSeconds(_settings.ShutdownTimeoutSeconds);
-        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var timeoutCts = new CancellationTokenSource(_settings.ShutdownTimeout);
 
         try
         {
-            var completedTask = await Task.WhenAny(_executingTask, Task.Delay(timeout, CancellationToken.None));
+            var completedTask = await Task.WhenAny(_executingTask, Task.Delay(_settings.ShutdownTimeout, CancellationToken.None));
 
             if (completedTask == _executingTask)
             {
@@ -143,8 +142,8 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             else
             {
                 _logger.LogWarning(
-                    "Shutdown timeout ({TimeoutSeconds}s) exceeded. Work may be incomplete.",
-                    _settings.ShutdownTimeoutSeconds);
+                    "Shutdown timeout ({ShutdownTimeout}) exceeded. Work may be incomplete.",
+                    _settings.ShutdownTimeout);
             }
         }
         catch (OperationCanceledException)

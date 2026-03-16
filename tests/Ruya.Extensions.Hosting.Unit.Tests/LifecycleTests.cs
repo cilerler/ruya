@@ -158,7 +158,7 @@ public class LifecycleTests : TestBase<TestWorkerService>
         // Arrange
         SetEnabled(_settings, true);
         _settings.RunImmediately = true;
-        _settings.ShutdownTimeoutSeconds = 5;
+        _settings.ShutdownTimeout = TimeSpan.FromSeconds(5);
         _service = CreateService();
 
         var tcs = new TaskCompletionSource();
