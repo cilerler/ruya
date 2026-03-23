@@ -486,7 +486,7 @@ public class BulkInsertOperationsIntegrationTests
     [TestMethod]
     public async Task BulkInsertAsync_WithColumnAttribute_MapsNameofToDbColumnName()
     {
-        // Arrange — use nameof() for column names, just like darkseid does with NormalizedVendor
+        // Arrange — use nameof() for column names
         var entities = new[]
         {
             new ColumnMappedProduct { OrganizationId = 42, FullName = "Acme Corp", Price = 99.99m, Quantity = 10 },
