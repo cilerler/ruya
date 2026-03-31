@@ -305,7 +305,6 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		CancellationToken cancellationToken)
 	{
 		var bulkCopyOptions = BuildSqlBulkCopyOptions(options);
-		long rowsCopied = 0;
 
 		using var bulkCopy = new SqlBulkCopy(connection, bulkCopyOptions, transaction)
 		{
@@ -344,17 +343,15 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			bulkCopy.NotifyAfter = options.NotifyAfterRows ?? options.BatchSize;
 			bulkCopy.SqlRowsCopied += (_, args) =>
 			{
-				rowsCopied = args.RowsCopied;
 				options.NotifyAfter(args.RowsCopied);
 			};
 		}
 
 		await bulkCopy.WriteToServerAsync(reader, cancellationToken);
 
-		// If no notification was set, we need to count differently
-		// SqlBulkCopy doesn't provide a direct row count, so we track via event
-		// If NotifyAfter was null, rowsCopied stays 0; caller can use reader's RecordsAffected if available
-		return rowsCopied;
+		// Prefer reader's RecordsAffected for exact count (if the reader tracks it).
+		// SqlBulkCopy.RowsCopied only reflects the last NotifyAfter boundary, missing trailing rows.
+		return reader.RecordsAffected >= 0 ? reader.RecordsAffected : bulkCopy.RowsCopied;
 	}
 
 	private async Task ExecuteBulkCopyAsync<T>(
