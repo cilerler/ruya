@@ -20,6 +20,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Data.SqlClient" />
+		<PackageReference Include="Microsoft.Extensions.Caching.Memory" VersionOverride="10.0.1" />
 		<PackageReference Include="Polly" />
 	</ItemGroup>
 
