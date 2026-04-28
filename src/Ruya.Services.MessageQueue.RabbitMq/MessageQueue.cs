@@ -420,14 +420,14 @@ internal sealed class RabbitMQMessageQueue : IMessageQueue
         SubscribeOptions? options,
         CancellationToken cancellationToken) where TMessage : class
     {
+        // Compute delivery count up front so the catch block can use it for the same poison-message
+        // ceiling as the explicit Retry path. Source order is x-death header (set by DLX wiring) →
+        // ea.Redelivered → 1.
+        var deliveryCount = CalculateDeliveryCount(ea);
+
         try
         {
             var envelope = _serializer.Deserialize<MessageEnvelope<TMessage>>(ea.Body.ToArray());
-
-            // Calculate delivery count:
-            // 1. Use ea.Redelivered to detect if message was redelivered (at least attempt 2)
-            // 2. Check x-death header from DLX for accurate retry count
-            var deliveryCount = CalculateDeliveryCount(ea);
 
             var context = new MessageContext<TMessage>
             {
@@ -440,15 +440,31 @@ internal sealed class RabbitMQMessageQueue : IMessageQueue
 
             var result = await _pipeline.ExecuteConsumeAsync(context, handler, cancellationToken);
 
-            await HandleMessageResultAsync(channel, ea.DeliveryTag, result, options);
+            await HandleMessageResultAsync(channel, ea.DeliveryTag, result, options, deliveryCount);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling message from topic '{Topic}'", topic);
+            _logger.LogError(ex, "Error handling message from topic '{Topic}' (DeliveryCount={DeliveryCount})", topic, deliveryCount);
 
-            if (!(options?.AutoAck ?? false))
+            if (options?.AutoAck ?? false)
+            {
+                return;
+            }
+
+            // Default behaviour: an unhandled exception means a poison message — reject without requeue
+            // so the broker routes to the configured DLX (or drops it) instead of looping the same
+            // message back at the same broken consumer at thousands of deliveries per second.
+            //
+            // Callers who want the legacy "retry forever on exception" behaviour can opt back in with
+            // SubscribeOptions.RequeueOnException = true (still subject to MaxDeliveryCount when set).
+            var shouldRequeue = (options?.RequeueOnException ?? false) && !ExceedsMaxDeliveryCount(deliveryCount, options);
+            if (shouldRequeue)
             {
                 await channel.BasicNackAsync(ea.DeliveryTag, false, true);
+            }
+            else
+            {
+                await channel.BasicRejectAsync(ea.DeliveryTag, false);
             }
         }
     }
@@ -457,7 +473,8 @@ internal sealed class RabbitMQMessageQueue : IMessageQueue
         IChannel channel,
         ulong deliveryTag,
         MessageResult result,
-        SubscribeOptions? options)
+        SubscribeOptions? options,
+        int deliveryCount)
     {
         if (options?.AutoAck ?? false)
         {
@@ -470,12 +487,29 @@ internal sealed class RabbitMQMessageQueue : IMessageQueue
                 await channel.BasicAckAsync(deliveryTag, false);
                 break;
             case MessageStatus.Retry:
-                await channel.BasicNackAsync(deliveryTag, false, true); // Requeue
+                if (ExceedsMaxDeliveryCount(deliveryCount, options))
+                {
+                    // Cap reached — escalate to Reject so the broker stops requeuing.
+                    _logger.LogWarning(
+                        "Message exceeded MaxDeliveryCount={MaxDeliveryCount} on Retry; rejecting (DeliveryCount={DeliveryCount}). Reason: {Reason}",
+                        options?.MaxDeliveryCount, deliveryCount, result.Reason);
+                    await channel.BasicRejectAsync(deliveryTag, false);
+                }
+                else
+                {
+                    await channel.BasicNackAsync(deliveryTag, false, true); // Requeue
+                }
                 break;
             case MessageStatus.Reject:
                 await channel.BasicRejectAsync(deliveryTag, false); // Don't requeue, send to DLQ
                 break;
         }
+    }
+
+    private static bool ExceedsMaxDeliveryCount(int deliveryCount, SubscribeOptions? options)
+    {
+        var max = options?.MaxDeliveryCount;
+        return max.HasValue && deliveryCount >= max.Value;
     }
 
     private async Task EnsureTopologyAsync(IChannel channel, string topic)

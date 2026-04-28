@@ -83,6 +83,32 @@ public sealed class SubscribeOptions
     /// For stream-based providers: consumer name for offset tracking
     /// </summary>
     public string? ConsumerName { get; set; }
+
+    /// <summary>
+    /// Whether unhandled exceptions thrown during message processing (deserialization failures,
+    /// infrastructure faults, anything before the user handler returns a <see cref="MessageStatus"/>)
+    /// should requeue the message back to the source queue. Default <c>false</c> — exceptions are
+    /// treated as poison messages and rejected. The broker routes to the configured DLX, or drops the
+    /// message if no DLX is configured.
+    /// <para>Set to <c>true</c> only if you genuinely want infinite redelivery on every exception
+    /// (e.g. for a known-transient infrastructure error path). Beware: a malformed message with this
+    /// flag on creates a tight redelivery loop.</para>
+    /// <para>Does not affect explicit <see cref="MessageResult.Retry"/> returns from the user handler —
+    /// those still requeue (subject to <see cref="MaxDeliveryCount"/>).</para>
+    /// </summary>
+    public bool RequeueOnException { get; set; }
+
+    /// <summary>
+    /// Maximum number of deliveries before the broker rejects the message without requeue.
+    /// Applies to both the <see cref="MessageStatus.Retry"/> result path and the unhandled-exception
+    /// path (when <see cref="RequeueOnException"/> is true). Default <c>null</c> means no cap on the
+    /// Retry path.
+    /// <para>Provider note: RabbitMQ derives the live count from the <c>x-death</c> header which is
+    /// only populated when the queue is configured with a Dead-Letter Exchange. If no DLX is wired
+    /// (<see cref="DeadLetterQueue"/> is null), the count effectively maxes at 2 (first delivery + one
+    /// redelivery) so this cap behaves as "max one retry."</para>
+    /// </summary>
+    public int? MaxDeliveryCount { get; set; }
 }
 
 /// <summary>
