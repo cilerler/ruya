@@ -61,6 +61,11 @@ public sealed class JsonMessageSerializer : IMessageSerializer
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             WriteIndented = false,
+            // Forgiving on input. Producers (Ruya itself) emit camelCase via PropertyNamingPolicy above,
+            // but external systems publishing onto our broker (e.g. Gateway-forwarded webhooks where the
+            // supplier might use PascalCase) deserialize cleanly regardless of the casing they used.
+            // Output is always camelCase regardless of this setting.
+            PropertyNameCaseInsensitive = true,
             Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
         };
     }

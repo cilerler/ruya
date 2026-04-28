@@ -143,22 +143,31 @@ public sealed class RetryPolicy
 }
 
 /// <summary>
-/// Dead letter queue configuration
+/// Dead letter queue configuration. By default, a DLX exchange and DLQ are auto-derived from the
+/// topic name (<c>{topic}.dlx</c> and <c>{topic}.dlq</c>) and wired automatically — callers do not
+/// need to construct this type explicitly. Provide an instance to override names or disable.
 /// </summary>
 public sealed class DeadLetterQueueOptions
 {
     /// <summary>
-    /// Name of the dead letter queue
+    /// Override the dead-letter queue name. <c>null</c> (default) auto-derives <c>{topic}.dlq</c>.
     /// </summary>
-    public required string QueueName { get; set; }
+    public string? QueueName { get; set; }
 
     /// <summary>
-    /// Maximum number of delivery attempts before sending to DLQ
+    /// Override the dead-letter exchange name. <c>null</c> (default) auto-derives <c>{topic}.dlx</c>.
+    /// </summary>
+    public string? ExchangeName { get; set; }
+
+    /// <summary>
+    /// Maximum number of delivery attempts before sending to DLQ. Used as a hint by providers that
+    /// can enforce it; the authoritative cap on RabbitMQ is <see cref="SubscribeOptions.MaxDeliveryCount"/>.
     /// </summary>
     public int MaxDeliveryAttempts { get; set; } = 5;
 
     /// <summary>
-    /// Whether to enable dead letter queue
+    /// Whether to enable dead letter queue. Default <c>true</c>. Set false to opt out
+    /// (poison messages will be dropped instead of routed to DLQ — be careful).
     /// </summary>
     public bool Enabled { get; set; } = true;
 }

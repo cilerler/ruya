@@ -444,10 +444,9 @@ internal sealed class RabbitMQMessageQueue : IMessageQueue
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling message from topic '{Topic}' (DeliveryCount={DeliveryCount})", topic, deliveryCount);
-
             if (options?.AutoAck ?? false)
             {
+                _logger.LogError(ex, "Error handling message from topic '{Topic}' (DeliveryCount={DeliveryCount}); auto-ack is enabled, message already ack'd by broker.", topic, deliveryCount);
                 return;
             }
 
@@ -460,13 +459,52 @@ internal sealed class RabbitMQMessageQueue : IMessageQueue
             var shouldRequeue = (options?.RequeueOnException ?? false) && !ExceedsMaxDeliveryCount(deliveryCount, options);
             if (shouldRequeue)
             {
+                _logger.LogError(ex, "Error handling message from topic '{Topic}' (DeliveryCount={DeliveryCount}); requeueing for retry.", topic, deliveryCount);
                 await channel.BasicNackAsync(ea.DeliveryTag, false, true);
             }
             else
             {
+                // Forensic-trail log so the body is recoverable even when DLX wiring failed and the
+                // broker simply drops the message on reject. Truncate at ~4KB so a giant payload
+                // doesn't blow up the log; the DLQ (when present) holds the full body.
+                var bodyPreview = SafeBodyPreview(ea.Body);
+                _logger.LogCritical(ex,
+                    "Poison message on topic '{Topic}' rejected (DeliveryCount={DeliveryCount}). MessageId={MessageId} Body preview: {BodyPreview}",
+                    topic, deliveryCount,
+                    TryExtractMessageId(ea),
+                    bodyPreview);
                 await channel.BasicRejectAsync(ea.DeliveryTag, false);
             }
         }
+    }
+
+    private const int BodyPreviewLimit = 4096;
+
+    private static string SafeBodyPreview(ReadOnlyMemory<byte> body)
+    {
+        if (body.IsEmpty)
+        {
+            return string.Empty;
+        }
+
+        var slice = body.Length > BodyPreviewLimit ? body.Slice(0, BodyPreviewLimit) : body;
+        try
+        {
+            var text = Encoding.UTF8.GetString(slice.Span);
+            return body.Length > BodyPreviewLimit ? text + "…(truncated)" : text;
+        }
+        catch
+        {
+            return $"<{body.Length} bytes; not valid UTF-8>";
+        }
+    }
+
+    private static string TryExtractMessageId(BasicDeliverEventArgs ea)
+    {
+        // Best-effort: the broker-level MessageId property is what AMQP sets; the envelope-level
+        // MessageId lives inside the body. We log both ours-if-broker-set and 'unknown' fallback.
+        var msgId = ea.BasicProperties?.MessageId;
+        return string.IsNullOrEmpty(msgId) ? "<unknown>" : msgId;
     }
 
     private async Task HandleMessageResultAsync(
@@ -535,33 +573,55 @@ internal sealed class RabbitMQMessageQueue : IMessageQueue
 
         var args = new Dictionary<string, object?>();
 
-        if (options?.DeadLetterQueue?.Enabled ?? false)
+        // Default to wiring DLX. Caller can opt out by passing
+        // SubscribeOptions { DeadLetterQueue = new() { Enabled = false } }.
+        var dlqEnabled = options?.DeadLetterQueue?.Enabled ?? true;
+        if (dlqEnabled)
         {
-            var dlxExchange = $"{topic}.dlx";
-            var dlqName = options.DeadLetterQueue.QueueName;
+            var dlqOptions = options?.DeadLetterQueue;
+            var dlxExchange = dlqOptions?.ExchangeName ?? $"{topic}.dlx";
+            var dlqName = dlqOptions?.QueueName ?? $"{topic}.dlq";
 
-            // Ensure DLX exchange exists
-            await channel.ExchangeDeclareAsync(
-                exchange: dlxExchange,
-                type: ExchangeType.Fanout, // Use fanout for DLX to simplify routing
-                durable: true,
-                autoDelete: false);
+            try
+            {
+                // Ensure DLX exchange exists
+                await channel.ExchangeDeclareAsync(
+                    exchange: dlxExchange,
+                    type: ExchangeType.Fanout, // Use fanout for DLX to simplify routing
+                    durable: true,
+                    autoDelete: false);
 
-            // Ensure DLQ exists
-            await channel.QueueDeclareAsync(
-                queue: dlqName,
-                durable: true,
-                exclusive: false,
-                autoDelete: false);
+                // Ensure DLQ exists
+                await channel.QueueDeclareAsync(
+                    queue: dlqName,
+                    durable: true,
+                    exclusive: false,
+                    autoDelete: false);
 
-            // Bind DLQ to DLX
-            await channel.QueueBindAsync(
-                queue: dlqName,
-                exchange: dlxExchange,
-                routingKey: string.Empty);
+                // Bind DLQ to DLX
+                await channel.QueueBindAsync(
+                    queue: dlqName,
+                    exchange: dlxExchange,
+                    routingKey: string.Empty);
 
-            args["x-dead-letter-exchange"] = dlxExchange;
-            args["x-dead-letter-routing-key"] = string.Empty; // Fanout ignores routing key
+                args["x-dead-letter-exchange"] = dlxExchange;
+                args["x-dead-letter-routing-key"] = string.Empty; // Fanout ignores routing key
+
+                _logger.LogDebug(
+                    "DLX wired for topic '{Topic}': exchange='{DlxExchange}', queue='{DlqName}'",
+                    topic, dlxExchange, dlqName);
+            }
+            catch (Exception ex)
+            {
+                // DLX wiring is best-effort. If broker permissions prohibit it or another consumer
+                // already declared the queue with different x-dead-letter-* args, we log a warning
+                // and proceed without DLX. Poison messages on this queue will then be dropped after
+                // BasicReject; the structured Critical log on the rejection path remains the audit
+                // trail in that case.
+                _logger.LogWarning(ex,
+                    "Could not wire DLX for topic '{Topic}'. Poison messages on this consumer will be dropped after rejection (see Critical logs for the body). To remediate: ensure the user has DECLARE permission on '{DlxExchange}' and '{DlqName}', or delete a pre-existing queue declared with conflicting args.",
+                    topic, dlxExchange, dlqName);
+            }
         }
 
         if (options?.MaxPriority.HasValue == true)
