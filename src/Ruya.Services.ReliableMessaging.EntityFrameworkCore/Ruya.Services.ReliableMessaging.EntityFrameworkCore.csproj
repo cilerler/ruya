@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Description>Entity Framework Core storage adapter for Ruya.Services.ReliableMessaging. Provides IOutboxStore&lt;TDbContext&gt;, IInboxStore&lt;TDbContext&gt;, and the SavingChangesInterceptor that drains the outbox buffer atomically with your business writes.</Description>
+		<PackageTags>messaging;reliable-messaging;outbox;inbox;entity-framework-core;efcore</PackageTags>
+		<Version>8.2</Version>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.EntityFrameworkCore" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Ruya.Services.ReliableMessaging\Ruya.Services.ReliableMessaging.csproj" />
+	</ItemGroup>
+
+</Project>

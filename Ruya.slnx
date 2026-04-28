@@ -42,6 +42,9 @@
     <Project Path="src/Ruya.Services.MessageQueue.RabbitMq/Ruya.Services.MessageQueue.RabbitMq.csproj" />
     <Project Path="src/Ruya.Services.MessageQueue.Redis/Ruya.Services.MessageQueue.Redis.csproj" />
     <Project Path="src/Ruya.Services.MessageQueue/Ruya.Services.MessageQueue.csproj" />
+    <Project Path="src/Ruya.Services.ReliableMessaging/Ruya.Services.ReliableMessaging.csproj" />
+    <Project Path="src/Ruya.Services.ReliableMessaging.EntityFrameworkCore/Ruya.Services.ReliableMessaging.EntityFrameworkCore.csproj" />
+    <Project Path="src/Ruya.Services.ReliableMessaging.MessageQueue/Ruya.Services.ReliableMessaging.MessageQueue.csproj" />
     <Project Path="src/Ruya.Services.TokenBroker.Abstractions/Ruya.Services.TokenBroker.Abstractions.csproj" />
     <Project Path="src/Ruya.Services.TokenBroker.Client/Ruya.Services.TokenBroker.Client.csproj" />
     <Project Path="src/Ruya.Services.TokenBroker.Validation/Ruya.Services.TokenBroker.Validation.csproj" />
@@ -67,6 +70,9 @@
     <Project Path="tests/Ruya.Services.DistributedLock.Redis.Integration.Tests/Ruya.Services.DistributedLock.Redis.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.DistributedLock.Unit.Tests/Ruya.Services.DistributedLock.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.ReliableMessaging.Unit.Tests/Ruya.Services.ReliableMessaging.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.ReliableMessaging.MessageQueue.Integration.Tests/Ruya.Services.ReliableMessaging.MessageQueue.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.TokenBroker.Unit.Tests/Ruya.Services.TokenBroker.Unit.Tests.csproj" />
   </Folder>
 </Solution>

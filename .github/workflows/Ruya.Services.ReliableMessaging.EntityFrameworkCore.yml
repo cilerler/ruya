@@ -1,0 +1,32 @@
+name: Ruya.Services.ReliableMessaging.EntityFrameworkCore
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: [Ruya.Services.ReliableMessaging]
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.Services.ReliableMessaging.EntityFrameworkCore.yml'
+      - 'src/Ruya.Services.ReliableMessaging.EntityFrameworkCore/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.Services.ReliableMessaging.EntityFrameworkCore'
+      project-path: './src/Ruya.Services.ReliableMessaging.EntityFrameworkCore/Ruya.Services.ReliableMessaging.EntityFrameworkCore.csproj'
+      test-project-paths: './tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests.csproj'
+      dispatch-event-type: 'Ruya.Services.ReliableMessaging.EntityFrameworkCore'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+      use-testcontainers: false
+    secrets:
+      PAT: ${{ secrets.PAT }}  # Required for dispatch (chain builds)
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

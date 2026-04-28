@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Description>Transactional Outbox + Inbox pattern primitives for reliable messaging. Persistence-agnostic and transport-agnostic. Pair with Ruya.Services.ReliableMessaging.EntityFrameworkCore for EF Core storage and Ruya.Services.ReliableMessaging.MessageQueue for Ruya.Services.MessageQueue integration.</Description>
+		<PackageTags>messaging;reliable-messaging;outbox;inbox;transactional-outbox;exactly-once;event-driven</PackageTags>
+		<Version>8.2</Version>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="System.Text.Json" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+		<PackageReference Include="Microsoft.Extensions.Options" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+		<PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+		<PackageReference Include="Polly" />
+		<PackageReference Include="Polly.Extensions" />
+		<PackageReference Include="OpenTelemetry.Api" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Configuration)' == 'Release'">
+		<PackageReference Include="Ruya.Primitives" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+		<ProjectReference Include="..\Ruya.Primitives\Ruya.Primitives.csproj" />
+	</ItemGroup>
+
+</Project>

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<Description>Ruya.Services.MessageQueue adapter for Ruya.Services.ReliableMessaging. Provides the IOutboundDispatcher bridge that forwards outbox envelopes to the configured message broker, plus a SubscribeWithInbox helper for consumer-side dedup via IInboxStore.</Description>
+		<PackageTags>messaging;reliable-messaging;outbox;inbox;messagequeue</PackageTags>
+		<Version>8.2</Version>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Ruya.Services.ReliableMessaging\Ruya.Services.ReliableMessaging.csproj" />
+		<ProjectReference Include="..\Ruya.Services.MessageQueue\Ruya.Services.MessageQueue.csproj" />
+	</ItemGroup>
+
+</Project>

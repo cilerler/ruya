@@ -1,0 +1,32 @@
+name: Ruya.Services.ReliableMessaging.MessageQueue
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollingDeployment:
+        type: boolean
+        description: 'Initiate rolling deployment (chain builds)'
+        default: false
+
+  repository_dispatch:
+    types: [Ruya.Services.ReliableMessaging, Ruya.Services.MessageQueue]
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.Services.ReliableMessaging.MessageQueue.yml'
+      - 'src/Ruya.Services.ReliableMessaging.MessageQueue/**'
+
+jobs:
+  build:
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: 'Ruya.Services.ReliableMessaging.MessageQueue'
+      project-path: './src/Ruya.Services.ReliableMessaging.MessageQueue/Ruya.Services.ReliableMessaging.MessageQueue.csproj'
+      test-project-paths: './tests/Ruya.Services.ReliableMessaging.MessageQueue.Integration.Tests/Ruya.Services.ReliableMessaging.MessageQueue.Integration.Tests.csproj'
+      dispatch-event-type: 'Ruya.Services.ReliableMessaging.MessageQueue'
+      triggered-branch: ${{ github.event.client_payload.branch || '' }}
+      use-testcontainers: false
+    secrets:
+      PAT: ${{ secrets.PAT }}  # Required for dispatch (chain builds)
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
