@@ -6,7 +6,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<GlobalPackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.100"
+		<GlobalPackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.201"
 			PrivateAssets="All"
 			IncludeAssets="runtime;build;native;contentfiles;analyzers;buildtransitive" />
 
@@ -14,26 +14,25 @@
 			PrivateAssets="All"
 			IncludeAssets="runtime;build;native;contentfiles;analyzers;buildtransitive" />
 
-		<GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0"
+		<GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.201"
 			PrivateAssets="All" />
 	</ItemGroup>
 
 	<!-- Testing - MSTest -->
 	<ItemGroup>
-		<PackageVersion Include="MSTest" Version="4.0.2" />	<!-- use this instead of MSTest.TestAdapter and MSTest.TestFramework -->
-		<PackageVersion Include="MSTest.TestAdapter" Version="4.0.2" />
-		<PackageVersion Include="MSTest.TestFramework" Version="4.0.2" />
-		<PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
-		<PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.1.0" /> <!-- use this instead of coverlet.collector-->
+		<PackageVersion Include="MSTest" Version="4.1.0" />	<!-- use this instead of MSTest.TestAdapter and MSTest.TestFramework -->
+		<PackageVersion Include="MSTest.TestAdapter" Version="4.1.0" />
+		<PackageVersion Include="MSTest.TestFramework" Version="4.1.0" />
+		<PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
+		<PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.5.2" /> <!-- use this instead of coverlet.collector-->
 		<PackageVersion Include="Microsoft.Testing.Extensions.Fakes" Version="18.1.1" /> <!-- use this instead of Moq when you can -->
-		<PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.0.2" />
-		<PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.*" />
+		<PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.1.0" />
 		<PackageVersion Include="Moq" Version="4.20.72" />
 
-		<PackageVersion Include="Testcontainers" Version="4.9.0" />
-		<PackageVersion Include="Testcontainers.Redis" Version="4.9.0" />
-		<PackageVersion Include="Testcontainers.RabbitMQ" Version="4.9.0" />
-		<PackageVersion Include="Testcontainers.MsSql" Version="4.9.0" />
+		<PackageVersion Include="Testcontainers" Version="4.11.0" />
+		<PackageVersion Include="Testcontainers.Redis" Version="4.11.0" />
+		<PackageVersion Include="Testcontainers.RabbitMQ" Version="4.11.0" />
+		<PackageVersion Include="Testcontainers.MsSql" Version="4.11.0" />
 	</ItemGroup>
 
 	<!-- Visual Studio / Azure Tools -->
@@ -49,7 +48,9 @@
 		<PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.*" />
 		<PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.*" />
 		<PackageVersion Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="8.*" />
+		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="8.*" />
+		<PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.*" />
@@ -76,13 +77,14 @@
 		<PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.Options" Version="8.*" />
 		<PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="8.*" />
-		<PackageVersion Include="Microsoft.FeatureManagement.AspNetCore" Version="4.3.0" />
+		<PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.*" />
+		<PackageVersion Include="Microsoft.FeatureManagement.AspNetCore" Version="4.4.0" />
 	</ItemGroup>
 
 	<!-- Security & Authentication -->
 	<ItemGroup>
-		<PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.*" />
 		<PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.*" />
+		<PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.*" />
 	</ItemGroup>
 
 	<!-- Database - SQL Server -->
@@ -95,50 +97,55 @@
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.*" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.*" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="8.*" />
+		<PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.*" />
 	</ItemGroup>
 
 	<!-- DAPR -->
 	<ItemGroup>
-		<PackageVersion Include="Dapr.AspNetCore" Version="1.16.1" />
-		<PackageVersion Include="Dapr.Client" Version="1.16.1" />
-		<PackageVersion Include="Dapr.Extensions.Configuration" Version="1.16.1" />
+		<PackageVersion Include="Dapr.AspNetCore" Version="1.17.5" />
+		<PackageVersion Include="Dapr.Client" Version="1.17.5" />
+		<PackageVersion Include="Dapr.Extensions.Configuration" Version="1.17.5" />
 	</ItemGroup>
 
 	<!-- OpenTelemetry -->
 	<ItemGroup>
-		<PackageVersion Include="OpenTelemetry.Api" Version="1.14.0" />
-		<PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.14.0" />
-		<PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.14.0" />
-		<PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.14.0" />
-		<PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.14.0-beta.1" NoWarn="NU5104" />
-		<PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.14.0" />
-		<PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.14.0" />
-		<PackageVersion Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" Version="1.14.0-beta.2" NoWarn="NU5104" />
-		<PackageVersion Include="OpenTelemetry.Instrumentation.GrpcNetClient" Version="1.14.0-beta.1" NoWarn="NU5104" />
-		<PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.14.0" />
-		<PackageVersion Include="OpenTelemetry.Instrumentation.Process" Version="1.14.0-beta.2" NoWarn="NU5104" />
-		<PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.14.0" />
-		<PackageVersion Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.14.0-beta.1" NoWarn="NU5104" />
-		<PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.14.0-beta.1" NoWarn="NU5104" />
-		<PackageVersion Include="OpenTelemetry" Version="1.14.0" />
+		<PackageVersion Include="OpenTelemetry" Version="1.15.0" />
+		<PackageVersion Include="OpenTelemetry.Api" Version="1.15.0" />
+		<PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.15.0" />
+		<PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.15.0" />
+		<PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />
+		<PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.0" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.1" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.15.1" NoWarn="NU5104" />
+		<PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.15.0-beta.1" NoWarn="NU5104" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.Process" Version="1.15.0-beta.1" NoWarn="NU5104" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.15.0-beta.1" NoWarn="NU5104" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" Version="1.15.0-beta.1" NoWarn="NU5104" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.GrpcNetClient" Version="1.15.0-beta.1" NoWarn="NU5104" />
 	</ItemGroup>
 
 	<!-- Common Utilities -->
 	<ItemGroup>
-		<PackageVersion Include="Polly" Version="8.6.5" />
+		<PackageVersion Include="Polly" Version="8.6.6" />
+		<PackageVersion Include="Polly.Extensions" Version="8.6.6" />
 		<PackageVersion Include="MimeTypesMap" Version="1.0.9" />
-		<PackageVersion Include="StackExchange.Redis" Version="2.10.1" />
-		<PackageVersion Include="RabbitMQ.Client" Version="7.2.0" />
+		<PackageVersion Include="StackExchange.Redis" Version="2.12.4" />
+		<PackageVersion Include="RabbitMQ.Client" Version="7.2.1" />
 		<PackageVersion Include="Cronos" Version="0.11.1" />
+		<PackageVersion Include="Scalar.AspNetCore" Version="2.13.13" />
+		<PackageVersion Include="CsvHelper" Version="33.1.0" />
+		<PackageVersion Include="morelinq" Version="4.4.0" />
 	</ItemGroup>
 
 	<!-- Kiota -->
 	<ItemGroup>
-		<PackageVersion Include="Microsoft.Kiota.Http.HttpClientLibrary" Version="1.21.0" />
-		<PackageVersion Include="Microsoft.Kiota.Serialization.Form" Version="1.21.0" />
-		<PackageVersion Include="Microsoft.Kiota.Serialization.Json" Version="1.21.0" />
-		<PackageVersion Include="Microsoft.Kiota.Serialization.Multipart" Version="1.21.0" />
-		<PackageVersion Include="Microsoft.Kiota.Serialization.Text" Version="1.21.0" />
+		<PackageVersion Include="Microsoft.Kiota.Http.HttpClientLibrary" Version="1.22.1" />
+		<PackageVersion Include="Microsoft.Kiota.Serialization.Form" Version="1.22.1" />
+		<PackageVersion Include="Microsoft.Kiota.Serialization.Json" Version="1.22.1" />
+		<PackageVersion Include="Microsoft.Kiota.Serialization.Multipart" Version="1.22.1" />
+		<PackageVersion Include="Microsoft.Kiota.Serialization.Text" Version="1.22.1" />
 	</ItemGroup>
 
 	<!-- Cloud Storage Providers -->

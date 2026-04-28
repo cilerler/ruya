@@ -5,9 +5,13 @@
 		<Exec Command="dotnet format whitespace &#45;&#45;verify-no-changes &#45;&#45;verbosity diagnostic" ContinueOnError="false" />
 	</Target> -->
 
+	<!-- <Target Name="SetupGitHooks" BeforeTargets="Build">
+		<Exec Command="git config core.hooksPath ../../tools/git/hooks" WorkingDirectory="$(MSBuildProjectDirectory)" ContinueOnError="true" />
+		<Exec Command="git update-index &#45;&#45;add &#45;&#45;chmod=+x ../../tools/git/hooks/pre-commit" WorkingDirectory="$(MSBuildProjectDirectory)" ContinueOnError="true" />
+	</Target> -->
+
 	<Target Name="SetRepositoryBranch" BeforeTargets="GenerateNuspec">
-		<Exec Command="git rev-parse &#45;&#45;abbrev-ref HEAD" ConsoleToMSBuild="true"
-			IgnoreExitCode="true">
+		<Exec Command="git rev-parse &#45;&#45;abbrev-ref HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true">
 			<Output TaskParameter="ConsoleOutput" PropertyName="GitBranchName" />
 		</Exec>
 		<PropertyGroup>
