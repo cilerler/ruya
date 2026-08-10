@@ -9,8 +9,16 @@
 
 A collection of opinionated, observability-first .NET libraries for building production-grade services. Each package below links to its own README with installation, configuration, and usage details.
 
+## Package Naming
+
+`Ruya.*` packages fall into two categories:
+
+- **Extensions to Microsoft libraries** build on the corresponding .NET platform area. For example, `Ruya.Diagnostics` extends the diagnostics stack built on `System.Diagnostics`, and `Ruya.Extensions.Hosting` extends `Microsoft.Extensions.Hosting`.
+- **Ruya-defined capabilities** introduce abstractions where the Microsoft platform does not provide an equivalent. For example, `Ruya.Services.CloudStorage.Abstractions` defines Ruya's provider-neutral cloud-storage contracts.
+
 ## Contents
 
+- [Package Naming](#package-naming)
 - [Primitives & Testing](#primitives--testing)
 - [Extensions](#extensions)
 - [Diagnostics & Observability](#diagnostics--observability)
