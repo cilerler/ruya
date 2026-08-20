@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Services.DistributedLock]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Services.DistributedLock.Redis.yml'
-      - 'src/Ruya.Services.DistributedLock.Redis/**'
-      - 'tests/Ruya.Services.DistributedLock.Redis.Integration.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

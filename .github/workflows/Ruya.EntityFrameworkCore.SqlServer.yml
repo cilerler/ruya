@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Diagnostics.Abstractions, Ruya.Extensions.DependencyInjection, Ruya.Primitives]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.EntityFrameworkCore.SqlServer.yml'
-      - 'src/Ruya.EntityFrameworkCore.SqlServer/**'
-      - 'tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

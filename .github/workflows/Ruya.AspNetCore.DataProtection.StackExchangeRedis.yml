@@ -11,16 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Diagnostics.Abstractions, Ruya.Extensions.DependencyInjection, Ruya.Primitives]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.AspNetCore.DataProtection.StackExchangeRedis.yml'
-      - 'src/Ruya.Diagnostics.Abstractions/**'
-      - 'src/Ruya.Extensions.DependencyInjection/**'
-      - 'src/Ruya.Primitives/**'
-      - 'src/Ruya.AspNetCore.DataProtection.StackExchangeRedis/**'
-      - 'tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

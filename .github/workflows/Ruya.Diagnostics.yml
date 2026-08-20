@@ -11,16 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Primitives, Ruya.Extensions.DependencyInjection, Ruya.Diagnostics.Abstractions]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Diagnostics.yml'
-      - 'src/Ruya.Primitives/**'
-      - 'src/Ruya.Extensions.DependencyInjection/**'
-      - 'src/Ruya.Diagnostics.Abstractions/**'
-      - 'src/Ruya.Diagnostics/**'
-      - 'tests/Ruya.Diagnostics.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

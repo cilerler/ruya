@@ -11,17 +11,6 @@ on:
   repository_dispatch:
     types: []
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Services.TokenBroker.yml'
-      - '.github/workflows/dotnet-library-build.yml'
-      - 'src/Ruya.Services.TokenBroker.Abstractions/**'
-      - 'src/Ruya.Services.TokenBroker.Client/**'
-      - 'src/Ruya.Services.TokenBroker.Validation/**'
-      - 'src/Ruya.Services.TokenBroker/**'
-      - 'tests/Ruya.Services.TokenBroker.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

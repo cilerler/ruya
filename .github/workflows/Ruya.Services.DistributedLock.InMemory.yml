@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Services.DistributedLock]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Services.DistributedLock.InMemory.yml'
-      - 'src/Ruya.Services.DistributedLock.InMemory/**'
-      - 'tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: []
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.System.Xml.Serialization.yml'
-      - 'src/Ruya.System.Xml.Serialization/**'
-      - 'tests/Ruya.System.Xml.Serialization.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

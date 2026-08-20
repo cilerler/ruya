@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: []
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.AspNetCore.Diagnostics.yml'
-      - 'src/Ruya.AspNetCore.Diagnostics/**'
-      - 'tests/Ruya.AspNetCore.Diagnostics.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

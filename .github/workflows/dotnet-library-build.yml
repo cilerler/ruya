@@ -57,6 +57,16 @@ on:
         required: false
         type: string
         default: ''
+      source-sha:
+        description: 'Exact commit to build; falls back to the resolved branch for manual compatibility runs'
+        required: false
+        type: string
+        default: ''
+      suppress-dispatch:
+        description: 'Suppress same-repository chain dispatch when a caller already owns package ordering'
+        required: false
+        type: boolean
+        default: false
     outputs:
       version:
         description: 'The computed version'
@@ -91,8 +101,8 @@ defaults:
     shell: pwsh
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.triggered-branch || github.ref }}
-  cancel-in-progress: true
+  group: ruya-package-${{ inputs.project-name }}-${{ inputs.triggered-branch || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   # ============================================================================
@@ -146,7 +156,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.branch-guard.outputs.target-branch }}
+          ref: ${{ inputs.source-sha || needs.branch-guard.outputs.target-branch }}
+          fetch-depth: 0
 
       - name: Capture Checked Out Commit
         id: capture-source-sha
@@ -159,6 +170,22 @@ jobs:
           $sourceSha = $sourceSha.Trim()
           "sha=$sourceSha" >> $env:GITHUB_OUTPUT
           Write-Host "Checked out commit: $sourceSha"
+
+      - name: Attach Source Commit to Target Branch
+        if: inputs.source-sha != ''
+        env:
+          SOURCE_SHA: ${{ steps.capture-source-sha.outputs.sha }}
+          TARGET_BRANCH: ${{ needs.branch-guard.outputs.target-branch }}
+        run: |
+          git checkout -B $env:TARGET_BRANCH $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to attach '$env:SOURCE_SHA' to local branch '$env:TARGET_BRANCH'."
+          }
+
+          $checkedOutSha = (git rev-parse HEAD).Trim()
+          if ($checkedOutSha -ne $env:SOURCE_SHA) {
+            throw "Branch attachment changed the selected source commit."
+          }
 
       - name: Extract Metadata
         id: extract-metadata
@@ -218,16 +245,37 @@ jobs:
         run: |
           $baseVersion = '${{ steps.extract-project-version.outputs.base-version }}'
           $versionSuffix = '${{ steps.extract-metadata.outputs.version-suffix }}'
-          $runNumber = $env:GITHUB_RUN_NUMBER
+          $projectName = '${{ inputs.project-name }}'
+          $runNumber = [long]$env:GITHUB_RUN_NUMBER
 
           $versionParts = $baseVersion -split '\.'
           $majorMinor = "$($versionParts[0]).$($versionParts[1])"
-          $versionWithBuild = "$majorMinor.$runNumber"
+          $tagPrefix = "$projectName.$majorMinor."
+          $tagPattern = "$tagPrefix*"
+          $escapedTagPrefix = [Regex]::Escape($tagPrefix)
+          $publishedPatches = @(
+            git tag --list $tagPattern |
+              ForEach-Object {
+                if ($_ -match "^$escapedTagPrefix(?<Patch>\d+)(?:-|$)") {
+                  [long]$Matches.Patch
+                }
+              }
+          )
+
+          $highestPublishedPatch = if ($publishedPatches.Count -gt 0) {
+            ($publishedPatches | Measure-Object -Maximum).Maximum
+          }
+          else {
+            0
+          }
+
+          $nextPatch = [Math]::Max($highestPublishedPatch + 1, $runNumber)
+          $versionWithBuild = "$majorMinor.$nextPatch"
 
           $finalVersion = if ($versionSuffix) { "$versionWithBuild-$versionSuffix" } else { $versionWithBuild }
 
           "version=$finalVersion" >> $env:GITHUB_OUTPUT
-          Write-Host "Version: $finalVersion"
+          Write-Host "Version: $finalVersion (highest published patch: $highestPublishedPatch)"
 
       - name: Compute Dispatch Repos
         id: compute-dispatch-repos
@@ -307,6 +355,21 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.build.outputs.source-sha }}
+
+      - name: Attach Source Commit to Target Branch
+        env:
+          SOURCE_SHA: ${{ needs.build.outputs.source-sha }}
+          TARGET_BRANCH: ${{ needs.build.outputs.branch }}
+        run: |
+          git checkout -B $env:TARGET_BRANCH $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to attach '$env:SOURCE_SHA' to local branch '$env:TARGET_BRANCH'."
+          }
+
+          $checkedOutSha = (git rev-parse HEAD).Trim()
+          if ($checkedOutSha -ne $env:SOURCE_SHA) {
+            throw "Branch attachment changed the selected source commit."
+          }
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -390,6 +453,21 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.build.outputs.source-sha }}
+
+      - name: Attach Source Commit to Target Branch
+        env:
+          SOURCE_SHA: ${{ needs.build.outputs.source-sha }}
+          TARGET_BRANCH: ${{ needs.build.outputs.branch }}
+        run: |
+          git checkout -B $env:TARGET_BRANCH $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to attach '$env:SOURCE_SHA' to local branch '$env:TARGET_BRANCH'."
+          }
+
+          $checkedOutSha = (git rev-parse HEAD).Trim()
+          if ($checkedOutSha -ne $env:SOURCE_SHA) {
+            throw "Branch attachment changed the selected source commit."
+          }
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -541,6 +619,7 @@ jobs:
     if: |
       always() &&
       needs.publish.result == 'success' &&
+      inputs.suppress-dispatch != true &&
       inputs.dispatch-event-type != '' &&
       (
         contains(toJson(github.event.commits), '[rolling deployment]') ||

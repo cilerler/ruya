@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: []
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Testing.Primitives.yml'
-      - 'src/Ruya.Testing.Primitives/**'
-      - 'tests/Ruya.Testing.Primitives.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

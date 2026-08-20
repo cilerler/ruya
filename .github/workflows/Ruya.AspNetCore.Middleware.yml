@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Extensions.Configuration, Ruya.Primitives]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.AspNetCore.Middleware.yml'
-      - 'src/Ruya.AspNetCore.Middleware/**'
-      - 'tests/Ruya.AspNetCore.Middleware.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

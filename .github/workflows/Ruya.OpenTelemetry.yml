@@ -11,15 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Diagnostics, Ruya.Extensions.Configuration, Ruya.Primitives]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.OpenTelemetry.yml'
-      - 'src/Ruya.Diagnostics/**'
-      - 'src/Ruya.Extensions.Configuration/**'
-      - 'src/Ruya.OpenTelemetry/**'
-      - 'tests/Ruya.OpenTelemetry.Integration.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

@@ -11,14 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Services.MessageQueue]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Services.MessageQueue.MsSql.yml'
-      - 'src/Ruya.Services.MessageQueue/**'
-      - 'src/Ruya.Services.MessageQueue.MsSql/**'
-      - 'tests/Ruya.Services.MessageQueue.MsSql.Integration.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

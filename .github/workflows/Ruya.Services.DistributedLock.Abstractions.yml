@@ -11,12 +11,6 @@ on:
   repository_dispatch:
     types: []
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Services.DistributedLock.Abstractions.yml'
-      - 'src/Ruya.Services.DistributedLock.Abstractions/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

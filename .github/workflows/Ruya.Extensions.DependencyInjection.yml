@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: []
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Extensions.DependencyInjection.yml'
-      - 'src/Ruya.Extensions.DependencyInjection/**'
-      - 'tests/Ruya.Extensions.DependencyInjection.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

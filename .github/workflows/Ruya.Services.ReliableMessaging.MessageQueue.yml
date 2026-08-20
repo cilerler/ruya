@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Services.ReliableMessaging, Ruya.Services.MessageQueue]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Services.ReliableMessaging.MessageQueue.yml'
-      - 'src/Ruya.Services.ReliableMessaging.MessageQueue/**'
-      - 'tests/Ruya.Services.ReliableMessaging.MessageQueue.Integration.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

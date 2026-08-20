@@ -1,0 +1,182 @@
+name: Ruya Package Pipeline
+
+on:
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.editorconfig'
+      - '.github/workflows/Ruya.*.yml'
+      - '.github/workflows/dotnet-library-build.yml'
+      - 'CHANGELOG.md'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'icon.png'
+      - 'README.md'
+      - 'src/**'
+      - 'tests/**'
+      - 'tools/ci/Get-AffectedPackages.ps1'
+
+permissions:
+  actions: read
+  contents: write
+  packages: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The planner evaluates the committed Release project graph. GitHub resolves
+  # job dependencies before steps run, so the dynamic graph is executed through
+  # predeclared topological layer matrices instead of a maintained package list.
+  plan:
+    name: Plan affected packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      packages: ${{ steps.affected.outputs.packages }}
+      count: ${{ steps.affected.outputs.count }}
+      layer_0: ${{ steps.affected.outputs.layer_0 }}
+      layer_0_count: ${{ steps.affected.outputs.layer_0_count }}
+      layer_1: ${{ steps.affected.outputs.layer_1 }}
+      layer_1_count: ${{ steps.affected.outputs.layer_1_count }}
+      layer_2: ${{ steps.affected.outputs.layer_2 }}
+      layer_2_count: ${{ steps.affected.outputs.layer_2_count }}
+    steps:
+      - name: Checkout source commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve last successful pipeline commit
+        id: baseline
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const zeroSha = '0000000000000000000000000000000000000000';
+            let baseSha = zeroSha;
+
+            try {
+              const response = await github.rest.actions.listWorkflowRuns({
+                ...context.repo,
+                workflow_id: 'Ruya.Package.Pipeline.yml',
+                branch: context.ref.replace('refs/heads/', ''),
+                status: 'success',
+                per_page: 1,
+              });
+
+              baseSha = response.data.workflow_runs[0]?.head_sha ?? zeroSha;
+            }
+            catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+
+              core.warning('No previous package pipeline was found; all packages will be selected.');
+            }
+
+            core.info(`Package pipeline baseline: ${baseSha}`);
+            core.setOutput('sha', baseSha);
+
+      - name: Calculate affected packages
+        id: affected
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ steps.baseline.outputs.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: >-
+          ./tools/ci/Get-AffectedPackages.ps1
+          -BaseSha $env:BASE_SHA
+          -HeadSha $env:HEAD_SHA
+          -GitHubOutputPath $env:GITHUB_OUTPUT
+
+  build-layer-0:
+    name: Layer 0 / ${{ matrix.project_name }}
+    needs: plan
+    if: needs.plan.result == 'success' && needs.plan.outputs.layer_0_count != '0'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.layer_0) }}
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: ${{ matrix.project_name }}
+      project-path: ${{ matrix.project_path }}
+      test-project-paths: ${{ matrix.test_project_paths }}
+      test-configuration: ${{ matrix.test_configuration }}
+      use-testcontainers: ${{ matrix.use_testcontainers }}
+      use-local-tokenbroker-project-references: ${{ matrix.use_local_tokenbroker_project_references }}
+      testcontainers-timeout: ${{ matrix.testcontainers_timeout }}
+      triggered-branch: ${{ github.ref_name }}
+      source-sha: ${{ github.sha }}
+      suppress-dispatch: true
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+  build-layer-1:
+    name: Layer 1 / ${{ matrix.project_name }}
+    needs: [plan, build-layer-0]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.layer_1_count != '0' &&
+      (needs.build-layer-0.result == 'success' || needs.build-layer-0.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.layer_1) }}
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: ${{ matrix.project_name }}
+      project-path: ${{ matrix.project_path }}
+      test-project-paths: ${{ matrix.test_project_paths }}
+      test-configuration: ${{ matrix.test_configuration }}
+      use-testcontainers: ${{ matrix.use_testcontainers }}
+      use-local-tokenbroker-project-references: ${{ matrix.use_local_tokenbroker_project_references }}
+      testcontainers-timeout: ${{ matrix.testcontainers_timeout }}
+      triggered-branch: ${{ github.ref_name }}
+      source-sha: ${{ github.sha }}
+      suppress-dispatch: true
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+  build-layer-2:
+    name: Layer 2 / ${{ matrix.project_name }}
+    needs: [plan, build-layer-0, build-layer-1]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.layer_2_count != '0' &&
+      (needs.build-layer-0.result == 'success' || needs.build-layer-0.result == 'skipped') &&
+      (needs.build-layer-1.result == 'success' || needs.build-layer-1.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.layer_2) }}
+    uses: ./.github/workflows/dotnet-library-build.yml
+    with:
+      project-name: ${{ matrix.project_name }}
+      project-path: ${{ matrix.project_path }}
+      test-project-paths: ${{ matrix.test_project_paths }}
+      test-configuration: ${{ matrix.test_configuration }}
+      use-testcontainers: ${{ matrix.use_testcontainers }}
+      use-local-tokenbroker-project-references: ${{ matrix.use_local_tokenbroker_project_references }}
+      testcontainers-timeout: ${{ matrix.testcontainers_timeout }}
+      triggered-branch: ${{ github.ref_name }}
+      source-sha: ${{ github.sha }}
+      suppress-dispatch: true
+    secrets:
+      PAT: ${{ secrets.PAT }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

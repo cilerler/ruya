@@ -11,15 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Services.MessageQueue]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Services.MessageQueue.RabbitMq.yml'
-      - 'src/Ruya.Services.MessageQueue/**'
-      - 'src/Ruya.Services.MessageQueue.RabbitMq/**'
-      - 'tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/**'
-      - 'tests/Ruya.Services.MessageQueue.RabbitMq.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

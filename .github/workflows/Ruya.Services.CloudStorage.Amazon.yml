@@ -11,15 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Services.CloudStorage.Abstractions]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Services.CloudStorage.Amazon.yml'
-      - 'src/Ruya.Services.CloudStorage.Abstractions/**'
-      - 'src/Ruya.Services.CloudStorage.Amazon/**'
-      - 'tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests/**'
-      - 'tests/Ruya.Services.CloudStorage.Tests.Common/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml

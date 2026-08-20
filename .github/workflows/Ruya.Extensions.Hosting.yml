@@ -11,13 +11,6 @@ on:
   repository_dispatch:
     types: [Ruya.Diagnostics.Abstractions, Ruya.Extensions.Configuration, Ruya.Primitives]
 
-  push:
-    branches: [main, release-preview, release-qa, develop]
-    paths:
-      - '.github/workflows/Ruya.Extensions.Hosting.yml'
-      - 'src/Ruya.Extensions.Hosting/**'
-      - 'tests/Ruya.Extensions.Hosting.Unit.Tests/**'
-
 jobs:
   build:
     uses: ./.github/workflows/dotnet-library-build.yml
