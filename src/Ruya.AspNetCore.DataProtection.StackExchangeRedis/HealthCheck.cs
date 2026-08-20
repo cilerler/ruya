@@ -45,25 +45,20 @@ public sealed class DataProtectionHealthCheck : IHealthCheck
     {
         try
         {
-            // Check if using lazy initialization (client mode)
-            var lazySettings = _serviceProvider.GetService<AsyncLazy<DataProtectionSettings>>();
-            var lazyRedis = _serviceProvider.GetService<AsyncLazy<IConnectionMultiplexer>>();
+            cancellationToken.ThrowIfCancellationRequested();
 
-            if (lazySettings is not null)
+            var remoteSettings = _serviceProvider.GetService<AsyncLazy<DataProtectionSettings>>();
+            if (remoteSettings is not null)
             {
-                // Client mode with lazy initialization
-                if (!lazySettings.IsValueCreated)
-                {
-                    return HealthCheckResult.Unhealthy("Data protection settings are not yet initialized.");
-                }
-
-                if (lazyRedis is not null && !lazyRedis.IsValueCreated)
-                {
-                    return HealthCheckResult.Unhealthy("Redis connection is not yet initialized.");
-                }
+                await remoteSettings.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            // Get the actual services (will be immediately available if already initialized)
+            var remoteConnection = _serviceProvider.GetService<AsyncLazy<IConnectionMultiplexer>>();
+            if (remoteConnection is not null)
+            {
+                await remoteConnection.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             var connectionMultiplexer = _serviceProvider.GetRequiredService<IConnectionMultiplexer>();
             var dataProtection = _serviceProvider.GetRequiredService<IDataProtection>();
 
@@ -74,7 +69,9 @@ public sealed class DataProtectionHealthCheck : IHealthCheck
             }
 
             var database = connectionMultiplexer.GetDatabase();
-            var pingResult = await database.PingAsync().ConfigureAwait(false);
+            var pingResult = await database.PingAsync()
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
 
             if (pingResult > TimeSpan.FromSeconds(5))
             {
@@ -94,7 +91,11 @@ public sealed class DataProtectionHealthCheck : IHealthCheck
 
             return HealthCheckResult.Healthy($"Redis ping: {pingResult.TotalMilliseconds}ms, Data protection: OK");
         }
-        // CA1031: Health checks should catch all exceptions to report unhealthy status
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        // CA1031: Health checks should catch all non-cancellation exceptions to report unhealthy status
 #pragma warning disable CA1031
         catch (Exception ex)
 #pragma warning restore CA1031

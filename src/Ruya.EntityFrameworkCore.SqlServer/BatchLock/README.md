@@ -1,14 +1,14 @@
 # BatchLock Operations
 
-Provides batch locking operations using the SELECT FOR UPDATE pattern with SQL Server hints (`ROWLOCK`, `UPDLOCK`, `READPAST`) for concurrent processing without blocking.
+Provides batch locking operations using the SELECT FOR UPDATE pattern with isolation-aware SQL Server locking hints for concurrent processing.
 
 ## Features
 
 - Locks rows in batches for exclusive processing
-- Uses `READPAST` to skip locked rows, enabling parallel workers
+- Uses `READPAST` at read committed or repeatable read to skip locked rows, enabling parallel workers
 - Dynamic SQL generation based on table schema
 - Automatic handling of `SoftDelete`, `IsLocked`, and `ProcessStatusCode` columns
-- Configurable batch size, lock state, and filtering
+- Configurable batch size, lock state, structured status filtering, and ordering field
 
 ## Registration
 
@@ -67,22 +67,7 @@ var options = new BatchLockOptions
 };
 ```
 
-### With Custom WHERE Clause
-
-```csharp
-var options = new BatchLockOptions
-{
-    SchemaName = "dbo",
-    TableName = "TaskQueue",
-    BatchSize = 50,
-    LockedBy = "TaskWorker",
-    WhereClause = "t.[Priority] > 5 AND t.[CreatedAt] < DATEADD(hour, -1, GETUTCDATE())"
-};
-```
-
-> **WARNING**: Custom `WhereClause` and `OrderByClause` values must be validated to prevent SQL injection.
-
-### With Custom ORDER BY
+### With a Processing Order Field
 
 ```csharp
 var options = new BatchLockOptions
@@ -91,11 +76,37 @@ var options = new BatchLockOptions
     TableName = "JobQueue",
     BatchSize = 25,
     LockedBy = "JobWorker",
-    OrderByClause = "t.[Priority] DESC, t.[CreatedAt] ASC"
+    ProcessingOrderField = "Priority"
 };
 ```
 
-> **NOTE**: If no custom `OrderByClause` is specified, the `ProcessingOrder` field is used by default if it exists. If neither are available, no ordering is enforced by SQL Server.
+The field is resolved against SQL Server metadata and quoted by the embedded query.
+
+### With Trusted Custom SQL
+
+`WhereClause` and `OrderByClause` are escape hatches for fixed SQL authored and reviewed by the application
+developer. They are concatenated into the embedded dynamic query and are not parameterized or sanitized.
+
+```csharp
+var options = new BatchLockOptions
+{
+    SchemaName = "dbo",
+    TableName = "JobQueue",
+    BatchSize = 25,
+    LockedBy = "PriorityWorker",
+    WhereClause = "t.[Priority] >= 5 AND t.[AvailableAt] <= SYSUTCDATETIME()",
+    OrderByClause = "t.[Priority] DESC, t.[AvailableAt] ASC"
+};
+```
+
+`WhereClause` supplies the predicate without the `WHERE` keyword and replaces all automatically generated
+`SoftDelete`, `IsLocked`, and status predicates. `OrderByClause` supplies the expression after `ORDER BY` and
+replaces metadata-based ordering; omit the `ORDER BY` keyword. When either property is `null`, its
+structured/default behavior remains active.
+
+> **SECURITY RESPONSIBILITY:** These properties must contain only trusted, developer-authored SQL constants.
+> Never build them from HTTP input, message payloads, tenant data, configuration controlled by an untrusted
+> party, or any other runtime value. The consuming application owns review and safety of the supplied SQL.
 
 ### With State Transition
 
@@ -154,8 +165,8 @@ List<long> lockedIds = await _batchLock.SelectForUpdateKeysAsync<long>(options, 
 | `LockState` | byte | `1` | Value to set on `LockState` column |
 | `LockTime` | DateTime? | UTC now | Timestamp for the lock |
 | `ExcludeFields` | string? | null | Comma-separated columns to exclude |
-| `WhereClause` | string? | null | Custom WHERE clause (use with caution) |
-| `OrderByClause` | string? | null | Custom ORDER BY clause |
+| `WhereClause` | string? | null | Trusted developer-authored predicate replacing generated defaults |
+| `OrderByClause` | string? | null | Trusted developer-authored ordering expression replacing generated ordering |
 | `ProcessStatusCodeField` | string | `"ProcessStatusCode"` | Status field name |
 | `ProcessStatusCodeValue` | byte? | null | Status value to filter by |
 | `UpdateProcessStatusCode` | bool | `false` | Enables tracking state transitions during lock |
@@ -164,16 +175,17 @@ List<long> lockedIds = await _batchLock.SelectForUpdateKeysAsync<long>(options, 
 | `PrimaryKeyField` | string | `"Id"` | Primary key field name |
 | `PreserveModifiedAt` | bool | `false` | When true, preserves `ModifiedAt` value instead of updating to avoid trigger issues |
 | `OmitModifiedAt` | bool | `false` | When true, omits `ModifiedAt` from the internal SET clause to let SQL triggers manage it |
+| `Debug` | bool | `false` | Enables embedded-query diagnostic result sets for local troubleshooting |
 
 ## How It Works
 
-1. **CTE Selection**: Selects `TOP(BatchSize)` rows with `ROWLOCK, UPDLOCK, READPAST` hints
+1. **CTE Selection**: Selects `TOP(BatchSize)` rows with locking hints compatible with the caller's isolation level
 2. **Atomic Update**: Updates `LockState`, `LockTime`, `LockedBy`, and conditionally `ProcessStatusCode` columns
 3. **OUTPUT Clause**: Returns all columns of the locked rows
 
 ### Default WHERE Conditions
 
-If `WhereClause` is not provided, the following conditions are applied automatically (joined with `AND`) based on column existence:
+When `WhereClause` is `null`, the following conditions are applied automatically (joined with `AND`) based on column existence:
 
 - `[SoftDelete] = 0` (if `SoftDelete` column exists)
 - `[IsLocked] = 0` (if `IsLocked` column exists)
@@ -181,11 +193,13 @@ If `WhereClause` is not provided, the following conditions are applied automatic
 
 If none of these conditions apply, it defaults to `1=1`.
 
-### Locking Hints
+### Locking Hints and Isolation
 
-- `ROWLOCK`: Lock at row level (not page/table)
-- `UPDLOCK`: Acquire update lock (prevents other updates)
-- `READPAST`: Skip rows locked by other transactions
+- The operation preserves the caller's session and transaction isolation level.
+- At read committed with `READ_COMMITTED_SNAPSHOT` enabled, it uses `READCOMMITTEDLOCK, UPDLOCK, READPAST`.
+- At read committed without RCSI, or at repeatable read, it uses `ROWLOCK, UPDLOCK, READPAST`.
+- At isolation levels where SQL Server does not permit `READPAST`, it uses `ROWLOCK, UPDLOCK`; those calls may wait for a conflicting lock.
+- `READPAST` skips row/key locks, not page locks. For predictable parallel-worker throughput, index the structured filter and processing-order fields so SQL Server can seek the next eligible row instead of scanning and locking a page.
 
 ## Error Handling
 
@@ -213,7 +227,7 @@ catch (SqlException ex)
 
 The target table must have:
 
-- A Primary Key column (defaults to `Id`, used for joining in the UPDATE).
+- A configured key column (defaults to `Id`) that is the sole key of a non-filtered unique index. The CTE joins on this field, so uniqueness is required to keep an update within `BatchSize`.
 - At least **one** updatable column to mark locked rows from the following list:
   - `LockState` (tinyint)
   - `LockTime` (datetime2)
@@ -228,3 +242,7 @@ Optional columns that enable automatic filtering or tracking:
 - `IsLocked` (bit)
 - `ProcessStatusCode` (tinyint)
 - `ProcessingOrder` (int)
+
+Explicitly configured status-filter, status-update, and ordering fields must exist. Missing fields fail before any row is updated instead of silently dropping the requested behavior. SQL identifiers are limited to SQL Server's 128-character identifier limit.
+
+For parallel queue processing, add an index whose leading keys cover the configured status filter and processing order, for example `(ProcessStatusCode, ProcessingOrder)`.

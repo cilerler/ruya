@@ -25,7 +25,7 @@ public sealed class ScheduleValidationAttribute : ValidationAttribute
             CronExpression.Parse(expression, CronFormat.IncludeSeconds);
             return ValidationResult.Success;
         }
-        catch
+        catch (CronFormatException)
         {
             return new ValidationResult(ErrorMessage ?? "Invalid cron expression.");
         }

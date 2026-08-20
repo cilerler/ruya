@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -26,28 +27,35 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        bool useExistingMultiplexer = services.Any(
+            descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer) &&
+                !descriptor.IsKeyedService);
+
         // Register core services
         services.AddDistributedLockCore();
 
         // Register Redis settings
         services.AddOptions<RedisLockSettings>()
+            .BindConfiguration(RedisLockSettings.ConfigurationSectionName)
             .ValidateDataAnnotations()
-            .ValidateOnStart()
-            .Configure<IConfiguration>((settings, configuration) =>
-            {
-                ArgumentNullException.ThrowIfNull(configuration);
-                var section = configuration.GetSection(RedisLockSettings.ConfigurationSectionName);
-                ArgumentNullException.ThrowIfNull(section.Exists() ? string.Empty : null, RedisLockSettings.ConfigurationSectionName);
-                section.Bind(settings);
-                settings.ConnectionString = configuration.GetConnectionString(settings.ConnectionStringKey) ?? throw new ArgumentNullException(nameof(settings.ConnectionString));
-            });
+            .Validate<IConfiguration>(
+                (settings, configuration) =>
+                    useExistingMultiplexer ||
+                    !string.IsNullOrWhiteSpace(settings.ConnectionStringKey) &&
+                    !string.IsNullOrWhiteSpace(configuration.GetConnectionString(settings.ConnectionStringKey)),
+                "A caller-supplied IConnectionMultiplexer or a configured Redis connection-string catalog entry is required.")
+            .ValidateOnStart();
 
         // Register IConnectionMultiplexer if not already registered
         services.TryAddSingleton<IConnectionMultiplexer>(sp =>
         {
             var redisSettings = sp.GetRequiredService<IOptions<RedisLockSettings>>().Value;
+            var configuration = sp.GetRequiredService<IConfiguration>();
+            string connectionString = configuration.GetConnectionString(redisSettings.ConnectionStringKey)
+                ?? throw new InvalidOperationException(
+                    $"Connection string catalog entry '{redisSettings.ConnectionStringKey}' is not configured.");
 
-            var configOptions = ConfigurationOptions.Parse(redisSettings.ConnectionString);
+            var configOptions = ConfigurationOptions.Parse(connectionString);
             configOptions.SyncTimeout = redisSettings.SyncTimeoutMs;
             configOptions.AbortOnConnectFail = redisSettings.AbortOnConnectFail;
 
@@ -78,34 +86,58 @@ public static class ServiceCollectionExtensions
 
         // Register Redis settings
         services.AddOptions<RedisLockSettings>()
-            .ValidateDataAnnotations()
-            .ValidateOnStart()
-            .Configure<IConfiguration>((settings, configuration) =>
-            {
-                ArgumentNullException.ThrowIfNull(configuration);
-                var section = configuration.GetSection(RedisLockSettings.ConfigurationSectionName);
-                ArgumentNullException.ThrowIfNull(section.Exists() ? string.Empty : null, RedisLockSettings.ConfigurationSectionName);
-                section.Bind(settings);
-                
-                // Ensure RedlockEndpoints are populated
-                if (settings.RedlockEndpoints == null || settings.RedlockEndpoints.Length == 0)
+            .BindConfiguration(RedisLockSettings.ConfigurationSectionName)
+            .Validate(
+                settings => settings.SyncTimeoutMs is >= 1000 and <= 30000,
+                "SyncTimeoutMs must be between 1000 and 30000.")
+            .Validate(
+                settings => settings.RedlockConnectionStringKeys is not { Length: > 0 } keys ||
+                    keys.All(key => !string.IsNullOrWhiteSpace(key)) &&
+                    keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() == keys.Length,
+                "Redlock connection-string catalog keys must be nonblank and unique.")
+            .Validate<IConfiguration, IServiceProviderIsService>(
+                (settings, configuration, availableServices) =>
                 {
-                    // Fallback to ConnectionString if RedlockEndpoints not explicitly set, 
-                    // but this method implies Redlock usage, so maybe we should warn or throw?
-                    // For now, let's assume the user configured it correctly in appsettings.json
-                }
-            });
+                    string[] endpoints = ResolveRedlockEndpoints(settings, configuration);
+                    return endpoints.Length == 0
+                        ? availableServices.IsService(typeof(IConnectionMultiplexer))
+                        : RedlockEndpointSetValidator.IsValid(endpoints);
+                },
+                "Redlock requires an odd number of at least three independent Redis endpoints, or a caller-supplied IConnectionMultiplexer.")
+            .ValidateOnStart();
 
         // Register Redlock provider
         services.TryAddSingleton<IDistributedLockProvider>(sp =>
         {
             var settings = sp.GetRequiredService<IOptions<RedisLockSettings>>();
+            var configuration = sp.GetRequiredService<IConfiguration>();
+            string[] endpoints = ResolveRedlockEndpoints(settings.Value, configuration);
             var logger = sp.GetRequiredService<ILogger<RedlockProvider>>();
             var multiplexer = sp.GetService<IConnectionMultiplexer>(); // Optional
             
-            return new RedlockProvider(settings, logger, null, multiplexer);
+            return new RedlockProvider(settings, endpoints, logger, null, multiplexer);
         });
 
         return services;
     }
+
+    private static string[] ResolveRedlockEndpoints(
+        RedisLockSettings settings,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (settings.RedlockConnectionStringKeys is { Length: > 0 } keys)
+        {
+            return keys
+                .Select(key => string.IsNullOrWhiteSpace(key)
+                    ? string.Empty
+                    : configuration.GetConnectionString(key) ?? string.Empty)
+                .ToArray();
+        }
+
+        return settings.RedlockEndpoints ?? [];
+    }
+
 }

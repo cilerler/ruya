@@ -1,27 +1,28 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Threading;
 
 // ReSharper disable once CheckNamespace
 namespace Ruya.Diagnostics.DistributedTracing;
 
 /// <summary>
 /// RAII wrapper for Activity lifecycle management.
-/// Implements IDisposable for deterministic cleanup.
+/// Copies share one disposal state so an activity is stopped exactly once.
 /// </summary>
+[SuppressMessage("Performance", "CA1815", Justification = "This copy-safe lifecycle handle intentionally uses shared identity and does not define value equality.")]
 public readonly struct ActivityScope : IDisposable
 {
-    private readonly Action<Activity>? _onDispose;
+    private readonly ScopeState? _state;
 
-    public Activity? Activity { get; }
+    public Activity? Activity => _state?.Activity;
     public string? TraceId => Activity?.TraceId.ToString();
     public string? SpanId => Activity?.SpanId.ToString();
     public bool IsRecording => Activity?.IsAllDataRequested ?? false;
 
     public ActivityScope(Activity? activity, Action<Activity>? onDispose = null)
     {
-        Activity = activity;
-        _onDispose = onDispose;
+        _state = activity is null ? null : new ScopeState(activity, onDispose);
     }
 
     /// <summary>
@@ -51,15 +52,36 @@ public readonly struct ActivityScope : IDisposable
         return this;
     }
 
-    public void Dispose()
+    public void Dispose() => _state?.Dispose();
+
+    public static ActivityScope Empty => default;
+
+    [SuppressMessage("Usage", "CA2213", Justification = "Dispose atomically exchanges and disposes the Activity exactly once.")]
+    private sealed class ScopeState(Activity activity, Action<Activity>? onDispose) : IDisposable
     {
-        if (Activity is not null)
+        private Activity? _activity = activity;
+        private Action<Activity>? _onDispose = onDispose;
+
+        public Activity? Activity => Volatile.Read(ref _activity);
+
+        public void Dispose()
         {
-            _onDispose?.Invoke(Activity);
-            Activity.Stop();
-            Activity.Dispose();
+            var current = Interlocked.Exchange(ref _activity, null);
+            if (current is null)
+            {
+                return;
+            }
+
+            var callback = Interlocked.Exchange(ref _onDispose, null);
+            try
+            {
+                callback?.Invoke(current);
+            }
+            finally
+            {
+                current.Stop();
+                current.Dispose();
+            }
         }
     }
-
-    public static ActivityScope Empty => new(null);
 }

@@ -1,16 +1,4 @@
-# ============================================================================
-# WARNING: EXAMPLE MANIFESTS ONLY - DO NOT USE IN PRODUCTION AS-IS
-# ============================================================================
-# The secrets below contain placeholder values for demonstration purposes.
-# For production use:
-#   1. Generate cryptographically secure keys: openssl rand -base64 32
-#   2. Use a secrets management solution (Azure Key Vault, HashiCorp Vault,
-#      AWS Secrets Manager, Kubernetes External Secrets, etc.)
-#   3. Never commit real secrets to source control
-#   4. Consider using sealed-secrets or SOPS for GitOps workflows
-#   5. Rotate keys regularly according to your security policy
-# ============================================================================
----
+# Example only. Replace every placeholder and use an external secret operator in production.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -18,28 +6,15 @@ metadata:
   namespace: ruya
 type: Opaque
 stringData:
-  # WARNING: PLACEHOLDER - Generate secure key with: openssl rand -base64 32
-  signing-key: "YOUR_BASE64_256_BIT_KEY_HERE"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: service-a-credentials
-  namespace: ruya
-type: Opaque
-stringData:
-  # WARNING: PLACEHOLDER - Generate secure key with: openssl rand -base64 32
-  api-key: "service-a-api-key-here"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: service-b-credentials
-  namespace: ruya
-type: Opaque
-stringData:
-  # WARNING: PLACEHOLDER - Generate secure key with: openssl rand -base64 32
-  api-key: "service-b-api-key-here"
+  signing-private-key.pem: |
+    -----BEGIN PRIVATE KEY-----
+    REPLACE_WITH_RSA_PRIVATE_KEY
+    -----END PRIVATE KEY-----
+  redis-connection-string: "REPLACE_WITH_SECRET_REDIS_CONNECTION_STRING"
+  kestrel-certificate-password: "REPLACE_WITH_CERTIFICATE_PASSWORD"
+data:
+  # Replace with the base64-encoded PKCS#12 certificate bytes.
+  tls.pfx: UkVQTEFDRV9XSVRIX0JBU0U2NF9QS0NTMTI=
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -52,8 +27,18 @@ data:
       "TokenBroker": {
         "Issuer": "ruya-token-service",
         "Audiences": ["ruya-api", "ruya-services"],
+        "SigningKeyId": "token-key-2026-08",
+        "SigningPublicKeys": {
+          "token-key-2026-08": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_RSA_PUBLIC_KEY\n-----END PUBLIC KEY-----"
+        },
         "TokenLifetime": "00:15:00",
-        "ClockSkew": "00:00:30"
+        "ClockSkew": "00:00:30",
+        "ApiKeyCacheDuration": "00:05:00"
+      },
+      "DistributedLock": {
+        "Redis": {
+          "ConnectionStringKey": "Redis"
+        }
       }
     }
 ---
@@ -66,45 +51,109 @@ spec:
   replicas: 2
   selector:
     matchLabels:
-      app: token-service
+      app.kubernetes.io/name: token-service
   template:
     metadata:
       labels:
-        app: token-service
+        app.kubernetes.io/name: token-service
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: token-service
-          image: ruya/token-service:latest
+          image: ghcr.io/your-organization/token-service:1.0.0
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8080
+            - name: https
+              containerPort: 8443
           env:
-            - name: TokenBroker__SigningKeyBase64
+            - name: ASPNETCORE_URLS
+              value: "https://+:8443"
+            - name: ASPNETCORE_Kestrel__Certificates__Default__Path
+              value: "/https/tls.pfx"
+            - name: ASPNETCORE_Kestrel__Certificates__Default__Password
               valueFrom:
                 secretKeyRef:
                   name: token-service-secrets
-                  key: signing-key
+                  key: kestrel-certificate-password
+            - name: TokenBroker__SigningPrivateKeyPem
+              valueFrom:
+                secretKeyRef:
+                  name: token-service-secrets
+                  key: signing-private-key.pem
             - name: ConnectionStrings__Redis
-              value: "redis-master.ruya.svc.cluster.local:6379"
+              valueFrom:
+                secretKeyRef:
+                  name: token-service-secrets
+                  key: redis-connection-string
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+              ephemeral-storage: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz/startup
+              port: https
+              scheme: HTTPS
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: https
+              scheme: HTTPS
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: https
+              scheme: HTTPS
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
           volumeMounts:
             - name: config
               mountPath: /app/appsettings.json
               subPath: appsettings.json
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 30
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 10
+              readOnly: true
+            - name: certificate
+              mountPath: /https
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: config
           configMap:
             name: token-service-config
+        - name: certificate
+          secret:
+            secretName: token-service-secrets
+            items:
+              - key: tls.pfx
+                path: tls.pfx
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service
@@ -112,10 +161,10 @@ metadata:
   name: token-service
   namespace: ruya
 spec:
-  # ClusterIP only - internal access only, no external ingress
   type: ClusterIP
   selector:
-    app: token-service
+    app.kubernetes.io/name: token-service
   ports:
-    - port: 8080
-      targetPort: 8080
+    - name: https
+      port: 443
+      targetPort: https

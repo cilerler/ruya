@@ -14,20 +14,12 @@ The core library for distributed locking in .NET. It provides the base implement
 ### Registration
 
 ```csharp
-// In Startup.cs
-services.AddDistributedLock(options =>
-{
-    options.DefaultProvider = "redis";
-})
-.AddRedisDistributedLock(options =>
-{
-    options.ConnectionString = "localhost:6379";
-});
+builder.Services.AddRedisDistributedLock();
 ```
 
 ### Acquiring a Lock
 
-Inject `IDistributedLock` (or `IDistributedLockFactory` if using multiple providers).
+Inject `IDistributedLock`.
 
 ```csharp
 public class JobService
@@ -39,25 +31,31 @@ public class JobService
         _lock = distLock;
     }
 
-    public async Task RunJobAsync()
+    public async Task RunJobAsync(CancellationToken cancellationToken)
     {
         var result = await _lock.AcquireAndExecuteWithLockAsync(
             async (ct) => 
             {
                 // Critical section
-                await ProcessDataAsync();
+                await ProcessDataAsync(ct);
             },
             "my-job-lock",
+            lockValue: null,
             options: new LockOptions 
             { 
-                Expiry = TimeSpan.FromSeconds(30),
-                Wait = TimeSpan.FromSeconds(5)
-            });
+                CustomExpiry = TimeSpan.FromSeconds(30),
+                HeartbeatInterval = TimeSpan.FromSeconds(10)
+            },
+            cancellationToken: cancellationToken);
 
-        if (!result.Acquired)
+        if (!result.IsSuccess)
         {
             Console.WriteLine("Could not acquire lock.");
         }
     }
 }
 ```
+
+Ruya always generates a different owner value for every acquisition. An optional `lockValue` is treated only as a diagnostic prefix; Ruya appends a unique acquisition identifier before calling the provider. That prevents a delayed release from an expired operation from releasing a newer lock acquired by the same process.
+
+`AddDistributedLockCore()` binds `DistributedLock` when `IConfiguration` is present. Configuration-free service collections remain supported for programmatic in-memory registration. Calling `AddDistributedLockMetrics("custom-name")` explicitly replaces the default meter registration.

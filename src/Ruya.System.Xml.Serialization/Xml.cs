@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
@@ -7,19 +8,30 @@ using System.Xml.Serialization;
 
 namespace Ruya.System.Xml.Serialization;
 
+[SuppressMessage("Naming", "CA1724", Justification = "The released Xml type name is retained for 8.x binary compatibility.")]
 public static class Xml
 {
     private static readonly ConcurrentDictionary<(Type, string?), Lazy<XmlSerializer>> SerializerCache = new();
 
     public static T Deserialize<T>(string xml, string? rootElementName = null)
     {
+        ArgumentNullException.ThrowIfNull(xml);
+
         var serializer = GetSerializer<T>(rootElementName);
-        using var reader = new StringReader(xml);
-        return (T)serializer.Deserialize(reader)!;
+        using var textReader = new StringReader(xml);
+        using var xmlReader = XmlReader.Create(textReader, new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null
+        });
+
+        return (T)serializer.Deserialize(xmlReader)!;
     }
 
     public static string Serialize<T>(T source, string? rootElementName = null, bool omitXmlDeclaration = true)
     {
+        ArgumentNullException.ThrowIfNull(source);
+
         var serializer = GetSerializer<T>(rootElementName);
         var namespaces = new XmlSerializerNamespaces([XmlQualifiedName.Empty]);
 

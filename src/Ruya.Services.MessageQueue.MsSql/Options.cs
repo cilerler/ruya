@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace Ruya.Services.MessageQueue.MsSql;
@@ -7,11 +8,24 @@ namespace Ruya.Services.MessageQueue.MsSql;
 /// </summary>
 public sealed class MsSqlOptions
 {
+    public const string ConfigurationSectionName =
+        $"{nameof(Ruya.Services.MessageQueue)}:{nameof(Ruya.Services.MessageQueue.MsSql)}";
+
     /// <summary>
-    /// SQL Server connection string
+    /// Descriptive key used to resolve the Service Broker connection from the top-level
+    /// <c>ConnectionStrings</c> catalog.
+    /// </summary>
+    public string? MessageQueueConnectionStringKey { get; set; }
+
+    /// <summary>
+    /// Resolved SQL Server connection string. Retained for released 8.x typed-configuration
+    /// compatibility; standard configuration should set
+    /// <see cref="MessageQueueConnectionStringKey"/> instead.
     /// </summary>
     [Required]
     public string ConnectionString { get; set; } = string.Empty;
+
+    internal bool ConnectionStringResolvedFromCatalog { get; set; }
 
     /// <summary>
     /// Wait timeout in milliseconds for WAITFOR(RECEIVE) (default: 1000ms)
@@ -20,7 +34,9 @@ public sealed class MsSqlOptions
     public int ReceiveTimeoutMs { get; set; } = 1000;
 
     /// <summary>
-    /// Batch size for receiving messages (default: 10)
+    /// Reserved receive batch hint (default: 10). The transactional subscriber currently receives
+    /// one message per SQL transaction so retry and host cancellation can preserve that delivery.
+    /// Use <see cref="Abstractions.SubscribeOptions.MaxConcurrency"/> for parallel handlers.
     /// </summary>
     public int BatchSize { get; set; } = 10;
 
@@ -53,14 +69,15 @@ public sealed class MsSqlOptions
     public int PollingIntervalMs { get; set; } = 100;
 
     /// <summary>
-    /// Enable conversation pooling to reuse conversations (default: false)
-    /// Set to true for high-throughput scenarios to avoid conversation overhead
+    /// Reserved for a future conversation-pooling implementation. The current provider rejects
+    /// <see langword="true"/> during startup validation instead of silently ignoring it.
     /// </summary>
+    [Obsolete("Conversation pooling is not supported by the Service Broker provider. Leave this disabled. This property will be removed in version 9.0.")]
     public bool EnableConversationPooling { get; set; } = false;
 
     /// <summary>
-    /// Maximum number of pooled conversations per topic (default: 10)
-    /// Only used when EnableConversationPooling = true
+    /// Reserved maximum number of pooled conversations per topic (default: 10).
     /// </summary>
+    [Obsolete("Conversation pooling is not supported by the Service Broker provider. This property will be removed in version 9.0.")]
     public int MaxPooledConversations { get; set; } = 10;
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,9 +20,12 @@ namespace Ruya.Services.DistributedLock.Redis.Providers;
 public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
 {
     private readonly List<IConnectionMultiplexer> _connections;
+    private readonly List<IConnectionMultiplexer> _ownedConnections;
     private readonly ILogger<RedlockProvider> _logger;
     private readonly int _quorum;
-    private bool _disposed;
+    private int _disposeState;
+
+    private bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RedlockProvider"/> class.
@@ -35,25 +39,78 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
         ILogger<RedlockProvider> logger,
         Func<ConfigurationOptions, IConnectionMultiplexer>? connectionFactory = null,
         IConnectionMultiplexer? multiplexer = null)
+        : this(
+            GetSettings(settings),
+            GetSettings(settings).RedlockEndpoints ?? [],
+            logger,
+            connectionFactory,
+            multiplexer)
     {
-        ArgumentNullException.ThrowIfNull(settings);
+    }
+
+    internal RedlockProvider(
+        IOptions<RedisLockSettings> settings,
+        IReadOnlyList<string> resolvedEndpoints,
+        ILogger<RedlockProvider> logger,
+        Func<ConfigurationOptions, IConnectionMultiplexer>? connectionFactory = null,
+        IConnectionMultiplexer? multiplexer = null)
+        : this(GetSettings(settings), resolvedEndpoints, logger, connectionFactory, multiplexer)
+    {
+    }
+
+    private RedlockProvider(
+        RedisLockSettings redisSettings,
+        IReadOnlyList<string> resolvedEndpoints,
+        ILogger<RedlockProvider> logger,
+        Func<ConfigurationOptions, IConnectionMultiplexer>? connectionFactory,
+        IConnectionMultiplexer? multiplexer)
+    {
+        ArgumentNullException.ThrowIfNull(redisSettings);
+        ArgumentNullException.ThrowIfNull(resolvedEndpoints);
         ArgumentNullException.ThrowIfNull(logger);
 
         _logger = logger;
-        var redisSettings = settings.Value;
         _connections = new List<IConnectionMultiplexer>();
+        _ownedConnections = new List<IConnectionMultiplexer>();
 
-        if (redisSettings.RedlockEndpoints != null && redisSettings.RedlockEndpoints.Length > 0)
+        if (resolvedEndpoints.Count > 0)
         {
-            // Multi-Master Mode (Redlock)
-            foreach (var endpoint in redisSettings.RedlockEndpoints)
+            if (!RedlockEndpointSetValidator.IsValid(resolvedEndpoints))
             {
-                var configOptions = ConfigurationOptions.Parse(endpoint);
-                configOptions.SyncTimeout = redisSettings.SyncTimeoutMs;
-                configOptions.AbortOnConnectFail = redisSettings.AbortOnConnectFail;
-                
-                var connection = connectionFactory?.Invoke(configOptions) ?? ConnectionMultiplexer.Connect(configOptions);
-                _connections.Add(connection);
+                throw new ArgumentException(
+                    "Redlock requires an odd number of at least three independent single-node Redis endpoints.",
+                    nameof(resolvedEndpoints));
+            }
+
+            // Multi-Master Mode (Redlock)
+            try
+            {
+                foreach (string endpoint in resolvedEndpoints)
+                {
+                    var configOptions = ConfigurationOptions.Parse(endpoint);
+                    configOptions.SyncTimeout = redisSettings.SyncTimeoutMs;
+                    configOptions.AbortOnConnectFail = redisSettings.AbortOnConnectFail;
+
+                    var connection = connectionFactory?.Invoke(configOptions) ?? ConnectionMultiplexer.Connect(configOptions);
+                    _connections.Add(connection);
+                    _ownedConnections.Add(connection);
+                }
+            }
+            catch
+            {
+                foreach (IConnectionMultiplexer connection in _ownedConnections)
+                {
+                    try
+                    {
+                        connection.Dispose();
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        _logger.LogWarning(LogEvents.OwnedConnectionDisposeFailed, cleanupException, "Error disposing an owned Redis connection after initialization failed");
+                    }
+                }
+
+                throw;
             }
         }
         else if (multiplexer != null)
@@ -64,11 +121,19 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
         }
         else
         {
-            throw new ArgumentException("Either RedlockEndpoints must be provided or an IConnectionMultiplexer must be registered.", nameof(settings));
+            throw new ArgumentException(
+                "Either RedlockEndpoints must be provided or an IConnectionMultiplexer must be registered.",
+                nameof(resolvedEndpoints));
         }
 
         // Quorum is N/2 + 1
         _quorum = (_connections.Count / 2) + 1;
+    }
+
+    private static RedisLockSettings GetSettings(IOptions<RedisLockSettings> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return settings.Value;
     }
 
     /// <inheritdoc />
@@ -80,12 +145,12 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
     {
         LockValidation.ValidateLockKey(lockKey);
         LockValidation.ValidateLockValue(lockValue);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ExpiryValidation.Validate(expiry);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var acquiredCount = 0;
-        var startTime = DateTime.UtcNow;
+        var acquisitionStopwatch = Stopwatch.StartNew();
 
         // Drift is 1% of TTL + small constant (e.g. 2ms) to account for clock skew
         var drift = TimeSpan.FromMilliseconds((expiry.TotalMilliseconds * 0.01) + 2);
@@ -93,7 +158,7 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
         // Try to acquire lock on all instances sequentially (or parallel)
         // Redlock recommends parallel for performance, but sequential is safer for simple impl.
         // We'll use parallel tasks for better performance.
-        var tasks = _connections.Select(async conn =>
+        var tasks = _connections.Select(async (conn, nodeIndex) =>
         {
             try
             {
@@ -102,15 +167,21 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error acquiring lock on Redis instance: {Endpoint}", conn.Configuration);
+                _logger.LogWarning(LogEvents.NodeAcquireFailed, ex, "Error acquiring lock on Redis node {NodeIndex}", nodeIndex);
                 return false;
             }
         });
 
         var results = await Task.WhenAll(tasks);
-        acquiredCount = results.Count(r => r);
+        int acquiredCount = results.Count(r => r);
 
-        var validityTime = expiry - (DateTime.UtcNow - startTime) - drift;
+        if (cancellationToken.IsCancellationRequested)
+        {
+            await ReleaseAcrossNodesAsync(lockKey, lockValue);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        var validityTime = expiry - acquisitionStopwatch.Elapsed - drift;
 
         if (acquiredCount >= _quorum && validityTime > TimeSpan.Zero)
         {
@@ -118,7 +189,8 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
         }
 
         // Failed to acquire quorum or took too long -> Unlock all
-        await ReleaseLockAsync(lockKey, lockValue, cancellationToken);
+        await ReleaseAcrossNodesAsync(lockKey, lockValue);
+        cancellationToken.ThrowIfCancellationRequested();
         return false;
     }
 
@@ -131,12 +203,13 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
     {
         LockValidation.ValidateLockKey(lockKey);
         LockValidation.ValidateLockValue(lockValue);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ExpiryValidation.Validate(expiry);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var extendedCount = 0;
-        var tasks = _connections.Select(async conn =>
+        var extensionStopwatch = Stopwatch.StartNew();
+        var tasks = _connections.Select(async (conn, nodeIndex) =>
         {
             try
             {
@@ -145,16 +218,23 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error extending lock on Redis instance: {Endpoint}", conn.Configuration);
+                _logger.LogWarning(LogEvents.NodeExtendFailed, ex, "Error extending lock on Redis node {NodeIndex}", nodeIndex);
                 return false;
             }
         });
 
         var results = await Task.WhenAll(tasks);
-        extendedCount = results.Count(r => r);
+        int extendedCount = results.Count(r => r);
+        var drift = TimeSpan.FromMilliseconds((expiry.TotalMilliseconds * 0.01) + 2);
+        var validityTime = expiry - extensionStopwatch.Elapsed - drift;
+        bool extended = extendedCount >= _quorum && validityTime > TimeSpan.Zero;
+        if (!extended)
+        {
+            return false;
+        }
 
-        // If we maintained quorum, we are good
-        return extendedCount >= _quorum;
+        cancellationToken.ThrowIfCancellationRequested();
+        return true;
     }
 
     /// <inheritdoc />
@@ -165,25 +245,12 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
     {
         LockValidation.ValidateLockKey(lockKey);
         LockValidation.ValidateLockValue(lockValue);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        // Release on ALL instances, even if we think we didn't acquire it there
-        var tasks = _connections.Select(async conn =>
-        {
-            try
-            {
-                var db = conn.GetDatabase();
-                return await db.LockReleaseAsync(lockKey, lockValue);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error releasing lock on Redis instance: {Endpoint}", conn.Configuration);
-                return false;
-            }
-        });
-
-        await Task.WhenAll(tasks);
-        return true; // Always return true as we made best effort to release
+        bool[] results = await ReleaseAcrossNodesAsync(lockKey, lockValue);
+        cancellationToken.ThrowIfCancellationRequested();
+        return results.Count(released => released) >= _quorum;
     }
 
     /// <inheritdoc />
@@ -192,23 +259,26 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
         CancellationToken cancellationToken = default)
     {
         LockValidation.ValidateLockKey(lockKey);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var existsCount = 0;
-        var tasks = _connections.Select(async conn =>
+        var tasks = _connections.Select(async (conn, nodeIndex) =>
         {
             try
             {
                 var db = conn.GetDatabase();
                 return await db.KeyExistsAsync(lockKey);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogWarning(LogEvents.NodeExistsFailed, ex, "Error checking lock existence on Redis node {NodeIndex}", nodeIndex);
                 return false;
             }
         });
 
         var results = await Task.WhenAll(tasks);
+        cancellationToken.ThrowIfCancellationRequested();
         existsCount = results.Count(r => r);
 
         return existsCount >= _quorum;
@@ -220,12 +290,12 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
         CancellationToken cancellationToken = default)
     {
         LockValidation.ValidateLockKey(lockKey);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
 
         cancellationToken.ThrowIfCancellationRequested();
 
         // Force delete on ALL instances
-        var tasks = _connections.Select(async conn =>
+        var tasks = _connections.Select(async (conn, nodeIndex) =>
         {
             try
             {
@@ -234,12 +304,13 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error force releasing lock on Redis instance: {Endpoint}", conn.Configuration);
+                _logger.LogWarning(LogEvents.NodeForceReleaseFailed, ex, "Error force releasing lock on Redis node {NodeIndex}", nodeIndex);
                 return false;
             }
         });
 
         var results = await Task.WhenAll(tasks);
+        cancellationToken.ThrowIfCancellationRequested();
         var deletedCount = results.Count(r => r);
 
         return deletedCount >= _quorum;
@@ -248,23 +319,42 @@ public sealed class RedlockProvider : IDistributedLockProvider, IDisposable
     /// <inheritdoc />
     public string GetProviderName() => "Redlock";
 
+    private async Task<bool[]> ReleaseAcrossNodesAsync(string lockKey, string lockValue)
+    {
+        // Cleanup deliberately has no caller token: cancellation must not strand a lock
+        // on nodes that completed acquisition before the caller cancelled.
+        IEnumerable<Task<bool>> tasks = _connections.Select(async (connection, nodeIndex) =>
+        {
+            try
+            {
+                IDatabase database = connection.GetDatabase();
+                return await database.LockReleaseAsync(lockKey, lockValue);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(LogEvents.NodeReleaseFailed, exception, "Error releasing lock on Redis node {NodeIndex}", nodeIndex);
+                return false;
+            }
+        });
+
+        return await Task.WhenAll(tasks);
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
-        if (_disposed) return;
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0) return;
 
-        foreach (var conn in _connections)
+        foreach (var conn in _ownedConnections)
         {
             try
             {
                 conn.Dispose();
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore disposal errors
+                _logger.LogWarning(LogEvents.OwnedConnectionDisposeFailed, ex, "Error disposing an owned Redis connection");
             }
         }
-
-        _disposed = true;
     }
 }

@@ -2,7 +2,11 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -30,9 +34,15 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
 	IOptions<DistributedTracingSettings> options,
 	IDistributedCache distributedCache)
 	{
+		ArgumentNullException.ThrowIfNull(logger);
+		ArgumentNullException.ThrowIfNull(activitySource);
+		ArgumentNullException.ThrowIfNull(meterFactory);
+		ArgumentNullException.ThrowIfNull(options);
+		ArgumentNullException.ThrowIfNull(distributedCache);
+
 		_logger = logger;
 		_activitySource = activitySource;
-		_settings = options?.Value;
+		_settings = options.Value;
 		_distributedCache = distributedCache;
         _meter = meterFactory.Create(new MeterOptions(typeof(DistributedTracingService).Namespace!)
 		{
@@ -87,6 +97,35 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
     }
 
     /// <inheritdoc />
+    public async ValueTask<ActivityScope> StartActivityAsync(
+        string activityName,
+        ActivityKind activityKind = ActivityKind.Internal,
+        string? parentId = null,
+        string? cacheKey = null,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(activityName);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var scope = WrapActivity(CreateAndStartActivity(activityName, activityKind, parentId, tags));
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(cacheKey) && scope.Activity is not null)
+            {
+                await CacheActivityIdAsync(cacheKey, scope.Activity.Id!, cancellationToken).ConfigureAwait(false);
+            }
+
+            return scope;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            scope.Dispose();
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
     public ActivityScope ContinueActivity(
         string activityName,
         string cacheKey,
@@ -102,25 +141,53 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
 
         if (string.IsNullOrEmpty(parentId))
         {
-            _cacheMissCounter.Add(1, new TagList { { "cache_key_prefix", GetKeyPrefix(cacheKey) } });
+            _cacheMissCounter.Add(1);
 
             if (!string.IsNullOrEmpty(fallbackParentId))
             {
-                _logger.LogDebug(
-                    "Cache miss for key '{CacheKey}', using fallback parent ID for activity '{ActivityName}'",
-                    cacheKey, activityName);
+                _logger.CacheMissUsingFallback(activityName);
                 parentId = fallbackParentId;
             }
             else
             {
-                _logger.LogWarning(
-                    "Cache miss for key '{CacheKey}' and no fallback. Activity '{ActivityName}' will start as new trace",
-                    cacheKey, activityName);
+                _logger.CacheMissWithoutFallback(activityName);
             }
         }
 
         var activity = CreateAndStartActivity(activityName, activityKind, parentId, tags);
         return WrapActivity(activity);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ActivityScope> ContinueActivityAsync(
+        string activityName,
+        string cacheKey,
+        ActivityKind activityKind = ActivityKind.Internal,
+        string? fallbackParentId = null,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(activityName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var parentId = await GetCachedActivityIdAsync(cacheKey, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(parentId))
+        {
+            _cacheMissCounter.Add(1);
+
+            if (!string.IsNullOrEmpty(fallbackParentId))
+            {
+                _logger.CacheMissUsingFallback(activityName);
+                parentId = fallbackParentId;
+            }
+            else
+            {
+                _logger.CacheMissWithoutFallback(activityName);
+            }
+        }
+
+        return WrapActivity(CreateAndStartActivity(activityName, activityKind, parentId, tags));
     }
 
     /// <inheritdoc />
@@ -137,7 +204,7 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
             activityName,
             activityKind,
             parentContext: default,
-            tags: tags,
+            tags: MergeDefaultTags(tags),
             links: links);
 
         activity?.Start();
@@ -163,15 +230,15 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
                     activityName,
                     activityKind,
                     parentContext: parentContext,
-                    tags: tags);
+                    tags: MergeDefaultTags(tags));
             }
             else
             {
                 // Fallback for legacy/simple parent ID format
                 activity = _activitySource.CreateActivity(activityName, activityKind, parentId);
-                if (activity is not null && tags is not null)
+                if (activity is not null)
                 {
-                    foreach (var tag in tags)
+                    foreach (var tag in MergeDefaultTags(tags))
                     {
                         activity.SetTag(tag.Key, tag.Value);
                     }
@@ -180,7 +247,11 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
         }
         else
         {
-            activity = _activitySource.CreateActivity(activityName, activityKind, parentId:null, tags: tags);
+            activity = _activitySource.CreateActivity(
+                activityName,
+                activityKind,
+                parentId: null,
+                tags: MergeDefaultTags(tags));
         }
 
         activity?.Start();
@@ -197,12 +268,14 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
         _activitiesCreatedCounter.Add(1);
         _activeActivityIds.TryAdd(activity.Id!, DateTimeOffset.UtcNow);
 
-        _logger.LogDebug(
-            "Started activity '{ActivityName}' TraceId={TraceId}, SpanId={SpanId}, ParentSpanId={ParentSpanId}",
-            activity.DisplayName,
-            activity.TraceId,
-            activity.SpanId,
-            activity.ParentSpanId);
+        if (_settings.EnableDebugLogging)
+        {
+            _logger.ActivityStarted(
+                activity.DisplayName,
+                activity.TraceId,
+                activity.SpanId,
+                activity.ParentSpanId);
+        }
     }
 
     private void RecordActivityStop(Activity activity)
@@ -219,12 +292,14 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
             });
         }
 
-        _logger.LogDebug(
-            "Stopped activity '{ActivityName}' TraceId={TraceId}, SpanId={SpanId}, Status={Status}",
-            activity.DisplayName,
-            activity.TraceId,
-            activity.SpanId,
-            activity.Status);
+        if (_settings.EnableDebugLogging)
+        {
+            _logger.ActivityStopped(
+                activity.DisplayName,
+                activity.TraceId,
+                activity.SpanId,
+                activity.Status);
+        }
     }
 
     private ActivityScope WrapActivity(Activity? activity)
@@ -234,6 +309,7 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
             : new ActivityScope(activity, RecordActivityStop);
     }
 
+    [SuppressMessage("Design", "CA1031", Justification = "Trace-context cache failures must not fail the caller's business operation.")]
     private string? GetCachedActivityId(string cacheKey)
     {
         try
@@ -242,11 +318,30 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to retrieve cached activity ID for key '{CacheKey}'", cacheKey);
+            _logger.CacheReadFailed(ex);
             return null;
         }
     }
 
+    [SuppressMessage("Design", "CA1031", Justification = "Trace-context cache failures must not fail the caller's business operation.")]
+    private async Task<string?> GetCachedActivityIdAsync(string cacheKey, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _distributedCache.GetStringAsync(cacheKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.CacheReadFailed(ex);
+            return null;
+        }
+    }
+
+    [SuppressMessage("Design", "CA1031", Justification = "Trace-context cache failures must not fail the caller's business operation.")]
     private void CacheActivityId(string cacheKey, string activityId)
     {
         try
@@ -257,29 +352,79 @@ public sealed class DistributedTracingService : IDistributedTracing, IDisposable
                 AbsoluteExpirationRelativeToNow = _settings.CacheAbsoluteExpiration
             });
 
-            _logger.LogDebug("Cached activity ID for key '{CacheKey}'", cacheKey);
+            if (_settings.EnableDebugLogging)
+            {
+                _logger.TraceContextCached();
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to cache activity ID for key '{CacheKey}'", cacheKey);
+            _logger.CacheWriteFailed(ex);
         }
     }
 
-    private static string GetKeyPrefix(string cacheKey)
+    [SuppressMessage("Design", "CA1031", Justification = "Trace-context cache failures must not fail the caller's business operation.")]
+    private async Task CacheActivityIdAsync(
+        string cacheKey,
+        string activityId,
+        CancellationToken cancellationToken)
     {
-        var separatorIndex = cacheKey.IndexOf(':');
-        return separatorIndex > 0 ? cacheKey[..separatorIndex] : "unknown";
+        try
+        {
+            await _distributedCache.SetStringAsync(cacheKey, activityId, new DistributedCacheEntryOptions
+            {
+                SlidingExpiration = _settings.CacheSlidingExpiration,
+                AbsoluteExpirationRelativeToNow = _settings.CacheAbsoluteExpiration
+            }, cancellationToken).ConfigureAwait(false);
+
+            if (_settings.EnableDebugLogging)
+            {
+                _logger.TraceContextCached();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.CacheWriteFailed(ex);
+        }
+    }
+
+    private IEnumerable<KeyValuePair<string, object?>> MergeDefaultTags(
+        IEnumerable<KeyValuePair<string, object?>>? tags)
+    {
+        if (_settings.DefaultTags.Count == 0)
+        {
+            return tags ?? [];
+        }
+
+        var merged = _settings.DefaultTags.ToDictionary(
+            pair => pair.Key,
+            pair => (object?)pair.Value,
+            StringComparer.Ordinal);
+
+        if (tags is not null)
+        {
+            foreach (var tag in tags)
+            {
+                merged[tag.Key] = tag.Value;
+            }
+        }
+
+        return merged;
     }
 
     public void Dispose()
     {
         _meter.Dispose();
 
-        if (_activeActivityIds.Count > 0)
+        if (!_activeActivityIds.IsEmpty)
         {
-            _logger.LogWarning(
-                "Disposing DistributedTracingService with {Count} active activities still running",
-                _activeActivityIds.Count);
+            _logger.ActiveActivitiesOnDispose(_activeActivityIds.Count);
         }
+
+        GC.SuppressFinalize(this);
     }
 }

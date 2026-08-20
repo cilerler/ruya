@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Ruya.Services.MessageQueue.Abstractions;
 using Ruya.Services.MessageQueue.Extensions;
@@ -13,19 +14,33 @@ namespace Ruya.Services.MessageQueue.RabbitMq;
 public static class RabbitMQExtensions
 {
     /// <summary>
-    /// Adds RabbitMQ provider to the message queue
+    /// Adds the RabbitMQ provider using an explicitly supplied configuration root.
     /// </summary>
+    [Obsolete("Use AddRabbitMQ() and configure the 'MessageQueue:RabbitMQ' section. The IConfiguration overload will be removed in version 9.0.")]
     public static IMessageQueueBuilder AddRabbitMQ(
         this IMessageQueueBuilder builder,
         IConfiguration configuration)
     {
-        if (builder == null) throw new ArgumentNullException(nameof(builder));
-        if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         return builder.AddRabbitMQ(options =>
-        {
-            configuration.GetSection("MessageQueue:RabbitMQ").Bind(options);
-        });
+            configuration.GetSection(RabbitMQOptions.ConfigurationSectionName).Bind(options));
+    }
+
+    /// <summary>
+    /// Adds RabbitMQ provider to the message queue and binds options from
+    /// <see cref="RabbitMQOptions.ConfigurationSectionName"/>.
+    /// </summary>
+    public static IMessageQueueBuilder AddRabbitMQ(this IMessageQueueBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.AddOptions<RabbitMQOptions>()
+            .BindConfiguration(RabbitMQOptions.ConfigurationSectionName)
+            .ValidateOnStart();
+
+        return AddRabbitMQProvider(builder);
     }
 
     /// <summary>
@@ -35,11 +50,20 @@ public static class RabbitMQExtensions
         this IMessageQueueBuilder builder,
         Action<RabbitMQOptions> configureOptions)
     {
-        if (builder == null) throw new ArgumentNullException(nameof(builder));
-        if (configureOptions == null) throw new ArgumentNullException(nameof(configureOptions));
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configureOptions);
 
-        builder.Services.Configure(configureOptions);
-        builder.Services.AddSingleton<IValidateOptions<RabbitMQOptions>, RabbitMQOptionsValidator>();
+        builder.Services.AddOptions<RabbitMQOptions>()
+            .Configure(configureOptions)
+            .ValidateOnStart();
+
+        return AddRabbitMQProvider(builder);
+    }
+
+    private static IMessageQueueBuilder AddRabbitMQProvider(IMessageQueueBuilder builder)
+    {
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<RabbitMQOptions>, RabbitMQOptionsValidator>());
         builder.AddProvider<RabbitMQProvider>();
 
         return builder;

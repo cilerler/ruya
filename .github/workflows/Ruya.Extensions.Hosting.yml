@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Extensions.Hosting.yml'
       - 'src/Ruya.Extensions.Hosting/**'
+      - 'tests/Ruya.Extensions.Hosting.Unit.Tests/**'
 
 jobs:
   build:

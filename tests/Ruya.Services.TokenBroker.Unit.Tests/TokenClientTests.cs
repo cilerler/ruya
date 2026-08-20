@@ -180,7 +180,7 @@ public class TokenClientTests
 
         // Assert
         Assert.IsNotNull(capturedRequest);
-        Assert.IsTrue(capturedRequest.RequestUri!.ToString().Contains("api/token"));
+        Assert.IsTrue(capturedRequest.RequestUri!.ToString().Contains("api/v1/token", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -520,7 +520,7 @@ public class TokenClientTests
 
         // Assert
         Assert.IsNotNull(capturedRequest);
-        Assert.IsTrue(capturedRequest.RequestUri!.ToString().Contains("api/token/exchange"));
+        Assert.IsTrue(capturedRequest.RequestUri!.ToString().Contains("api/v1/token/exchange", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -673,7 +673,7 @@ public class TokenClientTests
 
         // Assert
         Assert.IsNotNull(capturedRequest);
-        Assert.IsTrue(capturedRequest.RequestUri!.PathAndQuery.Contains("api/token/exchange"));
+        Assert.IsTrue(capturedRequest.RequestUri!.PathAndQuery.Contains("api/v1/token/exchange", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -693,7 +693,7 @@ public class TokenClientTests
 
         // Act & Assert
         // TaskCanceledException is the actual exception type thrown when cancellation occurs
-        await Assert.ThrowsExactlyAsync<TaskCanceledException>(
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
             () => _sut.GetTokenAsync(cancellationToken: cts.Token));
     }
 

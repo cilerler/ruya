@@ -11,7 +11,7 @@ public sealed class DistributedLockSettings
     /// <summary>
     /// The configuration section name.
     /// </summary>
-    public const string ConfigurationSectionName = "DistributedLock";
+    public const string ConfigurationSectionName = nameof(Ruya.Services.DistributedLock);
 
     /// <summary>
     /// Gets or sets the default lock expiry time.

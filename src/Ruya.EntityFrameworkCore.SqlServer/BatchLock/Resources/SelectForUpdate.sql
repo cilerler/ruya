@@ -1,8 +1,6 @@
---! WARNING: Use with extreme caution!
---! Directly concatenating or dynamically appending strings using @WhereClause and @OrderByClause may expose this query to SQL injection attacks.
---! Ensure these parameters are validated or sanitized before use, or preferably use parameterized queries or a safe ORM alternative.
+-- WARNING: @WhereClause and @OrderByClause are trusted developer-authored SQL escape hatches.
+-- They are concatenated into dynamic SQL and must never contain user input or any other untrusted value.
 
-SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
 SET NOCOUNT ON;
 
 /*
@@ -41,6 +39,7 @@ DECLARE @OrderByClause NVARCHAR(MAX) = COALESCE(@p8, NULL);
 DECLARE @ProcessStatusCodeField NVARCHAR(128) = COALESCE(@p9, 'ProcessStatusCode');
 DECLARE @ProcessStatusCodeValue TINYINT = COALESCE(@p10, NULL);
 DECLARE @ProcessingOrderField NVARCHAR(128) = COALESCE(@p11, 'ProcessingOrder');
+DECLARE @ProcessingOrderFieldSpecified BIT = CASE WHEN @p11 IS NULL THEN 0 ELSE 1 END;
 DECLARE @Debug BIT = COALESCE(@p12, 0);
 DECLARE @PrimaryKeyField NVARCHAR(128) = COALESCE(@p13, 'Id');
 DECLARE @ReturnPrimaryKeyOnly BIT = COALESCE(@p14, 0);
@@ -157,6 +156,43 @@ FROM @AllColumnInfo;
 IF @PrimaryKeyFieldExists = 0
     THROW 50003, 'The specified primary key field does not exist in the table', 1;
 
+-- The CTE joins back to the target table by one field. That field must be the sole
+-- key of a non-filtered unique index; otherwise one selected key can update many rows.
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes i
+    JOIN sys.index_columns ic
+        ON ic.object_id = i.object_id
+        AND ic.index_id = i.index_id
+        AND ic.key_ordinal > 0
+    JOIN sys.columns c
+        ON c.object_id = ic.object_id
+        AND c.column_id = ic.column_id
+    JOIN sys.tables t ON t.object_id = i.object_id
+    JOIN sys.schemas s ON s.schema_id = t.schema_id
+    WHERE s.name = @SchemaName
+        AND t.name = @TableName
+        AND i.is_unique = 1
+        AND i.is_disabled = 0
+        AND i.is_hypothetical = 0
+        AND i.has_filter = 0
+    GROUP BY i.object_id, i.index_id
+    HAVING COUNT(*) = 1
+        AND MAX(CASE WHEN c.name = @PrimaryKeyField THEN 1 ELSE 0 END) = 1
+)
+    THROW 50003, 'The specified primary key field must be the sole key of a non-filtered unique index', 1;
+
+-- Structured filtering, state transitions, and explicit ordering must fail closed.
+-- Silently dropping one of these semantics can select or mutate the wrong rows.
+IF @ProcessStatusCodeValue IS NOT NULL AND @ProcessStatusCodeFieldExists = 0
+    THROW 50005, 'The configured process status code filter field does not exist in the table', 1;
+
+IF @UpdateProcessStatusCode = 1 AND @ProcessStatusCodeFieldExists = 0
+    THROW 50006, 'The configured process status code update field does not exist in the table', 1;
+
+IF @ProcessingOrderFieldSpecified = 1 AND @ProcessingOrderFieldExists = 0
+    THROW 50007, 'The configured processing order field does not exist in the table', 1;
+
 -- Build dynamic SET clause based on existing columns (embed actual values)
 -- Note: CHAR(39) is single quote character, used to avoid quote-escaping hell
 DECLARE @SetClauseItems TABLE (SetItem NVARCHAR(MAX));
@@ -198,7 +234,7 @@ SELECT @SetClause = STRING_AGG('t.' + SetItem, ',' + CHAR(13) + CHAR(10) + '    
 -- Flag to track if we have updatable columns
 DECLARE @HasUpdatableColumns BIT = CASE WHEN @SetClause IS NOT NULL AND @SetClause <> '' THEN 1 ELSE 0 END;
 
--- Construct WHERE clause if not provided (using table variable approach)
+-- Build the structured default predicate only when no trusted custom clause is supplied.
 IF @WhereClause IS NULL
 BEGIN
     DECLARE @WhereConditions TABLE (Condition NVARCHAR(MAX));
@@ -216,20 +252,39 @@ BEGIN
 
     IF @WhereClause IS NULL OR @WhereClause = ''
         SET @WhereClause = '1=1';
-END
+END;
 
--- Handle ORDER BY clause
+-- Use trusted custom ordering when supplied; otherwise retain metadata-based ordering.
 IF @OrderByClause IS NULL
 BEGIN
-    -- Only add ORDER BY if ProcessingOrderField exists
     IF @ProcessingOrderFieldExists = 1
         SET @OrderByStatement = 'ORDER BY ' + QUOTENAME(@ProcessingOrderField) + ' ASC';
-    -- Otherwise, don't include ORDER BY at all - let SQL Server decide
 END
 ELSE
 BEGIN
     SET @OrderByStatement = 'ORDER BY ' + @OrderByClause;
-END
+END;
+
+-- READPAST is supported only under READ COMMITTED and REPEATABLE READ. Under
+-- READ COMMITTED it also requires READCOMMITTEDLOCK when the database uses RCSI.
+-- Select compatible hints without changing the caller's session isolation.
+DECLARE @ReadCommittedSnapshotEnabled BIT = (
+    SELECT is_read_committed_snapshot_on
+    FROM sys.databases
+    WHERE database_id = DB_ID()
+);
+DECLARE @SessionIsolationLevel TINYINT = (
+    SELECT transaction_isolation_level
+    FROM sys.dm_exec_sessions
+    WHERE session_id = @@SPID
+);
+DECLARE @LockHints NVARCHAR(100) = CASE
+    WHEN @ReadCommittedSnapshotEnabled = 1 AND @SessionIsolationLevel = 2
+        THEN 'READCOMMITTEDLOCK, UPDLOCK, READPAST'
+    WHEN @SessionIsolationLevel IN (2, 3)
+        THEN 'ROWLOCK, UPDLOCK, READPAST'
+    ELSE 'ROWLOCK, UPDLOCK'
+END;
 
 -- Build column lists using efficient STRING_AGG with deterministic ordering
 -- Note: timestamp/rowversion columns (system_type_id = 189) use binary(8) in temp table
@@ -269,8 +324,6 @@ IF @HasUpdatableColumns = 1
 BEGIN
     -- Build SQL with UPDATE statement
     SET @SQL = '
-SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
-
 DECLARE @UpdatedRows TABLE (
     ' + @TempTableColumns + '
 );
@@ -278,7 +331,7 @@ DECLARE @UpdatedRows TABLE (
 WITH TargetBatch AS (
     SELECT TOP (' + CAST(@BatchSize AS NVARCHAR(10)) + ')
         t.' + QUOTENAME(@PrimaryKeyField) + '
-    FROM ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + ' AS t WITH (ROWLOCK, UPDLOCK, READPAST)
+    FROM ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + ' AS t WITH (' + @LockHints + ')
     WHERE ' + @WhereClause;
 
     -- Add ORDER BY only if it's specified

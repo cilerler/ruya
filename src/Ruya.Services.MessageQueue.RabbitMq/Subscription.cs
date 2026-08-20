@@ -12,6 +12,14 @@ namespace Ruya.Services.MessageQueue.RabbitMq;
 
 internal sealed class RabbitMQSubscription : IMessageSubscription
 {
+    private static readonly EventId SubscriptionPaused = new(1000, nameof(SubscriptionPaused));
+    private static readonly EventId SubscriptionPauseFailed = new(1001, nameof(SubscriptionPauseFailed));
+    private static readonly EventId SubscriptionResumed = new(1002, nameof(SubscriptionResumed));
+    private static readonly EventId SubscriptionResumeFailed = new(1003, nameof(SubscriptionResumeFailed));
+    private static readonly EventId SubscriptionCancelled = new(1004, nameof(SubscriptionCancelled));
+    private static readonly EventId SubscriptionCancelFailed = new(1005, nameof(SubscriptionCancelFailed));
+    private static readonly EventId SubscriptionChannelCloseFailed = new(1006, nameof(SubscriptionChannelCloseFailed));
+
     private string _consumerTag;  // Not readonly - reassigned in ResumeAsync
     private readonly string _topic;
     private readonly IChannel _channel;
@@ -66,13 +74,20 @@ internal sealed class RabbitMQSubscription : IMessageSubscription
                 await _channel.BasicCancelAsync(_consumerTag, false, cancellationToken);
 
                 _isActive = false;
-                _logger.LogInformation("Subscription '{SubscriptionId}' paused (consumer cancelled)", SubscriptionId);
+                _logger.LogInformation(
+                    SubscriptionPaused,
+                    "Subscription '{SubscriptionId}' paused (consumer cancelled)",
+                    SubscriptionId);
             }
             catch (Exception ex)
             {
                 // Restore state on error
                 Interlocked.Exchange(ref _pauseCount, 0);
-                _logger.LogError(ex, "Error pausing subscription '{SubscriptionId}'", SubscriptionId);
+                _logger.LogError(
+                    SubscriptionPauseFailed,
+                    ex,
+                    "Error pausing subscription '{SubscriptionId}'",
+                    SubscriptionId);
                 throw;
             }
         }
@@ -98,14 +113,21 @@ internal sealed class RabbitMQSubscription : IMessageSubscription
                     cancellationToken: cancellationToken);
 
                 _isActive = true;
-                _logger.LogInformation("Subscription '{SubscriptionId}' resumed (consumer restarted with tag '{ConsumerTag}')",
-                    SubscriptionId, _consumerTag);
+                _logger.LogInformation(
+                    SubscriptionResumed,
+                    "Subscription '{SubscriptionId}' resumed (consumer restarted with tag '{ConsumerTag}')",
+                    SubscriptionId,
+                    _consumerTag);
             }
             catch (Exception ex)
             {
                 // Restore state on error
                 Interlocked.Exchange(ref _pauseCount, 1);
-                _logger.LogError(ex, "Error resuming subscription '{SubscriptionId}'", SubscriptionId);
+                _logger.LogError(
+                    SubscriptionResumeFailed,
+                    ex,
+                    "Error resuming subscription '{SubscriptionId}'",
+                    SubscriptionId);
                 throw;
             }
         }
@@ -123,11 +145,15 @@ internal sealed class RabbitMQSubscription : IMessageSubscription
         {
             await _channel.BasicCancelAsync(_consumerTag, false);
 
-            _logger.LogInformation("Subscription '{SubscriptionId}' cancelled", SubscriptionId);
+            _logger.LogInformation(SubscriptionCancelled, "Subscription '{SubscriptionId}' cancelled", SubscriptionId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error cancelling subscription '{SubscriptionId}'", SubscriptionId);
+            _logger.LogError(
+                SubscriptionCancelFailed,
+                ex,
+                "Error cancelling subscription '{SubscriptionId}'",
+                SubscriptionId);
         }
 
         // Small delay to allow in-flight handlers to complete
@@ -143,7 +169,11 @@ internal sealed class RabbitMQSubscription : IMessageSubscription
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error closing channel for subscription '{SubscriptionId}'", SubscriptionId);
+            _logger.LogError(
+                SubscriptionChannelCloseFailed,
+                ex,
+                "Error closing channel for subscription '{SubscriptionId}'",
+                SubscriptionId);
         }
 
         // Dispose the concurrency semaphore (after delay to let handlers finish)

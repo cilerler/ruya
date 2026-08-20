@@ -64,6 +64,15 @@ public class LockValidationTests
     }
 
     [TestMethod]
+    public async Task AcquireLockAsync_ShouldThrow_WhenExpiryIsNotPositive()
+    {
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            _provider.AcquireLockAsync("key", "value", TimeSpan.Zero));
+
+        _mockDatabase.VerifyNoOtherCalls();
+    }
+
+    [TestMethod]
     public async Task AcquireLockAsync_ShouldSucceed_WhenLockKeyAtMaxLength()
     {
         // Arrange

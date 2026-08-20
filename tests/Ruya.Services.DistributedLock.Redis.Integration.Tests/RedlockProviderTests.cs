@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -98,6 +99,105 @@ public class RedlockProviderTests
     }
 
     [TestMethod]
+    public async Task AcquireLockAsync_WhenCancelledDuringNodeCalls_CleansEveryNodeAndPreservesCancellation()
+    {
+        using var provider = CreateProvider();
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+
+        foreach (Mock<IDatabase> database in _mockDatabases)
+        {
+            database
+                .Setup(db => db.LockTakeAsync(
+                    It.IsAny<RedisKey>(),
+                    It.IsAny<RedisValue>(),
+                    It.IsAny<TimeSpan>(),
+                    It.IsAny<CommandFlags>()))
+                .Returns(completion.Task);
+            database
+                .Setup(db => db.LockReleaseAsync(
+                    It.IsAny<RedisKey>(),
+                    It.IsAny<RedisValue>(),
+                    It.IsAny<CommandFlags>()))
+                .ReturnsAsync(true);
+        }
+
+        _mockDatabases[0]
+            .Setup(db => db.LockReleaseAsync(
+                It.IsAny<RedisKey>(),
+                It.IsAny<RedisValue>(),
+                It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new InvalidOperationException("cleanup failed"));
+
+        Task<bool> acquire = provider.AcquireLockAsync(
+            "cancelled-redlock",
+            "owner",
+            TimeSpan.FromSeconds(10),
+            cancellation.Token);
+        await cancellation.CancelAsync();
+        completion.SetResult(true);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => acquire);
+        foreach (Mock<IDatabase> database in _mockDatabases)
+        {
+            database.Verify(
+                db => db.LockReleaseAsync(
+                    It.IsAny<RedisKey>(),
+                    It.IsAny<RedisValue>(),
+                    It.IsAny<CommandFlags>()),
+                Times.Once);
+        }
+
+        _mockLogger.Verify(
+            logger => logger.Log(
+                LogLevel.Warning,
+                It.Is<EventId>(eventId => eventId.Id == 8512 && eventId.Name == "RedlockNodeReleaseFailed"),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<InvalidOperationException>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [TestMethod]
+    public async Task ExtendLockAsync_WhenCancellationArrivesWithFailedQuorum_ReturnsOwnershipFailure()
+    {
+        using var provider = CreateProvider();
+        var allExtensionsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var extensionCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        int startedCount = 0;
+        foreach (Mock<IDatabase> database in _mockDatabases)
+        {
+            database
+                .Setup(db => db.LockExtendAsync(
+                    It.IsAny<RedisKey>(),
+                    It.IsAny<RedisValue>(),
+                    It.IsAny<TimeSpan>(),
+                    It.IsAny<CommandFlags>()))
+                .Returns(() =>
+                {
+                    if (Interlocked.Increment(ref startedCount) == _mockDatabases.Count)
+                    {
+                        allExtensionsStarted.TrySetResult();
+                    }
+
+                    return extensionCompleted.Task;
+                });
+        }
+
+        Task<bool> operation = provider.ExtendLockAsync(
+            "test-lock",
+            "test-value",
+            TimeSpan.FromSeconds(10),
+            cancellation.Token);
+        await allExtensionsStarted.Task;
+        await cancellation.CancelAsync();
+        extensionCompleted.TrySetResult(false);
+
+        Assert.IsFalse(await operation);
+    }
+
+    [TestMethod]
     public async Task AcquireLockAsync_ShouldFail_WhenQuorumNotMet()
     {
         // Arrange
@@ -152,5 +252,152 @@ public class RedlockProviderTests
         // Assert
         Assert.IsTrue(result);
         mockDb.Verify(d => d.LockTakeAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan>(), It.IsAny<CommandFlags>()), Times.Once);
+    }
+
+    [TestMethod]
+    public async Task ReleaseLockAsync_ShouldFail_WhenQuorumDoesNotConfirmRelease()
+    {
+        using var provider = CreateProvider();
+        _mockDatabases[0]
+            .Setup(d => d.LockReleaseAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(true);
+        _mockDatabases[1]
+            .Setup(d => d.LockReleaseAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(false);
+        _mockDatabases[2]
+            .Setup(d => d.LockReleaseAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(false);
+
+        bool released = await provider.ReleaseLockAsync("key", "value");
+
+        Assert.IsFalse(released);
+    }
+
+    [TestMethod]
+    public void Dispose_DoesNotDisposeInjectedMultiplexer()
+    {
+        var multiplexer = new Mock<IConnectionMultiplexer>();
+        multiplexer
+            .Setup(c => c.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+            .Returns(new Mock<IDatabase>().Object);
+        var settings = Options.Create(new RedisLockSettings { RedlockEndpoints = null });
+        var provider = new RedlockProvider(settings, _mockLogger.Object, multiplexer: multiplexer.Object);
+
+        provider.Dispose();
+
+        multiplexer.Verify(c => c.Dispose(), Times.Never);
+    }
+
+    [TestMethod]
+    public void Constructor_WithTooFewDirectEndpoints_FailsBeforeCreatingConnections()
+    {
+        var settings = Options.Create(new RedisLockSettings
+        {
+            RedlockEndpoints = ["redis-1:6379", "redis-2:6379"]
+        });
+        int connectionAttempts = 0;
+
+        Assert.Throws<ArgumentException>(() => new RedlockProvider(
+            settings,
+            _mockLogger.Object,
+            _ =>
+            {
+                connectionAttempts++;
+                return new Mock<IConnectionMultiplexer>().Object;
+            }));
+
+        Assert.AreEqual(0, connectionAttempts);
+    }
+
+    [TestMethod]
+    public void Constructor_WithAliasedDirectEndpoints_FailsBeforeCreatingConnections()
+    {
+        var settings = Options.Create(new RedisLockSettings
+        {
+            RedlockEndpoints =
+            [
+                "REDIS-1,ssl=false,abortConnect=false",
+                "redis-1:6379,abortConnect=false,ssl=false",
+                "redis-3:6379"
+            ]
+        });
+        int connectionAttempts = 0;
+
+        Assert.Throws<ArgumentException>(() => new RedlockProvider(
+            settings,
+            _mockLogger.Object,
+            _ =>
+            {
+                connectionAttempts++;
+                return new Mock<IConnectionMultiplexer>().Object;
+            }));
+
+        Assert.AreEqual(0, connectionAttempts);
+    }
+
+    [TestMethod]
+    public void Dispose_WhenConnectionsAreOwned_DisposesEachConnectionExactlyOnce()
+    {
+        var provider = CreateProvider();
+
+        provider.Dispose();
+        provider.Dispose();
+
+        foreach (Mock<IConnectionMultiplexer> connection in _mockConnections)
+        {
+            connection.Verify(item => item.Dispose(), Times.Once);
+        }
+    }
+
+    [TestMethod]
+    public async Task AcquireLockAsync_WhenNodeFails_DoesNotPutEndpointCredentialInLogState()
+    {
+        const string secret = "super-secret";
+        _settings.RedlockEndpoints =
+        [
+            $"redis1,password={secret}",
+            "redis2",
+            "redis3"
+        ];
+        using var provider = CreateProvider();
+        _mockDatabases[0]
+            .Setup(d => d.LockTakeAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan>(), It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new InvalidOperationException("node failed"));
+
+        await provider.AcquireLockAsync("key", "value", TimeSpan.FromSeconds(10));
+
+        Assert.IsFalse(_mockLogger.Invocations.Any(invocation =>
+            invocation.Arguments.Count > 2 &&
+            invocation.Arguments[2]?.ToString()?.Contains(secret, StringComparison.Ordinal) == true));
+    }
+
+    [TestMethod]
+    public async Task AcquireLockAsync_WithNonPositiveExpiry_ThrowsBeforeCallingRedis()
+    {
+        using var provider = CreateProvider();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => provider.AcquireLockAsync("key", "value", TimeSpan.Zero));
+
+        foreach (var database in _mockDatabases)
+        {
+            database.VerifyNoOtherCalls();
+        }
+    }
+
+    [TestMethod]
+    public void Constructor_WhenAConnectionFails_DisposesConnectionsItAlreadyCreated()
+    {
+        var firstConnection = new Mock<IConnectionMultiplexer>();
+        int callCount = 0;
+
+        Assert.Throws<InvalidOperationException>(() => new RedlockProvider(
+            _mockSettings.Object,
+            _mockLogger.Object,
+            _ => ++callCount == 1
+                ? firstConnection.Object
+                : throw new InvalidOperationException("connection failed")));
+
+        firstConnection.Verify(connection => connection.Dispose(), Times.Once);
     }
 }

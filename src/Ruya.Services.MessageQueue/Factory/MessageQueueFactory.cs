@@ -15,6 +15,14 @@ namespace Ruya.Services.MessageQueue.Factory;
 /// </summary>
 public sealed class MessageQueueFactory : IMessageQueueFactory
 {
+    private static readonly EventId FactoryInitialized = new(1000, nameof(FactoryInitialized));
+    private static readonly EventId CachedQueueReturned = new(1001, nameof(CachedQueueReturned));
+    private static readonly EventId QueueCreating = new(1002, nameof(QueueCreating));
+    private static readonly EventId QueueCreated = new(1003, nameof(QueueCreated));
+    private static readonly EventId FactoryDisposing = new(1004, nameof(FactoryDisposing));
+    private static readonly EventId QueueDisposeFailed = new(1005, nameof(QueueDisposeFailed));
+    private static readonly EventId FactoryDisposed = new(1006, nameof(FactoryDisposed));
+
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<MessageQueueFactory> _logger;
     private readonly MessageQueueOptions _options;
@@ -22,6 +30,8 @@ public sealed class MessageQueueFactory : IMessageQueueFactory
     private readonly Dictionary<string, IMessageQueue> _queueInstances;
     private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
     private volatile bool _disposed;
+
+    internal MessageQueueOptions Options => _options;
 
     public MessageQueueFactory(
         IServiceProvider serviceProvider,
@@ -37,6 +47,7 @@ public sealed class MessageQueueFactory : IMessageQueueFactory
         _queueInstances = new Dictionary<string, IMessageQueue>(StringComparer.OrdinalIgnoreCase);
 
         _logger.LogInformation(
+            FactoryInitialized,
             "MessageQueueFactory initialized with {ProviderCount} providers: {Providers}",
             _providers.Count,
             string.Join(", ", _providers.Keys));
@@ -57,7 +68,7 @@ public sealed class MessageQueueFactory : IMessageQueueFactory
             // Check for existing instance
             if (_queueInstances.TryGetValue(name, out var existingQueue))
             {
-                _logger.LogDebug("Returning existing message queue instance: {Name}", name);
+                _logger.LogDebug(CachedQueueReturned, "Returning existing message queue instance: {Name}", name);
                 return existingQueue;
             }
 
@@ -81,12 +92,22 @@ public sealed class MessageQueueFactory : IMessageQueueFactory
             }
 
             // Create queue instance ASYNCHRONOUSLY (no blocking!)
-            _logger.LogInformation("Creating message queue instance: {Name} using provider: {Provider}", name, provider.ProviderName);
-            var queue = await provider.CreateAsync(name, cancellationToken);
+            _logger.LogInformation(
+                QueueCreating,
+                "Creating message queue instance: {Name} using provider: {Provider}",
+                name,
+                provider.ProviderName);
+            var providerQueue = await TimeoutMessageQueue.ExecuteAsync(
+                token => provider.CreateAsync(name, token),
+                _options.DefaultTimeout,
+                "creation",
+                cancellationToken);
+            var queue = new TimeoutMessageQueue(providerQueue, _options.DefaultTimeout);
 
             _queueInstances[name] = queue;
 
             _logger.LogInformation(
+                QueueCreated,
                 "Message queue '{Name}' created successfully. Capabilities: Priority={SupportsPriority}, Delay={SupportsDelay}, DLQ={SupportsDLQ}, Replay={SupportsReplay}",
                 name,
                 provider.Capabilities.SupportsPriority,
@@ -120,7 +141,10 @@ public sealed class MessageQueueFactory : IMessageQueueFactory
 
             _disposed = true;  // Set FIRST after double-check to prevent new operations
 
-            _logger.LogInformation("Disposing MessageQueueFactory and {Count} queue instances", _queueInstances.Count);
+            _logger.LogInformation(
+                FactoryDisposing,
+                "Disposing MessageQueueFactory and {Count} queue instances",
+                _queueInstances.Count);
 
             // Dispose all queues ASYNCHRONOUSLY (no blocking!)
             foreach (var queue in _queueInstances.Values)
@@ -131,13 +155,13 @@ public sealed class MessageQueueFactory : IMessageQueueFactory
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error disposing message queue: {Name}", queue.Name);
+                    _logger.LogError(QueueDisposeFailed, ex, "Error disposing message queue: {Name}", queue.Name);
                 }
             }
 
             _queueInstances.Clear();
 
-            _logger.LogInformation("MessageQueueFactory disposed");
+            _logger.LogInformation(FactoryDisposed, "MessageQueueFactory disposed");
         }
         finally
         {

@@ -131,6 +131,32 @@ public class ColumnMappedProduct
     public int Quantity { get; set; }
 }
 
+[Table("BatchItems", Schema = "dbo")]
+[Index(nameof(ProcessStatusCode), nameof(ProcessingOrder))]
+public sealed class BatchItem
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public int Id { get; set; }
+
+    public int GroupId { get; set; }
+
+    public int ProcessingOrder { get; set; }
+
+    public byte ProcessStatusCode { get; set; }
+
+    public byte LockState { get; set; }
+
+    public DateTime? LockTime { get; set; }
+
+    [MaxLength(261)]
+    public string? LockedBy { get; set; }
+
+    public DateTime ModifiedAt { get; set; }
+
+    public bool SoftDelete { get; set; }
+}
+
 public class TestDbContext : DbContext
 {
     public TestDbContext(DbContextOptions<TestDbContext> options) : base(options)
@@ -142,6 +168,7 @@ public class TestDbContext : DbContext
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<ColumnMappedProduct> ColumnMappedProducts => Set<ColumnMappedProduct>();
+    public DbSet<BatchItem> BatchItems => Set<BatchItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

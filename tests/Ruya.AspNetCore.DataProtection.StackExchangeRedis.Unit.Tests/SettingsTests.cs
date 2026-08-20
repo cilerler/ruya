@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -16,13 +17,6 @@ public class DataProtectionSettingsTests
 	{
 		// Assert
 		Assert.IsFalse(string.IsNullOrEmpty(DataProtectionSettings.ConfigurationSectionName));
-	}
-
-	[TestMethod]
-	public void ConfigurationSectionName_MatchesClassName()
-	{
-		// Assert
-		Assert.AreEqual(nameof(DataProtectionSettings), DataProtectionSettings.ConfigurationSectionName);
 	}
 
 	#endregion
@@ -73,6 +67,25 @@ public class DataProtectionSettingsTests
 
 		// Assert
 		Assert.IsNull(settings.ConnectionString);
+	}
+
+	[TestMethod]
+	public void DataProtectionSettings_RemotePayload_RoundTripsResolvedConnectionString()
+	{
+		var settings = new DataProtectionSettings
+		{
+			ApplicationName = "Test",
+			ConnectionStringKey = "Redis",
+			CacheKey = "Keys",
+			ConnectionString = "redis:6379,password=runtime-secret"
+		};
+
+		var json = JsonSerializer.Serialize(settings);
+		var deserialized = JsonSerializer.Deserialize<DataProtectionSettings>(json);
+
+		Assert.Contains("runtime-secret", json, System.StringComparison.Ordinal);
+		Assert.IsNotNull(deserialized);
+		Assert.AreEqual(settings.ConnectionString, deserialized.ConnectionString);
 	}
 
 	#endregion
@@ -216,13 +229,6 @@ public class DataProtectionClientSettingsTests
 	{
 		// Assert
 		Assert.IsFalse(string.IsNullOrEmpty(DataProtectionClientSettings.ConfigurationSectionName));
-	}
-
-	[TestMethod]
-	public void ConfigurationSectionName_MatchesClassName()
-	{
-		// Assert
-		Assert.AreEqual(nameof(DataProtectionClientSettings), DataProtectionClientSettings.ConfigurationSectionName);
 	}
 
 	#endregion

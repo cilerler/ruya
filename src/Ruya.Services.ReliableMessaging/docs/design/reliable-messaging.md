@@ -24,7 +24,9 @@ Distributed and modular systems need *reliable messaging*: events emitted by one
 
 2. **Consumer-side duplication.** Brokers typically deliver at-least-once. A consumer that has already processed a message may receive it again after a transient failure or restart. Without dedup, the consumer applies the same change twice.
 
-The industry pattern that solves both is **Transactional Outbox** (producer) paired with **Inbox** (consumer). Together they deliver effectively-exactly-once semantics across services without distributed transactions.
+The industry pattern that solves both is **Transactional Outbox** (producer) paired with **Inbox** (consumer).
+Together they provide once-effective transactional database state without distributed transactions. External
+effects still require their own idempotency or an Outbox boundary.
 
 `Ruya.Services.MessageQueue` provides a provider-agnostic messaging abstraction with a middleware pipeline, but no outbox / inbox primitives. Modular-monolith and microservice consumers alike need both: every module publishes crash-safely and consumes idempotently.
 
@@ -32,7 +34,7 @@ This design implements one pattern library under `Ruya.Services.*` covering both
 
 ### Goals
 
-- Deliver effectively-exactly-once semantics between modules without distributed transactions.
+- Deliver once-effective transactional database state between modules without distributed transactions.
 - Keep the pattern library persistence-agnostic and transport-agnostic.
 - Make the producer call site read clearly: enqueue, then commit.
 - Allow per-`DbContext` (or per-marker `TContext`) isolation so each module owns its Outbox/Inbox.
@@ -61,16 +63,22 @@ Each adapter depends only on the pattern package plus one ecosystem (EF Core or 
 The producer-side flow:
 
 1. Caller injects `IOutboxPublisher<TDbContext>` and the `TDbContext`.
-2. Caller enqueues via `outbox.EnqueueAsync(topic, payload, ...)`. The publisher serializes and adds an envelope to a scoped `IOutboxBuffer<TDbContext>`.
+2. Caller enqueues via `outbox.EnqueueSourceGeneratedAsync(topic, payload, payloadTypeInfo, ...)`. The publisher uses producer-owned source-generated metadata and adds an envelope to a scoped `IOutboxBuffer<TDbContext>`. `EnqueueAsync` is retained only as a reflection-based compatibility path.
 3. Caller calls `db.SaveChangesAsync(ct)`. The EF `OutboxSavingChangesInterceptor<TDbContext>` drains the buffer into the change tracker as `OutboxEntry` rows; the business row and the outbox row commit atomically.
-4. `OutboxProcessor` (an `IHostedService`) polls `IOutboxStore<TDbContext>`, dispatches each envelope through `IOutboundDispatcher`, and marks rows dispatched (or schedules retry).
+4. `OutboxProcessor` (an `IHostedService`) polls `IOutboxStore<TDbContext>`, reconstructs the persisted envelope including its message ID, dispatcher name, and JSON headers, dispatches it through `IOutboundDispatcher`, and marks rows dispatched (or schedules retry).
 
 The consumer-side flow:
 
-1. The host subscribes via `IMessageQueue.SubscribeWithInboxAsync<TMessage, TDbContext>(...)`.
-2. On every message, the extension creates a DI scope, resolves `IInboxStore<TDbContext>`, and calls `TryRecordAsync(consumerName, messageId)` — atomic per-pair via composite primary key.
-3. If the row is new, the user handler runs inside the same scope and commits its business write together with the inbox row in `SaveChangesAsync`. If the handler rolls back, the inbox row rolls back and redelivery will re-dedup correctly.
-4. If the row is a duplicate, the handler is short-circuited with `MessageResult.Success()` — at-least-once collapses to once-effective.
+1. The host subscribes via the scope-aware `IMessageQueue.SubscribeWithInboxAsync<TMessage, TDbContext>(...)` overload.
+2. On every message, the extension creates one asynchronous DI scope, resolves `IAtomicInboxStore<TDbContext>`,
+   and supplies the same scope's `IServiceProvider` to the handler.
+3. The atomic store opens the `TDbContext` transaction and invokes the handler only when no committed
+   `Processed` row exists for `(consumerName, messageId)`.
+4. `MessageResult.Success()` commits the business mutation and `Processed` Inbox row together. `Retry`,
+   `Reject`, and exceptions roll back all enlisted changes; the original non-success result is returned, while
+   exceptions propagate.
+5. A committed `Processed` duplicate short-circuits to `MessageResult.Success()` without invoking the handler.
+   A persisted non-processed row fails closed as ambiguous and requires operator reconciliation.
 
 ## Detailed Design
 
@@ -85,18 +93,30 @@ Outbox primitives (under `Outbox/`):
 
 - `IOutboxBuffer<TContext>` (scoped) — per-scope list of pending envelopes. `Add(ReliableMessageEnvelope)` during the unit of work; the store adapter drains it when the unit of work commits.
 - `IOutboxStore<TContext>` — abstraction: *"persist these envelopes atomically with the caller's unit of work, and fetch pending envelopes for dispatch."* Implementations decide storage.
-- `IOutboxPublisher<TContext>` — **explicit primary API** for callers: `EnqueueAsync(string topic, T payload, ReliableMessageOptions? options = null, CancellationToken ct = default)`. Wraps `IOutboxBuffer.Add` with serialization + envelope construction.
+- `IOutboxPublisher<TContext>` — **explicit primary API** for callers: `EnqueueSourceGeneratedAsync(string topic, T payload, JsonTypeInfo<T> payloadTypeInfo, OutboxPublishOverrides? options = null, CancellationToken cancellationToken = default)`. Wraps `IOutboxBuffer.Add` with producer-owned serialization + envelope construction. `EnqueueAsync` is the backward-compatible reflection path.
 - `OutboxProcessor<TContext>` (`IHostedService`) — polls `IOutboxStore<TContext>`, calls `IOutboundDispatcher.DispatchAsync`, marks dispatched or schedules retry. Exponential backoff, configurable poll interval, batch size, max attempts.
 - `OutboxOptions` — `PollInterval`, `BatchSize`, `MaxAttempts`, `BackoffSchedule`, `ArchiveAfter`, `DefaultDispatcherName?`.
 - `OutboxEntry` — persistence record (see schema section).
 
 Inbox primitives (under `Inbox/`):
 
-- `IInboxStore<TContext>` — abstraction with two operations:
-  - `TryRecordAsync(string consumerName, string messageId, CancellationToken)` → `bool`. Atomic per `(consumerName, messageId)`: returns `true` on first seen, `false` on duplicate. Implementations rely on the composite primary key for atomicity (insert-or-fail).
-  - `MarkProcessedAsync(string consumerName, string messageId)` — optional transition from Received → Processed. Enables reprocessing if a crash occurs between receive and business commit.
+- `IAtomicInboxStore<TContext>` — canonical orchestration abstraction. `ExecuteOnceAsync(...)` owns the
+  transaction, invokes work only when no committed `Processed` row exists, commits on
+  `InboxWorkResult.Processed`, and rolls back on `InboxWorkResult.Abandoned` or exception. A persistence
+  execution strategy may invoke work again after a transient failure, so non-transactional effects must be
+  independently idempotent.
+- `IInboxStore<TContext>` — backward-compatible low-level abstraction with manual operations:
+  - `TryRecordAsync(string consumerName, string messageId, string topic, CancellationToken)` → `bool`. Atomic
+    per `(consumerName, messageId)`: returns `true` on first seen, `false` when a row already exists.
+    Implementations rely on the composite primary key for insert-or-fail uniqueness, but this result alone does
+    not prove that the associated business work committed.
+  - `MarkProcessedAsync(string consumerName, string messageId)` — separate transition from Received →
+    Processed. These two calls do not coordinate business state by themselves; direct callers own the transaction
+    and recovery policy.
 - `IInboxConsumerNameProvider` — **default implementation auto-derives the consumer name from handler type** (returns `typeof(THandler).FullName`). Override by registering a custom implementation or by applying `[InboxConsumerName("custom.name")]` to the handler class. Precedence: attribute → custom provider → convention.
-- `InboxOptions` — `ArchiveAfter` (TTL for processed rows), `RequireExplicitProcessed` (bool, default false), `CleanupInterval`.
+- `InboxOptions` — `ArchiveAfter` (TTL for processed rows), `CleanupInterval`, and the legacy
+  `RequireExplicitProcessed` compatibility setting. The canonical atomic path always owns the completion
+  transition and does not consult that setting.
 - `InboxCleanupProcessor<TContext>` (`IHostedService`) — deletes processed rows older than `ArchiveAfter`.
 - `InboxEntry` — persistence record (see schema section).
 
@@ -104,24 +124,35 @@ Inbox primitives (under `Inbox/`):
 
 - `EntityFrameworkOutboxStore<TDbContext>` implements `IOutboxStore<TDbContext>` using `TDbContext`.
 - `OutboxSavingChangesInterceptor<TDbContext>` hooks `DbContextOptionsBuilder`. In `SavingChangesAsync`, drains `IOutboxBuffer<TDbContext>` into `TDbContext`'s change tracker as `OutboxEntry` rows. They commit in the same transaction as business entities; rollback drops them.
-- `EntityFrameworkInboxStore<TDbContext>` implements `IInboxStore<TDbContext>`. `TryRecordAsync` does a conditional insert (catches `DbUpdateException` on unique-key violation → returns false). See "Inbox `DbUpdateException` handling" below for the constraint rule.
+- `EntityFrameworkInboxStore<TDbContext>` implements both `IAtomicInboxStore<TDbContext>` and the legacy
+  `IInboxStore<TDbContext>`. The atomic path runs the Inbox claim, handler work, and `Processed` transition in
+  one execution-strategy-managed transaction. `TryRecordAsync` remains as a low-level conditional-insert primitive.
 - `ModelBuilder.ApplyOutboxEntryConfiguration` / `ApplyInboxEntryConfiguration` — entity + index mapping helpers consumed from the module's `OnModelCreating`.
-- `AddEntityFrameworkOutboxStore<TDbContext>(options)` / `AddEntityFrameworkInboxStore<TDbContext>(options)` — registration extensions.
+- `AddEntityFrameworkOutboxStore<TDbContext>()` / `AddEntityFrameworkInboxStore<TDbContext>()` — registration extensions.
 
 Consumers wanting Dapper, raw ADO, Azure Tables, or a different store implement `IOutboxStore<TContext>` / `IInboxStore<TContext>` directly — the pattern library doesn't care.
 
 #### Inbox `DbUpdateException` handling
 
-`EntityFrameworkInboxStore<TDbContext>.TryRecordAsync` performs an *insert-or-fail* against the composite primary key `(ConsumerName, MessageId)`. Atomicity depends on the database raising a unique-key violation when a duplicate is attempted, which EF Core surfaces as `DbUpdateException`.
+The canonical `ExecuteOnceAsync` path performs an *insert-or-fail* against the composite primary key
+`(ConsumerName, MessageId)`. After an insert race, it re-reads the persisted row and returns duplicate only when
+the status is `Processed`. A non-processed row is ambiguous and raises an error; an insert failure with no matching
+Inbox row is rethrown.
 
-The adapter catches `DbUpdateException` from this code path and translates it into a `false` return value (duplicate observed). This is correct **only as long as the Inbox table has no other constraints that could raise `DbUpdateException` during the insert**. If a deployment adds a `CHECK` constraint, additional unique index, or foreign key on the Inbox table, those violations would also be swallowed and reported as duplicates — masking real bugs.
+The backward-compatible `TryRecordAsync` primitive retains its original `bool` contract and translates a
+`DbUpdateException` from its insert path into `false`. This is correct **only as long as the Inbox table has no
+other constraints that could raise `DbUpdateException` during the insert**. If a deployment adds a `CHECK`
+constraint, additional unique index, or foreign key, that low-level path could still mask the error as a duplicate.
 
 **Decision rule for adopters:** keep the Inbox table to the schema documented below (composite PK + the listed columns and indexes). If a module needs additional Inbox constraints, replace the default store with a custom `IInboxStore<TDbContext>` implementation that inspects `DbUpdateException.InnerException` (e.g., SQL Server error number `2627` / `2601` for unique-key violations) and rethrows on any other error class.
 
 ### Component: `Ruya.Services.ReliableMessaging.MessageQueue`
 
-- `MessageQueueOutboundDispatcher` implements `IOutboundDispatcher`. Resolves `IMessageQueue` via `IMessageQueueFactory.CreateQueueAsync(envelope.DispatcherName ?? options.QueueName)` and calls `PublishAsync<TMessage>`. Uses cached reflection to invoke the generic method because the concrete payload type is only known from persisted metadata; the `MethodInfo` is cached per payload type.
-- `IMessageQueue.SubscribeWithInboxAsync<TMessage, TDbContext>(...)` extension — subscriber-scoped Inbox dedup. Resolves the consumer name via `IInboxConsumerNameProvider` (or an explicit string), creates a DI scope per message, calls `IInboxStore<TDbContext>.TryRecordAsync(consumerName, envelope.MessageId)`; if duplicate → returns `MessageResult.Success()` without invoking the handler.
+- `MessageQueueOutboundDispatcher` implements `IOutboundDispatcher`. Resolves the explicitly named `envelope.DispatcherName`, falling back to `options.QueueName` only when the name is null or whitespace, and calls `PublishAsync<TMessage>` with the persisted message ID and headers. Uses cached reflection to invoke the generic method because the concrete payload type is only known from persisted metadata; the `MethodInfo` is cached per payload type.
+- `IMessageQueue.SubscribeWithInboxAsync<TMessage, TDbContext>(...)` extension — subscriber-scoped atomic
+  processing. The canonical handler receives `(IServiceProvider, MessageContext<TMessage>)`, so it resolves
+  scoped business services from the transaction-owning scope. The handler-only overload remains for source
+  compatibility but cannot provide that guarantee and is not the recommended path.
 - `AddMessageQueueOutboundDispatcher()` — registration.
 
 The package does **not** install a pipeline-wide MessageQueue middleware for Inbox dedup. A pipeline-wide middleware cannot know the `(ConsumerName, TDbContext)` pair for a given message — both vary per subscription. Subscriber-scoped dedup via `SubscribeWithInboxAsync<TMessage, TDbContext>(...)` lets each subscription pick its own pair, which is what the modular-monolith / multi-`DbContext` shape requires. (See *Alternatives Considered → Pipeline-wide middleware for Inbox dedup*.)
@@ -131,14 +162,24 @@ The package does **not** install a pipeline-wide MessageQueue middleware for Inb
 ```csharp
 public sealed class RecipeService(
     RecipeDbContext db,
-    IOutboxPublisher<RecipeDbContext> outbox) : IRecipeService
+    IOutboxPublisher<RecipeDbContext> outbox,
+    IOptions<RecipeSettings> options) : IRecipeService
 {
     public async Task CreateAsync(RecipeCreateCommand cmd, CancellationToken ct)
     {
         var recipe = Recipe.CreateFrom(cmd);
         db.Recipes.Add(recipe);
 
-        await outbox.EnqueueAsync("recipes.created", new RecipeCreatedEvent(recipe.Id), ct: ct);
+        var message = new RecipeCreatedEvent(recipe.Id);
+        await outbox.EnqueueSourceGeneratedAsync(
+            options.Value.RecipeCreatedEventTopicName,
+            message,
+            RecipeContractsJsonSerializerContext.Default.RecipeCreatedEvent,
+            new OutboxPublishOverrides
+            {
+                DispatcherName = options.Value.MessageQueueProviderName,
+            },
+            cancellationToken: ct);
 
         await db.SaveChangesAsync(ct);   // atomic: business row + outbox row
     }
@@ -150,32 +191,37 @@ The intent is readable on the call site: enqueue, then commit. The `SaveChangesI
 ### Consumer surface — auto-derived name
 
 ```csharp
-public sealed class RecipeChangedHandler(StoreDbContext db) : IMessageHandler<RecipeChangedEvent>
-{
-    public async Task<MessageResult> HandleAsync(MessageContext<RecipeChangedEvent> context, CancellationToken ct)
+await using var subscription = await queue.SubscribeWithInboxAsync<RecipeChangedEvent, StoreDbContext, RecipeChangedHandler>(
+    topic: "recipes.changed",
+    scopeFactory: scopeFactory,
+    consumerNameProvider: consumerNameProvider,
+    handler: async (services, context) =>
     {
-        // SubscribeWithInboxAsync has already dedup'd on (consumerName, messageId).
-        // consumerName defaults to "Store.Modules.RecipeSnapshot.RecipeChangedHandler"
-        // (full type name) unless overridden via attribute or IInboxConsumerNameProvider.
+        // Resolve scoped dependencies from the provider supplied here. Business writes through
+        // this StoreDbContext enlist in the transaction owned by IAtomicInboxStore<StoreDbContext>.
+        var db = services.GetRequiredService<StoreDbContext>();
         db.RecipeSnapshots.Update(/* ... */);
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(context.CancellationToken);
         return MessageResult.Success();
-    }
-}
+    });
 
-// Override when needed:
+await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+
+// Consumer name defaults to the marker's full type name. Override when rename stability requires it:
 [InboxConsumerName("Store.RecipeSnapshotProjector")]
-public sealed class RecipeChangedHandler(...) : IMessageHandler<RecipeChangedEvent> { ... }
+public sealed class RecipeChangedHandler { }
 ```
 
 Convention covers the common case; attribute + custom provider cover rename-safety and special identities.
+The handler must not capture a separately scoped `DbContext`, because that would escape the transaction that
+makes the business mutation and Inbox completion atomic.
 
 ### Registration example (host composition root, modular monolith with multiple `DbContext`s)
 
 ```csharp
-services.AddMessageQueue(configuration)
-    .AddRabbitMQ(...)
-    .AddMsSql(...);
+services.AddMessageQueue()
+    .AddJsonSerializerContext(RecipeContractsJsonSerializerContext.Default)
+    .AddRabbitMQ();
 
 services
     .AddReliableMessaging(options =>
@@ -191,12 +237,12 @@ services
     .AddInboxContext<RecipeDbContext>()
     .AddInboxContext<StoreDbContext>()
     .AddInboxContext<FinanceDbContext>()
-    .AddEntityFrameworkOutboxStore<RecipeDbContext>(o => o.SchemaName = "Recipe")
-    .AddEntityFrameworkOutboxStore<StoreDbContext>(o  => o.SchemaName = "Store")
-    .AddEntityFrameworkOutboxStore<FinanceDbContext>(o => o.SchemaName = "Finance")
-    .AddEntityFrameworkInboxStore<RecipeDbContext>(o => o.SchemaName = "Recipe")
-    .AddEntityFrameworkInboxStore<StoreDbContext>(o  => o.SchemaName = "Store")
-    .AddEntityFrameworkInboxStore<FinanceDbContext>(o => o.SchemaName = "Finance")
+    .AddEntityFrameworkOutboxStore<RecipeDbContext>()
+    .AddEntityFrameworkOutboxStore<StoreDbContext>()
+    .AddEntityFrameworkOutboxStore<FinanceDbContext>()
+    .AddEntityFrameworkInboxStore<RecipeDbContext>()
+    .AddEntityFrameworkInboxStore<StoreDbContext>()
+    .AddEntityFrameworkInboxStore<FinanceDbContext>()
     .AddMessageQueueOutboundDispatcher();
 ```
 
@@ -215,7 +261,7 @@ EF migrations generate these inside each module's migrations csproj, in the modu
 | DispatcherName | `NVARCHAR(64) NULL` | null → default dispatcher |
 | PayloadJson | `NVARCHAR(MAX)` | serialized payload |
 | PayloadType | `NVARCHAR(512)` | assembly-qualified type name |
-| Headers | `NVARCHAR(MAX) NULL` | JSON |
+| HeadersJson | `NVARCHAR(MAX) NULL` | serialized headers dictionary; reconstructed before dispatch |
 | EnqueuedAt | `DATETIME2` | |
 | DispatchedAt | `DATETIME2 NULL` | |
 | NextAttemptAt | `DATETIME2` | scheduled retry time |
@@ -238,13 +284,30 @@ Indices: `IX_Outbox_Dispatch (Status, NextAttemptAt)`, `IX_Outbox_EnqueuedAt`.
 
 PK = `(ConsumerName, MessageId)` — composite uniqueness gives atomic dedup via insert-or-fail. Index `IX_Inbox_ReceivedAt` supports TTL cleanup.
 
+#### Migration and reconciliation of legacy Inbox rows
+
+The former two-step flow persisted `Received`, ran the handler, and then separately wrote `Processed`. A legacy
+`Received` row therefore cannot answer whether the handler never ran, failed, or committed its business mutation
+before the final marker write failed. It is not a safe duplicate and it is not automatically safe to replay.
+
+Before enabling the atomic path, reconcile each persisted `Received` or `Failed` row with the consumer's business
+state. Mark it `Processed` only after confirming the effect committed; remove it for replay only after confirming
+the effect did not commit. Do not bulk replay, delete, or promote ambiguous rows without that evidence. Preserve
+an audit trail appropriate to the affected data. The atomic EF implementation deliberately throws on a persisted
+non-processed row until an operator completes this reconciliation.
+
 ### Consistency model
 
 - **Producer → broker:** at-least-once. Outbox survives crashes; processor retries until broker confirms.
 - **Broker → consumer:** at-least-once (broker-dependent; existing `Ruya.Services.MessageQueue` behaviour).
-- **Consumer effective semantics:** exactly-once per `(ConsumerName, MessageId)`, enforced by Inbox.
+- **Consumer database semantics:** once-effective per `(ConsumerName, MessageId)` when business changes use the
+  `TDbContext` supplied by the atomic Inbox scope.
 - **Atomicity of business + outbox write:** guaranteed by EF `SaveChangesAsync` (both rows in one transaction).
-- **Atomicity of receive + inbox write:** the consumer subscription wraps the handler so that `TryRecord` and the business write land in the same transaction; if the handler rolls back, the inbox row rolls back, and redelivery will re-dedup correctly.
+- **Atomicity of consumer business + Inbox write:** `Success` commits both; `Retry`, `Reject`, and exceptions roll
+  both back. A committed `Processed` row is the only state automatically treated as a duplicate.
+- **External side effects:** not covered by the database transaction and may execute more than once after broker
+  redelivery or execution-strategy retries. Give them independent idempotency keys or defer them through an Outbox
+  written in the shared transaction.
 - **No ordering guarantees across topics.** Within a topic, FIFO is best-effort.
 
 ### Relationship to Other Systems
@@ -264,7 +327,7 @@ PK = `(ConsumerName, MessageId)` — composite uniqueness gives atomic dedup via
 
 ### Privacy
 
-- Payloads are user-defined types serialized to JSON. The library does not redact or classify fields; adopters that store PII in events should apply tokenization or field-level encryption *before* `EnqueueAsync` and reverse it in handlers.
+- Payloads are user-defined types serialized to JSON. The library does not redact or classify fields; adopters that store PII in events should apply tokenization or field-level encryption *before* `EnqueueSourceGeneratedAsync` and reverse it in handlers.
 - Inbox rows store `ConsumerName` and `MessageId` only — no payload content. They retain for `ArchiveAfter` (default 7 days) before `InboxCleanupProcessor` deletes them.
 
 ### Scalability
@@ -298,7 +361,7 @@ Pollutes the messaging layer with persistence concerns and forces an EF Core dep
 
 ### Alternative 4: Transparent publish as the primary API (middleware diverts `PublishAsync` to the buffer)
 
-Same call site behaves differently depending on whether an `IOutboxBuffer` is resolvable; surprising and bug-prone, and obscures the durability boundary at the call site. `IOutboxPublisher.EnqueueAsync(topic, payload)` is the explicit primary API instead.
+Same call site behaves differently depending on whether an `IOutboxBuffer` is resolvable; surprising and bug-prone, and obscures the durability boundary at the call site. `IOutboxPublisher.EnqueueSourceGeneratedAsync(...)` is the explicit primary application API instead.
 
 ### Alternative 5: `ConsumerName` as a required explicit registration parameter
 
@@ -359,3 +422,5 @@ A pipeline-wide middleware does not know the `(ConsumerName, TDbContext)` pair f
 | 1.0 | 2026-04-21 | Draft | Initial design (originally drafted as ADR-001). | Cengiz Ilerler |
 | 1.1 | 2026-04-27 | Implemented | Restructured to the design-doc template; status flipped to Implemented to reflect that all three packages, the runbook, and the SOP are in the repo. Folded prior ADR addenda and considered options into the design body. | Cengiz Ilerler |
 | 1.2 | 2026-04-27 | Implemented | Moved from repo-root `docs/design/` into `src/Ruya.Services.ReliableMessaging/docs/design/` so per-project documentation lives with the project; relative links updated. | Cengiz Ilerler |
+| 1.3 | 2026-08-10 | Implemented | Made the scope-aware atomic Inbox overload canonical; documented result-to-transaction semantics, externally idempotent side effects, low-level compatibility APIs, and legacy Inbox reconciliation. | Cengiz Ilerler |
+| 1.4 | 2026-08-10 | Implemented | Preserved the persisted Outbox message ID, provider selection, and headers through processor reconstruction and MessageQueue dispatch. | Cengiz Ilerler |

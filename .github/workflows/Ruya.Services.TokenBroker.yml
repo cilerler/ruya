@@ -15,7 +15,12 @@ on:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.Services.TokenBroker.yml'
+      - '.github/workflows/dotnet-library-build.yml'
+      - 'src/Ruya.Services.TokenBroker.Abstractions/**'
+      - 'src/Ruya.Services.TokenBroker.Client/**'
+      - 'src/Ruya.Services.TokenBroker.Validation/**'
       - 'src/Ruya.Services.TokenBroker/**'
+      - 'tests/Ruya.Services.TokenBroker.Unit.Tests/**'
 
 jobs:
   build:
@@ -24,6 +29,7 @@ jobs:
       project-name: 'Ruya.Services.TokenBroker'
       project-path: './src/Ruya.Services.TokenBroker/Ruya.Services.TokenBroker.csproj'
       test-project-paths: './tests/Ruya.Services.TokenBroker.Unit.Tests/Ruya.Services.TokenBroker.Unit.Tests.csproj'
+      use-local-tokenbroker-project-references: true
       dispatch-event-type: 'Ruya.Services.TokenBroker'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

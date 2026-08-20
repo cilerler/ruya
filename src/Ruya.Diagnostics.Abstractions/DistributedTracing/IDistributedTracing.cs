@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 
 // ReSharper disable once CheckNamespace
 namespace Ruya.Diagnostics.DistributedTracing;
@@ -30,6 +32,22 @@ public interface IDistributedTracing
         IEnumerable<KeyValuePair<string, object?>>? tags = null);
 
     /// <summary>
+    /// Asynchronously starts a new root activity and stores its trace context when a cache key is supplied.
+    /// Implementations should use non-blocking distributed-cache operations.
+    /// </summary>
+    ValueTask<ActivityScope> StartActivityAsync(
+        string activityName,
+        ActivityKind activityKind = ActivityKind.Internal,
+        string? parentId = null,
+        string? cacheKey = null,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(StartActivity(activityName, activityKind, parentId, cacheKey, tags));
+    }
+
+    /// <summary>
     /// Continues an existing trace by looking up parent context from distributed cache.
     /// NEVER stores to cache - this prevents race conditions in multi-instance deployments.
     /// Use this when you are a FOLLOWER in a distributed operation.
@@ -46,6 +64,21 @@ public interface IDistributedTracing
         ActivityKind activityKind = ActivityKind.Internal,
         string? fallbackParentId = null,
         IEnumerable<KeyValuePair<string, object?>>? tags = null);
+
+    /// <summary>
+    /// Asynchronously continues an existing trace using a non-blocking distributed-cache lookup.
+    /// </summary>
+    ValueTask<ActivityScope> ContinueActivityAsync(
+        string activityName,
+        string cacheKey,
+        ActivityKind activityKind = ActivityKind.Internal,
+        string? fallbackParentId = null,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(ContinueActivity(activityName, cacheKey, activityKind, fallbackParentId, tags));
+    }
 
     /// <summary>
     /// Creates a linked activity that references another trace without being a child.

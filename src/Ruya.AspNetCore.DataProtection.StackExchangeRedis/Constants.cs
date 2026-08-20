@@ -11,7 +11,6 @@ internal static class Constants
     public const string UnprotectFailures = "dataprotection.unprotect.failures";
     public const string OperationDuration = "dataprotection.operation.duration";
 
-    public const string HttpClientName = "DataProtectionClient";
 }
 
 /// <summary>

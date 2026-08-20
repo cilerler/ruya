@@ -136,6 +136,61 @@ public class RedisLockProviderTests
     }
 
     [TestMethod]
+    public async Task AcquireLockAsync_WhenCancelledDuringRedisCall_ReleasesAcquiredLockBeforeThrowing()
+    {
+        const string lockKey = "cancel-during-acquire";
+        const string lockValue = "owner";
+        var expiry = TimeSpan.FromMinutes(1);
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabase
+            .Setup(db => db.LockTakeAsync(lockKey, It.IsAny<RedisValue>(), expiry, CommandFlags.None))
+            .Returns(completion.Task);
+        _mockDatabase
+            .Setup(db => db.LockReleaseAsync(lockKey, It.IsAny<RedisValue>(), CommandFlags.None))
+            .ReturnsAsync(true);
+
+        Task<bool> acquire = _provider.AcquireLockAsync(lockKey, lockValue, expiry, cancellation.Token);
+        await cancellation.CancelAsync();
+        completion.SetResult(true);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => acquire);
+        _mockDatabase.Verify(
+            db => db.LockReleaseAsync(lockKey, It.IsAny<RedisValue>(), CommandFlags.None),
+            Times.Once);
+    }
+
+    [TestMethod]
+    public async Task AcquireLockAsync_WhenCancellationCleanupFails_PreservesCallerCancellationAndLogsStableEventId()
+    {
+        const string lockKey = "cancel-cleanup-failure";
+        const string lockValue = "owner";
+        var expiry = TimeSpan.FromMinutes(1);
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabase
+            .Setup(db => db.LockTakeAsync(lockKey, It.IsAny<RedisValue>(), expiry, CommandFlags.None))
+            .Returns(completion.Task);
+        _mockDatabase
+            .Setup(db => db.LockReleaseAsync(lockKey, It.IsAny<RedisValue>(), CommandFlags.None))
+            .ThrowsAsync(new InvalidOperationException("cleanup failed"));
+
+        Task<bool> acquire = _provider.AcquireLockAsync(lockKey, lockValue, expiry, cancellation.Token);
+        await cancellation.CancelAsync();
+        completion.SetResult(true);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => acquire);
+        _mockLogger.Verify(
+            logger => logger.Log(
+                LogLevel.Warning,
+                It.Is<EventId>(eventId => eventId.Id == 8500 && eventId.Name == "RedisCancellationCleanupFailed"),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<InvalidOperationException>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [TestMethod]
     public async Task AcquireLockAsync_ShouldThrowAndLog_WhenRedisExceptionOccurs()
     {
         // Arrange
@@ -157,7 +212,7 @@ public class RedisLockProviderTests
         _mockLogger.Verify(
             logger => logger.Log(
                 LogLevel.Error,
-                It.IsAny<EventId>(),
+                It.Is<EventId>(eventId => eventId.Id == 8501 && eventId.Name == "RedisAcquireFailed"),
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains(lockKey)),
                 It.IsAny<RedisException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
@@ -205,6 +260,36 @@ public class RedisLockProviderTests
 
         // Assert
         Assert.IsFalse(result, "Lock extension should fail with wrong value");
+    }
+
+    [TestMethod]
+    public async Task ExtendLockAsync_WhenCancellationArrivesWithFailedExtension_ReturnsOwnershipFailure()
+    {
+        var extensionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var extensionCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabase
+            .Setup(db => db.LockExtendAsync(
+                "test-lock",
+                It.IsAny<RedisValue>(),
+                TimeSpan.FromMinutes(1),
+                CommandFlags.None))
+            .Returns(() =>
+            {
+                extensionStarted.TrySetResult();
+                return extensionCompleted.Task;
+            });
+
+        Task<bool> operation = _provider.ExtendLockAsync(
+            "test-lock",
+            "test-value",
+            TimeSpan.FromMinutes(1),
+            cancellation.Token);
+        await extensionStarted.Task;
+        await cancellation.CancelAsync();
+        extensionCompleted.TrySetResult(false);
+
+        Assert.IsFalse(await operation);
     }
 
     [TestMethod]
@@ -263,7 +348,7 @@ public class RedisLockProviderTests
         _mockLogger.Verify(
             logger => logger.Log(
                 LogLevel.Error,
-                It.IsAny<EventId>(),
+                It.Is<EventId>(eventId => eventId.Id == 8502 && eventId.Name == "RedisExtendFailed"),
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains(lockKey)),
                 It.IsAny<RedisException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
@@ -366,7 +451,7 @@ public class RedisLockProviderTests
         _mockLogger.Verify(
             logger => logger.Log(
                 LogLevel.Error,
-                It.IsAny<EventId>(),
+                It.Is<EventId>(eventId => eventId.Id == 8503 && eventId.Name == "RedisReleaseFailed"),
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains(lockKey)),
                 It.IsAny<RedisException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
@@ -456,7 +541,7 @@ public class RedisLockProviderTests
         _mockLogger.Verify(
             logger => logger.Log(
                 LogLevel.Error,
-                It.IsAny<EventId>(),
+                It.Is<EventId>(eventId => eventId.Id == 8504 && eventId.Name == "RedisExistsFailed"),
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains(lockKey)),
                 It.IsAny<RedisException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),

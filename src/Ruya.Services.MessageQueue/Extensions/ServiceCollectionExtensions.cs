@@ -1,12 +1,18 @@
 using System;
+using System.Linq;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using Ruya.Services.MessageQueue.Abstractions;
 using Ruya.Services.MessageQueue.Configuration;
 using Ruya.Services.MessageQueue.Factory;
+using Ruya.Services.MessageQueue.Middleware;
 using Ruya.Services.MessageQueue.Serialization;
+using Ruya.Services.MessageQueue.Telemetry;
 
 namespace Ruya.Services.MessageQueue.Extensions;
 
@@ -16,19 +22,34 @@ namespace Ruya.Services.MessageQueue.Extensions;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds Ruya.Services.MessageQueue services to the service collection
+    /// Adds Ruya.Services.MessageQueue services using an explicitly supplied configuration root.
     /// </summary>
+    [Obsolete("Use AddMessageQueue() and configure the 'MessageQueue' section. The IConfiguration overload will be removed in version 9.0.")]
     public static IMessageQueueBuilder AddMessageQueue(
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        if (services == null) throw new ArgumentNullException(nameof(services));
-        if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         return services.AddMessageQueue(options =>
-        {
-            configuration.GetSection("MessageQueue").Bind(options);
-        });
+            configuration.GetSection(MessageQueueOptions.ConfigurationSectionName).Bind(options));
+    }
+
+    /// <summary>
+    /// Adds Ruya.Services.MessageQueue services, binds <see cref="MessageQueueOptions"/>
+    /// from <see cref="MessageQueueOptions.ConfigurationSectionName"/>, and validates the
+    /// resulting options when the host starts.
+    /// </summary>
+    public static IMessageQueueBuilder AddMessageQueue(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddOptions<MessageQueueOptions>()
+            .BindConfiguration(MessageQueueOptions.ConfigurationSectionName)
+            .ValidateOnStart();
+
+        return AddMessageQueueCore(services);
     }
 
     /// <summary>
@@ -38,43 +59,92 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<MessageQueueOptions> configureOptions)
     {
-        if (services == null) throw new ArgumentNullException(nameof(services));
-        if (configureOptions == null) throw new ArgumentNullException(nameof(configureOptions));
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configureOptions);
 
-        // Configure options
-        services.Configure(configureOptions);
-        services.AddSingleton<IValidateOptions<MessageQueueOptions>, MessageQueueOptionsValidator>();
+        services.AddOptions<MessageQueueOptions>()
+            .Configure(configureOptions)
+            .ValidateOnStart();
+
+        return AddMessageQueueCore(services);
+    }
+
+    /// <summary>
+    /// Registers a compatibility singleton proxy for a named queue without blocking DI resolution.
+    /// </summary>
+    [Obsolete("Inject IMessageQueueFactory and await CreateQueueAsync(name). This compatibility proxy will be removed in version 9.0.")]
+    public static IServiceCollection AddSingletonMessageQueue(
+        this IServiceCollection services,
+        string name)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        services.AddSingleton<IMessageQueue>(serviceProvider =>
+        {
+            var options = serviceProvider.GetService<IOptions<MessageQueueOptions>>()?.Value;
+            var configuredProvider = options?.Providers.TryGetValue(name, out var provider) == true
+                ? provider.Type
+                : null;
+
+            return new AsyncLazyMessageQueue(
+                name,
+                configuredProvider,
+                serviceProvider.GetRequiredService<IMessageQueueFactory>());
+        });
+
+        return services;
+    }
+
+    private static IMessageQueueBuilder AddMessageQueueCore(IServiceCollection services)
+    {
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<MessageQueueOptions>, MessageQueueOptionsValidator>());
 
         // Register core services
-        services.TryAddSingleton<IMessageSerializer, JsonMessageSerializer>();
+        services.TryAddSingleton<IMessageJsonTypeInfoResolver>(serviceProvider =>
+            new MessageJsonTypeInfoResolver(
+                serviceProvider.GetServices<JsonSerializerContext>()));
+        services.TryAddSingleton<IMessageSerializer>(serviceProvider =>
+            new JsonMessageSerializer(
+                serviceProvider.GetServices<JsonSerializerContext>(),
+                serviceProvider.GetRequiredService<IMessageJsonTypeInfoResolver>()));
         services.TryAddSingleton<IMessageQueueFactory, MessageQueueFactory>();
+        services.TryAddSingleton<MessageQueueTelemetry>();
+
+        if (!services.Any(static descriptor => descriptor.ServiceType == typeof(MessageQueueTelemetryRegistration)))
+        {
+            services.AddSingleton<MessageQueueTelemetryRegistration>();
+            services.AddOpenTelemetry()
+                .WithTracing(builder => builder.AddSource(MessageQueueTelemetry.InstrumentationName))
+                .WithMetrics(builder => builder.AddMeter(MessageQueueTelemetry.InstrumentationName));
+        }
 
         return new MessageQueueBuilder(services);
     }
 
     /// <summary>
-    /// Adds a singleton message queue instance.
-    /// Note: This uses blocking initialization due to DI container constraints.
-    /// For async initialization, use IMessageQueueFactory.CreateQueueAsync() directly.
+    /// Registers producer-owned source-generated JSON metadata for message payload contracts.
     /// </summary>
-    public static IServiceCollection AddSingletonMessageQueue(
-        this IServiceCollection services,
-        string name)
+    /// <remarks>
+    /// Register the producer-owned context instance (for example,
+    /// <c>OrderContractsJsonSerializerContext.Default</c>). The default
+    /// <see cref="JsonMessageSerializer"/> uses registered contexts before its
+    /// infrastructure-only reflection fallback. Once at least one context is registered, every
+    /// application payload serialized inside a <see cref="MessageEnvelope{TMessage}"/> must be
+    /// covered by one of the registered contexts; missing metadata fails explicitly.
+    /// Contexts are queried in registration order, so register overlapping contract metadata once.
+    /// Custom <see cref="IMessageSerializer"/> implementations own their own metadata contract.
+    /// </remarks>
+    public static IMessageQueueBuilder AddJsonSerializerContext(
+        this IMessageQueueBuilder builder,
+        JsonSerializerContext context)
     {
-        if (services == null) throw new ArgumentNullException(nameof(services));
-        if (string.IsNullOrWhiteSpace(name))
-            throw new ArgumentException("Name cannot be null or whitespace", nameof(name));
+        if (builder == null) throw new ArgumentNullException(nameof(builder));
+        if (context == null) throw new ArgumentNullException(nameof(context));
 
-        services.AddSingleton<IMessageQueue>(sp =>
-        {
-            var factory = sp.GetRequiredService<IMessageQueueFactory>();
-            // Note: This blocks on async initialization due to DI container constraints.
-            // This is acceptable for application startup but not for request-time usage.
-            // For async initialization, inject IMessageQueueFactory and call CreateQueueAsync().
-            return factory.CreateQueueAsync(name).GetAwaiter().GetResult();
-        });
-
-        return services;
+        builder.Services.AddSingleton(context);
+        return builder;
     }
 }
 
@@ -124,7 +194,13 @@ internal sealed class MessageQueueBuilder : IMessageQueueBuilder
 
     public IMessageQueueBuilder AddMiddleware<TMiddleware>() where TMiddleware : class, IMessageMiddleware
     {
-        Services.AddSingleton<IMessageMiddleware, TMiddleware>();
+        // Telemetry is automatic at the provider boundary. Retain this source-compatible call as a
+        // no-op so older applications do not create a second producer/consumer instrumentation layer.
+        if (typeof(TMiddleware) != typeof(TelemetryMiddleware))
+        {
+            Services.TryAddEnumerable(ServiceDescriptor.Singleton<IMessageMiddleware, TMiddleware>());
+        }
+
         return this;
     }
 
@@ -134,3 +210,5 @@ internal sealed class MessageQueueBuilder : IMessageQueueBuilder
         return this;
     }
 }
+
+internal sealed class MessageQueueTelemetryRegistration;

@@ -14,15 +14,16 @@
 		<PackageReference Include="Microsoft.Extensions.Caching.Memory" />
 		<PackageReference Include="Microsoft.Extensions.Http" />
 		<PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
 		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
 		<PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Release'">
+	<ItemGroup Condition="'$(Configuration)' == 'Release' And '$(UseLocalTokenBrokerProjectReferences)' != 'true'">
 		<PackageReference Include="Ruya.Services.TokenBroker.Abstractions" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+	<ItemGroup Condition="'$(Configuration)' == 'Debug' Or '$(UseLocalTokenBrokerProjectReferences)' == 'true'">
 		<ProjectReference Include="..\Ruya.Services.TokenBroker.Abstractions\Ruya.Services.TokenBroker.Abstractions.csproj" />
 	</ItemGroup>
 

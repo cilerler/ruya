@@ -27,12 +27,15 @@
 		<PackageReference Include="System.IdentityModel.Tokens.Jwt" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Release'">
+	<ItemGroup Condition="'$(Configuration)' == 'Release' And '$(UseLocalTokenBrokerProjectReferences)' != 'true'">
+		<PackageReference Include="Ruya.Services.DistributedLock.Abstractions" />
 		<PackageReference Include="Ruya.Services.TokenBroker.Validation" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
-		<ProjectReference Include="..\Ruya.Services.TokenBroker.Validation\Ruya.Services.TokenBroker.Validation.csproj" />
+	<ItemGroup Condition="'$(Configuration)' == 'Debug' Or '$(UseLocalTokenBrokerProjectReferences)' == 'true'">
+		<ProjectReference Include="..\Ruya.Services.DistributedLock.Abstractions\Ruya.Services.DistributedLock.Abstractions.csproj" />
+		<ProjectReference Include="..\Ruya.Services.TokenBroker.Validation\Ruya.Services.TokenBroker.Validation.csproj"
+			AdditionalProperties="UseLocalTokenBrokerProjectReferences=true" />
 	</ItemGroup>
 
 </Project>

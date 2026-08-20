@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace Ruya.Services.ReliableMessaging.Outbox;
 
-/// <summary>Optional per-call overrides passed to <see cref="IOutboxPublisher{TContext}.EnqueueAsync{TPayload}"/>.</summary>
+/// <summary>Optional per-call overrides passed to <see cref="IOutboxPublisher{TContext}"/> enqueue operations.</summary>
 public sealed class OutboxPublishOverrides
 {
 	/// <summary>

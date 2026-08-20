@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
@@ -39,12 +40,49 @@ public sealed class OutboxPublisher<TContext> : IOutboxPublisher<TContext>
 
 		cancellationToken.ThrowIfCancellationRequested();
 
+		return AddEnvelope<TPayload>(
+			topic,
+			JsonSerializer.Serialize(payload, _serializerOptions),
+			options,
+			cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public Task<ReliableMessageEnvelope> EnqueueSourceGeneratedAsync<TPayload>(
+		string topic,
+		TPayload payload,
+		JsonTypeInfo<TPayload> payloadTypeInfo,
+		OutboxPublishOverrides? options = null,
+		CancellationToken cancellationToken = default)
+		where TPayload : notnull
+	{
+		ArgumentException.ThrowIfNullOrEmpty(topic);
+		ArgumentNullException.ThrowIfNull(payload);
+		ArgumentNullException.ThrowIfNull(payloadTypeInfo);
+		cancellationToken.ThrowIfCancellationRequested();
+
+		return AddEnvelope<TPayload>(
+			topic,
+			JsonSerializer.Serialize(payload, payloadTypeInfo),
+			options,
+			cancellationToken);
+	}
+
+	private Task<ReliableMessageEnvelope> AddEnvelope<TPayload>(
+		string topic,
+		string payloadJson,
+		OutboxPublishOverrides? options,
+		CancellationToken cancellationToken)
+		where TPayload : notnull
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+
 		var payloadType = typeof(TPayload);
 		var envelope = new ReliableMessageEnvelope
 		{
 			Topic = topic,
 			DispatcherName = options?.DispatcherName ?? _options.DefaultDispatcherName,
-			PayloadJson = JsonSerializer.Serialize(payload, payloadType, _serializerOptions),
+			PayloadJson = payloadJson,
 			PayloadType = payloadType.AssemblyQualifiedName ?? payloadType.FullName ?? payloadType.Name,
 			Headers = options?.Headers,
 		};

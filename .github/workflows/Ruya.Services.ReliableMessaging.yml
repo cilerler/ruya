@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Services.ReliableMessaging.yml'
       - 'src/Ruya.Services.ReliableMessaging/**'
+      - 'tests/Ruya.Services.ReliableMessaging.Unit.Tests/**'
 
 jobs:
   build:

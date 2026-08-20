@@ -1,12 +1,11 @@
 # Ruya.Services.DistributedLock.InMemory
 
-In-Memory provider for `Ruya.Services.DistributedLock`. Uses `SemaphoreSlim` for local process locking. Ideal for testing or single-instance applications.
+In-Memory provider for `Ruya.Services.DistributedLock`. Uses atomic operations over a process-local lock table. Ideal for testing or single-instance applications; it does not coordinate separate processes or replicas.
 
 ## Configuration
 
 ```csharp
-services.AddDistributedLock()
-    .AddInMemoryDistributedLock();
+builder.Services.AddInMemoryDistributedLock();
 ```
 
 ## Usage

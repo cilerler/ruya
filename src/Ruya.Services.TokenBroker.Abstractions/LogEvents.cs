@@ -57,6 +57,9 @@ public static class LogEvents
     /// <summary>Service removed successfully.</summary>
     public const int ServiceRemoved = 4004;
 
+    /// <summary>Stale API-key payload cleanup failed after a successful logical rotation.</summary>
+    public const int PreviousApiKeyCleanupFailed = 4005;
+
     // Health check (5xxx)
     /// <summary>Health check cache mismatch.</summary>
     public const int HealthCheckCacheMismatch = 5001;

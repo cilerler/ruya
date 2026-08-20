@@ -9,7 +9,7 @@ namespace Ruya.Services.ReliableMessaging;
 /// </summary>
 public sealed class ReliableMessagingOptions
 {
-	public const string ConfigurationSectionName = "ReliableMessaging";
+	public const string ConfigurationSectionName = nameof(Ruya.Services.ReliableMessaging);
 
 	/// <summary>Producer-side options.</summary>
 	public OutboxOptions Outbox { get; set; } = new();

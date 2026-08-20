@@ -13,8 +13,10 @@ public sealed class InboxOptions
 	public TimeSpan ArchiveAfter { get; set; } = TimeSpan.FromDays(7);
 
 	/// <summary>
-	/// When <see langword="true"/>, handlers must explicitly call <c>IInboxStore.MarkProcessedAsync</c>.
-	/// When <see langword="false"/> (default), a successful handler return is treated as implicit success.
+	/// Retained for configuration compatibility with manually orchestrated <c>IInboxStore</c> flows.
+	/// The canonical atomic Inbox path does not consult this value: it commits <c>Processed</c> on success
+	/// and rolls back abandoned work or exceptions. The MessageQueue adapter maps retry and rejection to
+	/// abandoned work. Manual callers own any explicit completion policy.
 	/// </summary>
 	public bool RequireExplicitProcessed { get; set; }
 

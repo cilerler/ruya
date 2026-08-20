@@ -41,7 +41,7 @@ public static class AssemblySetup
 	[AssemblyCleanup]
 	public static async Task AssemblyCleanupAsync(TestContext testContext)
 	{
-		TestHost.Cleanup();
+		await TestHost.CleanupAsync();
 
 		Environment.SetEnvironmentVariable(_storageEmulatorHostEnvVar, null);
 		if (_container != null)
@@ -68,6 +68,13 @@ public static class AssemblySetup
 			.WithImage("fsouza/fake-gcs-server")
 			.WithPortBinding(hostPort, 4443)
 			.WithCommand("-scheme", "http", "-external-url", $"http://{hostAddress}:{hostPort}", "-backend", "memory")
+			.WithWaitStrategy(
+				Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(
+					request => request
+						.ForPort(4443)
+						.ForPath("/storage/v1/b")
+						.ForStatusCode(System.Net.HttpStatusCode.OK),
+					waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromSeconds(30))))
 			.Build();
 		await _container.StartAsync(testContext.CancellationToken);
 

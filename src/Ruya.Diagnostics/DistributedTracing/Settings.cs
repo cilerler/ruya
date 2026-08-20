@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Ruya.Diagnostics.DistributedTracing;
 
@@ -9,7 +10,7 @@ namespace Ruya.Diagnostics.DistributedTracing;
 /// </summary>
 public sealed class DistributedTracingSettings
 {
-    public const string ConfigurationSectionName = "DistributedTracing";
+    public const string ConfigurationSectionName = nameof(Ruya.Diagnostics.DistributedTracing);
 
     /// <summary>
     /// Sliding expiration for cached trace context.
@@ -33,5 +34,7 @@ public sealed class DistributedTracingSettings
     /// <summary>
     /// Custom tags to add to all activities created by this service.
     /// </summary>
+    [Required]
+    [SuppressMessage("Usage", "CA2227", Justification = "The public setter is retained for 8.x binary compatibility and configuration binding.")]
     public Dictionary<string, string> DefaultTags { get; set; } = new();
 }

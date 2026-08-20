@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,17 +24,12 @@ public static class StartupExtensions
         serviceCollection.EnsureServicesRegistered(typeof(IDistributedTracing));
 
 		serviceCollection.AddOptions<BulkInsertOperationsSettings>()
+		.BindConfiguration(BulkInsertOperationsSettings.ConfigurationSectionName)
 		.ValidateDataAnnotations()
-		.ValidateOnStart()
-		.Configure<IConfiguration>((settings, configuration) =>
-		{
-			ArgumentNullException.ThrowIfNull(configuration);
-			var section = configuration.GetSection(BulkInsertOperationsSettings.ConfigurationSectionName);
-#pragma warning disable S3236 // Caller information arguments should not be provided explicitly
-			ArgumentNullException.ThrowIfNull(section.Exists() ? string.Empty : null, BulkInsertOperationsSettings.ConfigurationSectionName);
-#pragma warning restore S3236 // Caller information arguments should not be provided explicitly
-			section.Bind(settings);
-		});
+		.Validate<IConfiguration>(
+			static (_, configuration) => configuration.GetSection(BulkInsertOperationsSettings.ConfigurationSectionName).Exists(),
+			$"Configuration section '{BulkInsertOperationsSettings.ConfigurationSectionName}' is required.")
+		.ValidateOnStart();
 
         serviceCollection.TryAddSingleton<IModelMetadata, ModelMetadataService<TContext>>();
         serviceCollection.TryAddSingleton<IBulkInsertOperations, BulkInsertOperations>();

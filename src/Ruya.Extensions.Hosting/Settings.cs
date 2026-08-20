@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using System.Threading;
 using Cronos;
@@ -11,7 +12,7 @@ public class WorkerBackgroundServiceSettings
     public const string ConfigurationSectionName = nameof(WorkerBackgroundService<WorkerBackgroundServiceSettings>);
     public static readonly string FeatureFlag = ConfigurationSectionName;
 
-	[JsonIgnore]
+    [JsonIgnore]
     public bool Enabled { get; set; }
     public bool RunOnce { get; set; }
     public bool RunImmediately { get; set; }
@@ -21,11 +22,21 @@ public class WorkerBackgroundServiceSettings
 
     // Retry settings
     public bool RetryEnabled { get; set; } = false;
+
+    [Range(0, 100)]
     public int RetryCount { get; set; } = 3;
+
+    [Range(1, 3600)]
     public int RetryBaseDelaySeconds { get; set; } = 1;
 
+    [Range(1, 3600)]
+    public int RetryMaxDelaySeconds { get; set; } = 30;
+
     // Health settings
+    [Range(1, 1000)]
     public int HealthSampleSize { get; set; } = 5;
+
+    [Range(1.0, 100.0)]
     public double HealthDegradedThresholdMultiplier { get; set; } = 2.0;
     public TimeSpan? HealthHardTimeout { get; set; }
 
@@ -49,7 +60,7 @@ public class WorkerBackgroundServiceSettings
 
             var expression = CronExpression.Parse(ScheduleCronExpression!, CronFormat.IncludeSeconds);
             var next = expression.GetNextOccurrence(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
-			if (next == null) throw new InvalidOperationException("Failed to calculate the next occurrence from the cron expression.");
+            if (next == null) throw new InvalidOperationException("Failed to calculate the next occurrence from the cron expression.");
             return next == DateTimeOffset.MinValue ? Timeout.InfiniteTimeSpan : (DateTimeOffset)next - DateTimeOffset.UtcNow;
         }
     }

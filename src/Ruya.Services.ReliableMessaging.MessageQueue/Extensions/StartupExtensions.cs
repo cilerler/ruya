@@ -1,7 +1,7 @@
 using System;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Ruya.Services.ReliableMessaging.Extensions;
 
 namespace Ruya.Services.ReliableMessaging.MessageQueue.Extensions;
@@ -21,7 +21,11 @@ public static class StartupExtensions
 		ArgumentNullException.ThrowIfNull(builder);
 
 		var optionsBuilder = builder.Services.AddOptions<MessageQueueDispatcherOptions>()
-			.BindConfiguration(MessageQueueDispatcherOptions.ConfigurationSectionName);
+			.BindConfiguration(MessageQueueDispatcherOptions.ConfigurationSectionName)
+			.ValidateOnStart();
+
+		builder.Services.TryAddEnumerable(
+			ServiceDescriptor.Singleton<IValidateOptions<MessageQueueDispatcherOptions>, MessageQueueDispatcherOptionsValidator>());
 
 		if (configure is not null)
 		{

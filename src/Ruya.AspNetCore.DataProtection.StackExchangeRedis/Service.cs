@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Linq;
+using System.Text;
 
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging;
@@ -118,7 +119,7 @@ public sealed class DataProtectionService : IDataProtection
         {
             _protectFailures.Add(1);
             _logger.ProtectionFailed(ex);
-            activityScope.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activityScope.SetStatus(ActivityStatusCode.Error);
             throw;
         }
         finally
@@ -159,7 +160,7 @@ public sealed class DataProtectionService : IDataProtection
         {
             _unprotectFailures.Add(1);
             _logger.UnprotectionFailed(ex);
-            activityScope.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activityScope.SetStatus(ActivityStatusCode.Error);
             throw;
         }
         finally
@@ -182,12 +183,23 @@ public sealed class DataProtectionService : IDataProtection
             return [DefaultPurpose];
         }
 
+		if (purposeArray.Any(string.IsNullOrWhiteSpace))
+		{
+			throw new ArgumentException("Purpose values cannot be null, empty, or whitespace.", nameof(purposes));
+		}
+
         return purposeArray;
     }
 
     private IDataProtector GetDataProtector(string[] purposes)
     {
-        var key = string.Join(";", purposes);
+		var keyBuilder = new StringBuilder();
+		foreach (var purpose in purposes)
+		{
+			keyBuilder.Append(purpose.Length).Append(':').Append(purpose);
+		}
+
+		var key = keyBuilder.ToString();
         return _protectorsCache.GetOrAdd(key, _ => _dataProtectionProvider.CreateProtector(purposes));
     }
 }

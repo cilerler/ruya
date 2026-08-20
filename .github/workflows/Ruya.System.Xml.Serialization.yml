@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.System.Xml.Serialization.yml'
       - 'src/Ruya.System.Xml.Serialization/**'
+      - 'tests/Ruya.System.Xml.Serialization.Unit.Tests/**'
 
 jobs:
   build:
@@ -23,7 +24,7 @@ jobs:
     with:
       project-name: 'Ruya.System.Xml.Serialization'
       project-path: './src/Ruya.System.Xml.Serialization/Ruya.System.Xml.Serialization.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.System.Xml.Serialization.Unit.Tests/Ruya.System.Xml.Serialization.Unit.Tests.csproj'
       dispatch-event-type: 'Ruya.System.Xml.Serialization'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

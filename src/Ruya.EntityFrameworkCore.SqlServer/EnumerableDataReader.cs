@@ -192,9 +192,51 @@ public sealed class EnumerableDataReader<T> : IDataReader
 
     public bool GetBoolean(int i) => (bool)GetValue(i);
     public byte GetByte(int i) => (byte)GetValue(i);
-    public long GetBytes(int i, long fieldOffset, byte[]? buffer, int bufferoffset, int length) => throw new NotImplementedException();
+    public long GetBytes(int i, long fieldOffset, byte[]? buffer, int bufferoffset, int length)
+    {
+        var source = GetValue(i) as byte[]
+            ?? throw new InvalidCastException($"Field '{GetName(i)}' does not contain binary data.");
+
+        if (buffer is null)
+        {
+            return source.LongLength;
+        }
+
+        ValidateCopyArguments(fieldOffset, bufferoffset, length, source.LongLength, buffer.Length);
+        var count = (int)Math.Min(length, source.LongLength - fieldOffset);
+        Array.Copy(source, fieldOffset, buffer, bufferoffset, count);
+        return count;
+    }
     public char GetChar(int i) => (char)GetValue(i);
-    public long GetChars(int i, long fieldoffset, char[]? buffer, int bufferoffset, int length) => throw new NotImplementedException();
+    public long GetChars(int i, long fieldoffset, char[]? buffer, int bufferoffset, int length)
+    {
+        var value = GetValue(i);
+        var sourceLength = value switch
+        {
+            string text => text.Length,
+            char[] characters => characters.LongLength,
+            _ => throw new InvalidCastException($"Field '{GetName(i)}' does not contain character data.")
+        };
+
+        if (buffer is null)
+        {
+            return sourceLength;
+        }
+
+        ValidateCopyArguments(fieldoffset, bufferoffset, length, sourceLength, buffer.Length);
+        var count = (int)Math.Min(length, sourceLength - fieldoffset);
+        switch (value)
+        {
+            case string text:
+                text.CopyTo((int)fieldoffset, buffer, bufferoffset, count);
+                break;
+            case char[] characters:
+                Array.Copy(characters, fieldoffset, buffer, bufferoffset, count);
+                break;
+        }
+
+        return count;
+    }
     public Guid GetGuid(int i) => (Guid)GetValue(i);
     public short GetInt16(int i) => (short)GetValue(i);
     public int GetInt32(int i) => (int)GetValue(i);
@@ -231,6 +273,34 @@ public sealed class EnumerableDataReader<T> : IDataReader
             values[i] = GetValue(i);
         }
         return count;
+    }
+
+    private static void ValidateCopyArguments(
+        long fieldOffset,
+        int bufferOffset,
+        int length,
+        long sourceLength,
+        int bufferLength)
+    {
+        if (fieldOffset < 0 || fieldOffset > sourceLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fieldOffset));
+        }
+
+        if (bufferOffset < 0 || bufferOffset > bufferLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bufferOffset));
+        }
+
+        if (length < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length));
+        }
+
+        if (length > bufferLength - bufferOffset)
+        {
+            throw new ArgumentException("The destination buffer is too small for the requested copy length.", nameof(length));
+        }
     }
 
     #endregion

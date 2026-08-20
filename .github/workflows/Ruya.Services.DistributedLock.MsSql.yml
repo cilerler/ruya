@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Services.DistributedLock.MsSql.yml'
       - 'src/Ruya.Services.DistributedLock.MsSql/**'
+      - 'tests/Ruya.Services.DistributedLock.MsSql.Integration.Tests/**'
 
 jobs:
   build:
@@ -24,9 +25,10 @@ jobs:
       project-name: 'Ruya.Services.DistributedLock.MsSql'
       project-path: './src/Ruya.Services.DistributedLock.MsSql/Ruya.Services.DistributedLock.MsSql.csproj'
       test-project-paths: './tests/Ruya.Services.DistributedLock.MsSql.Integration.Tests/Ruya.Services.DistributedLock.MsSql.Integration.Tests.csproj'
+      test-configuration: 'Debug'
       dispatch-event-type: 'Ruya.Services.DistributedLock.MsSql'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
-      use-testcontainers: false
+      use-testcontainers: true
     secrets:
       PAT: ${{ secrets.PAT }}  # Required for dispatch (chain builds)
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

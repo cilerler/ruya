@@ -15,7 +15,10 @@ on:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.Services.CloudStorage.Local.yml'
+      - 'src/Ruya.Services.CloudStorage.Abstractions/**'
       - 'src/Ruya.Services.CloudStorage.Local/**'
+      - 'tests/Ruya.Services.CloudStorage.Local.Integration.Tests/**'
+      - 'tests/Ruya.Services.CloudStorage.Tests.Common/**'
 
 jobs:
   build:
@@ -24,6 +27,7 @@ jobs:
       project-name: 'Ruya.Services.CloudStorage.Local'
       project-path: './src/Ruya.Services.CloudStorage.Local/Ruya.Services.CloudStorage.Local.csproj'
       test-project-paths: './tests/Ruya.Services.CloudStorage.Local.Integration.Tests/Ruya.Services.CloudStorage.Local.Integration.Tests.csproj'
+      test-configuration: 'Debug'
       dispatch-event-type: 'Ruya.Services.CloudStorage.Local'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

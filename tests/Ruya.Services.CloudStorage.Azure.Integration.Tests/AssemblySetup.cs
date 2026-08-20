@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -19,6 +18,7 @@ public static class AssemblySetup
 {
     private static IContainer? _container;
     private static bool _isEmulator = true;
+    private static readonly Dictionary<string, string?> _originalEnvironment = new(StringComparer.Ordinal);
 
     [AssemblyInitialize]
     public static void Init(TestContext context)
@@ -55,27 +55,54 @@ public static class AssemblySetup
             connectionString = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING") ?? "UseDevelopmentStorage=true";
         }
 
-        Environment.SetEnvironmentVariable("CloudStorage:Azure:ConnectionStringKey", "AzureStorage");
-        Environment.SetEnvironmentVariable("CloudStorage:Azure:Container", "mybucket");
-        Environment.SetEnvironmentVariable("ConnectionStrings__AzureStorage", connectionString);
+        SetTestEnvironmentVariable("RUYA_TEST_CloudStorage__Azure__ConnectionStringKey", "AzureStorage");
+        SetTestEnvironmentVariable("RUYA_TEST_CloudStorage__Azure__Container", "mybucket");
+        SetTestEnvironmentVariable("RUYA_TEST_ConnectionStrings__AzureStorage", connectionString);
 
         TestHost.Initialize((services, configuration) =>
         {
             services.AddSingleton<System.Diagnostics.Metrics.IMeterFactory, Ruya.Services.CloudStorage.Tests.Common.StubMeterFactory>();
             services.AddSingleton<Ruya.Diagnostics.DistributedTracing.IDistributedTracing, Ruya.Services.CloudStorage.Tests.Common.StubDistributedTracing>();
-            services.AddAzureStorageService(configuration);
+            services.AddAzureStorageService();
         });
         
         if (!File.Exists("test_file.ignore.txt")) File.WriteAllText("test_file.ignore.txt", "dummy content");
     }
 
     [AssemblyCleanup]
-    public static void Cleanup()
+    public static async Task Cleanup()
     {
-        TestHost.Cleanup();
-        if (_container != null)
+        try
         {
-            _container.StopAsync().GetAwaiter().GetResult();
+            await TestHost.CleanupAsync();
+            if (_container != null)
+            {
+                await _container.StopAsync();
+            }
         }
+        finally
+        {
+            RestoreTestEnvironment();
+        }
+    }
+
+    private static void SetTestEnvironmentVariable(string name, string? value)
+    {
+        if (!_originalEnvironment.ContainsKey(name))
+        {
+            _originalEnvironment[name] = Environment.GetEnvironmentVariable(name);
+        }
+
+        Environment.SetEnvironmentVariable(name, value);
+    }
+
+    private static void RestoreTestEnvironment()
+    {
+        foreach ((string name, string? value) in _originalEnvironment)
+        {
+            Environment.SetEnvironmentVariable(name, value);
+        }
+
+        _originalEnvironment.Clear();
     }
 }

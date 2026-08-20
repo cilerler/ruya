@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security;
 
 namespace Ruya.OpenTelemetry;
 
@@ -51,7 +52,7 @@ internal static class EnvironmentDetector
                 }
             }
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
         {
             // Ignore - running without container ID
         }
@@ -63,16 +64,16 @@ internal static class EnvironmentDetector
 
     private static string? ExtractContainerId(string cgroupContent)
     {
-        foreach (var line in cgroupContent.Split('\n'))
+        foreach (var line in cgroupContent.Split('\n').Where(line =>
+            line.Contains("docker", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("containerd", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("cri-o", StringComparison.OrdinalIgnoreCase)))
         {
-            if (line.Contains("docker") || line.Contains("containerd") || line.Contains("cri-o"))
+            var parts = line.Split('/');
+            var lastPart = parts.LastOrDefault()?.Trim();
+            if (!string.IsNullOrEmpty(lastPart) && lastPart.Length >= 12)
             {
-                var parts = line.Split('/');
-                var lastPart = parts.LastOrDefault()?.Trim();
-                if (!string.IsNullOrEmpty(lastPart) && lastPart.Length >= 12)
-                {
-                    return lastPart.Length > 64 ? lastPart[..64] : lastPart;
-                }
+                return lastPart.Length > 64 ? lastPart[..64] : lastPart;
             }
         }
         return null;

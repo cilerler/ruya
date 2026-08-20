@@ -14,6 +14,11 @@ See the design doc at [docs/design/reliable-messaging.md](docs/design/reliable-m
 
 ```csharp
 services
+    .AddMessageQueue()
+    .AddJsonSerializerContext(RecipeContractsJsonSerializerContext.Default)
+    .AddRabbitMQ();
+
+services
     .AddReliableMessaging(options =>
     {
         options.Outbox.PollInterval = TimeSpan.FromSeconds(1);
@@ -22,46 +27,81 @@ services
         options.Inbox.ArchiveAfter  = TimeSpan.FromDays(7);
     })
     .AddOutboxContext<RecipeDbContext>()
-    .AddInboxContext<RecipeDbContext>();
-
-// Storage adapter — Entity Framework Core:
-// services.AddEntityFrameworkOutboxStore<RecipeDbContext>(o => o.SchemaName = "Recipe");
-// services.AddEntityFrameworkInboxStore<RecipeDbContext>(o  => o.SchemaName = "Recipe");
-
-// Outbound dispatcher — Ruya.Services.MessageQueue:
-// services.AddMessageQueueOutboundDispatcher();
+    .AddInboxContext<RecipeDbContext>()
+    .AddEntityFrameworkOutboxStore<RecipeDbContext>()
+    .AddEntityFrameworkInboxStore<RecipeDbContext>()
+    .AddMessageQueueOutboundDispatcher();
 ```
+
+`AddMessageQueue()` binds the provider catalog from `MessageQueue`, while the dispatcher binds its required
+fallback provider name from `ReliableMessaging:MessageQueueDispatcher:QueueName`. That name must identify an
+enabled entry in `MessageQueue:Providers`.
 
 ## Caller surface
 
 ```csharp
 public sealed class RecipeService(
     RecipeDbContext db,
-    IOutboxPublisher<RecipeDbContext> outbox) : IRecipeService
+    IOutboxPublisher<RecipeDbContext> outbox,
+    IOptions<RecipeSettings> options) : IRecipeService
 {
     public async Task CreateAsync(RecipeCreateCommand cmd, CancellationToken ct)
     {
         var recipe = Recipe.CreateFrom(cmd);
         db.Recipes.Add(recipe);
 
-        await outbox.EnqueueAsync("recipes.created", new RecipeCreatedEvent(recipe.Id), ct: ct);
+        var message = new RecipeCreatedEvent(recipe.Id);
+        await outbox.EnqueueSourceGeneratedAsync(
+            options.Value.RecipeCreatedEventTopicName,
+            message,
+            RecipeContractsJsonSerializerContext.Default.RecipeCreatedEvent,
+            new OutboxPublishOverrides
+            {
+                DispatcherName = options.Value.MessageQueueProviderName,
+            },
+            cancellationToken: ct);
 
         await db.SaveChangesAsync(ct);   // atomic: business row + outbox row
     }
 }
 ```
 
+Invalid poll, batch, durable-retry, cleanup, or fallback-dispatcher settings fail during host startup rather
+than surfacing after a hosted processor begins work.
+
+`EnqueueSourceGeneratedAsync` is the canonical application path: the producer supplies its generated
+`JsonTypeInfo<TPayload>` and the Outbox stores that exact JSON contract. `EnqueueAsync` remains as a
+reflection-based compatibility API for existing callers. A custom `IOutboxPublisher<TContext>` that has not
+implemented the source-generated member fails explicitly rather than silently changing the wire contract.
+
 The `SaveChangesInterceptor` provided by the storage adapter drains the outbox buffer inside `SaveChangesAsync`,
 so the outbox row and business state commit in the same transaction. Rollback drops both.
+When `OutboxProcessor` reconstructs a persisted envelope, it restores the original message ID, dispatcher name,
+and JSON headers before calling the transport adapter. A durable retry therefore does not invent a new delivery
+identity or lose correlation metadata.
 
-Consumer-side dedup is handled by the transport adapter's middleware (e.g. `InboxConsumeMiddleware` in
-`Ruya.Services.ReliableMessaging.MessageQueue`), which invokes `IInboxStore.TryRecordAsync` before the handler.
+Consumer-side processing is coordinated by the transport adapter's scope-aware
+`SubscribeWithInboxAsync` overload. It creates one DI scope for the atomic Inbox store and the handler;
+the handler must resolve its `DbContext` and other scoped business services from the supplied
+`IServiceProvider`. A `Success` result commits the Inbox row and enlisted business changes together.
+`Retry`, `Reject`, and exceptions roll the transaction back, so a later delivery can attempt the work again.
+
+`IInboxStore<TContext>.TryRecordAsync` and `MarkProcessedAsync` remain available as backward-compatible,
+low-level primitives. They do not, by themselves, make the Inbox row and business state one atomic unit;
+applications that use them directly own transaction orchestration and duplicate-state reconciliation.
 
 ## Consistency
 
 - Producer → broker: at-least-once (Outbox guarantees no event lost after a successful commit).
-- Consumer: effectively exactly-once per `(ConsumerName, MessageId)` enforced by the Inbox composite PK.
-- Handlers must be idempotent; the Inbox dedup handles the vast majority, and idempotent business logic handles the edge.
+- Consumer database state: once-effective per `(ConsumerName, MessageId)` when the scope-aware handler uses
+  the same transaction-owning `TContext` as the atomic Inbox store.
+- External side effects cannot participate in that database transaction and may run more than once after a
+  broker redelivery or a transient database retry. Make them independently idempotent, or enqueue them through
+  an Outbox inside the same transaction.
+- Only a committed `Processed` Inbox row is a safe duplicate. A persisted legacy `Received` row is ambiguous:
+  the old flow may have recorded it before the handler ran, or business work may have committed before the
+  processed marker was written. Reconcile the business state before changing or replaying the row; do not
+  blindly replay it or treat it as a safe duplicate.
 
 ## Missing features
 

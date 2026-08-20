@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -15,6 +16,19 @@ public sealed class OutboxPublisherTests
 	private sealed class TestContext;
 
 	private sealed record TestPayload(string Value, int Count);
+
+	private sealed class LegacyOutboxPublisher : IOutboxPublisher<TestContext>
+	{
+		public Task<ReliableMessageEnvelope> EnqueueAsync<TPayload>(
+			string topic,
+			TPayload payload,
+			OutboxPublishOverrides? options = null,
+			System.Threading.CancellationToken cancellationToken = default)
+			where TPayload : notnull
+		{
+			throw new InvalidOperationException("The legacy enqueue method should not be called by the default interface member.");
+		}
+	}
 
 	private static OutboxPublisher<TestContext> CreatePublisher(
 		OutboxBuffer<TestContext> buffer,
@@ -54,6 +68,58 @@ public sealed class OutboxPublisherTests
 		Assert.IsNotNull(roundTrip);
 		Assert.AreEqual("hello", roundTrip!.Value);
 		Assert.AreEqual(42, roundTrip.Count);
+	}
+
+	[TestMethod]
+	public async Task EnqueueSourceGeneratedAsync_UsesProducerOwnedJsonTypeInfo()
+	{
+		var buffer = new OutboxBuffer<TestContext>();
+		IOutboxPublisher<TestContext> publisher = CreatePublisher(buffer);
+		var payload = new SourceGeneratedOutboxPayload("generated");
+
+		var envelope = await publisher.EnqueueSourceGeneratedAsync(
+			"test.topic",
+			payload,
+			OutboxPublisherJsonSerializerContext.Default.SourceGeneratedOutboxPayload);
+
+		StringAssert.Contains(
+			envelope.PayloadJson,
+			"\"stable_value\":\"generated\"",
+			StringComparison.Ordinal);
+		Assert.IsFalse(envelope.PayloadJson.Contains("\"stableValue\"", StringComparison.Ordinal));
+		Assert.AreEqual(1, buffer.Count);
+	}
+
+	[TestMethod]
+	public async Task EnqueueSourceGeneratedAsync_WithNullJsonTypeInfo_ThrowsArgumentNullException()
+	{
+		var buffer = new OutboxBuffer<TestContext>();
+		var publisher = CreatePublisher(buffer);
+
+		await Assert.ThrowsExactlyAsync<ArgumentNullException>(
+			() => publisher.EnqueueSourceGeneratedAsync<SourceGeneratedOutboxPayload>(
+				"test.topic",
+				new SourceGeneratedOutboxPayload("generated"),
+				null!));
+
+		Assert.AreEqual(0, buffer.Count);
+	}
+
+	[TestMethod]
+	public async Task EnqueueSourceGeneratedAsync_WithLegacyPublisher_ThrowsNotSupportedException()
+	{
+		IOutboxPublisher<TestContext> publisher = new LegacyOutboxPublisher();
+
+		var exception = await Assert.ThrowsExactlyAsync<NotSupportedException>(
+			() => publisher.EnqueueSourceGeneratedAsync(
+				"test.topic",
+				new SourceGeneratedOutboxPayload("generated"),
+				OutboxPublisherJsonSerializerContext.Default.SourceGeneratedOutboxPayload));
+
+		StringAssert.Contains(
+			exception.Message,
+			"does not support source-generated payload metadata",
+			StringComparison.Ordinal);
 	}
 
 	[TestMethod]
@@ -115,4 +181,12 @@ public sealed class OutboxPublisherTests
 		await Assert.ThrowsExactlyAsync<ArgumentNullException>(
 			() => publisher.EnqueueAsync<TestPayload>("test.topic", null!));
 	}
+}
+
+public sealed record SourceGeneratedOutboxPayload(string StableValue);
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+[JsonSerializable(typeof(SourceGeneratedOutboxPayload))]
+public sealed partial class OutboxPublisherJsonSerializerContext : JsonSerializerContext
+{
 }

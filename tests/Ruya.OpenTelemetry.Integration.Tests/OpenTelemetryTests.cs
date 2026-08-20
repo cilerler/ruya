@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics.Metrics;
@@ -26,13 +27,17 @@ namespace Ruya.OpenTelemetry.Tests;
 [TestClass]
 public class OpenTelemetryTests
 {
-    private static Dictionary<string, string?> AppSettings = new Dictionary<string, string?>
+    private const string ConfiguredLibraryName =
+        $"{nameof(Ruya)}.{nameof(Ruya.OpenTelemetry)}.{nameof(Ruya.OpenTelemetry.Tests)}.ConfiguredLibrary";
+
+    private static readonly Dictionary<string, string?> AppSettings = new()
     {
         {"Logging:LogLevel:Default", "Trace"},
         {"Logging:LogLevel:System", "Warning"},
         {"Logging:LogLevel:Microsoft", "Information"},
-        {"OTEL_EXPORTER_OTLP_ENDPOINT", "http://host.docker.internal:18889"},
-        {"OTEL_EXPORTER_OTLP_PROTOCOL","grpc"},
+        {"OpenTelemetry:Sampling:Type", "AlwaysOn"},
+        {"OpenTelemetry:ActivitySources:0", ConfiguredLibraryName},
+        {"OpenTelemetry:Meters:0", ConfiguredLibraryName},
         {"ConnectionStrings:MyConnection", "N/A"},
         {"MyService:ConnectionStringKey", "MyConnection"},
         {"FeatureManagement:MySerivce", "true"},
@@ -40,13 +45,13 @@ public class OpenTelemetryTests
     };
 
     [TestMethod]
-    public async Task VerifyOpenTelemetry()
+    public async Task ConfigureOpenTelemetry_ApplicationRuns_ExportsSignals()
     {
         // Arrange
-        var builder = WebApplication.CreateBuilder(new string[] { });
+        var builder = WebApplication.CreateBuilder(Array.Empty<string>());
         builder.Environment.EnvironmentName = "Development";
         builder.Configuration.AddInMemoryCollection(AppSettings);
-        builder.WebHost.UseUrls("http://localhost:5000");
+        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
 
         builder.Services.AddHttpClient();
         builder.Services.AddDistributedMemoryCache();
@@ -64,12 +69,21 @@ public class OpenTelemetryTests
         builder.Services.AddDistributedTracingService();
         builder.Services.AddMyService();
 
-        var app = builder.Build();
+        await using var app = builder.Build();
         app.MapPrometheusScrapingEndpoint();
         app.MapGet("/", (IMyService myService) => myService.DoWorkAsync(CancellationToken.None));
 
-        // Act
-        _ = app.RunAsync();
+        await app.StartAsync();
+
+        using (var activitySource = new ActivitySource(ConfiguredLibraryName))
+        {
+            using var activity = activitySource.StartActivity("ConfiguredLibraryActivity");
+            Assert.IsNotNull(activity, "The configured activity source was not subscribed.");
+        }
+
+        using var libraryMeter = new Meter(ConfiguredLibraryName);
+        var libraryCounter = libraryMeter.CreateCounter<long>("configured_library_collection_probe");
+        libraryCounter.Add(1);
 
         // Simulate some work
         using (var scope = app.Services.CreateScope())
@@ -88,29 +102,18 @@ public class OpenTelemetryTests
             }
         }
 
-        // Give some time for metrics to be collected
-        await Task.Delay(2000);
-
-        // Assert
         using var client = new HttpClient();
-        string response = "";
-        try 
-        {
-            response = await client.GetStringAsync("http://localhost:5000/metrics");
-            Console.WriteLine("Metrics output:");
-            Console.WriteLine(response);
-        }
-        catch(Exception ex)
-        {
-             Assert.Fail($"Failed to fetch metrics: {ex.Message}");
-        }
-        
+        var baseAddress = new Uri(app.Urls.Single());
+        var response = await client.GetStringAsync(new Uri(baseAddress, "/metrics"));
+
         await app.StopAsync();
 
-        Assert.IsTrue(response.Contains("distributed_tracing"), "Distributed tracing metrics NOT found.");
-        Assert.IsTrue(response.Contains("extra_meter_counter"), "Extra meter metrics NOT found.");
+        StringAssert.Contains(response, "distributed_tracing", StringComparison.Ordinal);
+        StringAssert.Contains(response, "extra_meter_counter", StringComparison.Ordinal);
+        StringAssert.Contains(response, "configured_library_collection_probe_total", StringComparison.Ordinal);
 
         Assert.IsTrue(exportedActivities.Count > 0, "No activities were exported.");
+        Assert.IsTrue(exportedActivities.Any(a => a.DisplayName == "ConfiguredLibraryActivity"), "The configured library activity was not exported.");
         Assert.IsTrue(exportedActivities.Any(a => a.DisplayName == "DoWork"), "Activity 'DoWork' not found.");
         Assert.IsTrue(exportedActivities.Any(a => a.DisplayName == "SimulatedWork"), "Activity 'SimulatedWork' not found.");
 

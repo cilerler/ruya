@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -24,15 +25,28 @@ public static class ServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
     /// <remarks>
-    /// This overload registers only the IDistributedLock service. Settings must be configured separately.
-    /// Use this when configuring settings programmatically or when using provider-specific registration methods.
+    /// Settings are bound from the <c>DistributedLock</c> configuration section and validated at startup.
     /// </remarks>
     public static IServiceCollection AddDistributedLockCore(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // Register lock manager
+        OptionsBuilder<DistributedLockSettings> options = services.AddOptions<DistributedLockSettings>();
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(IConfiguration)))
+        {
+            options.BindConfiguration(DistributedLockSettings.ConfigurationSectionName);
+        }
+
+        options.ValidateDataAnnotations()
+            .Validate(
+                settings => settings.InstanceName is null ||
+                    (!string.IsNullOrWhiteSpace(settings.InstanceName) &&
+                     settings.InstanceName.Length <= Ruya.Services.DistributedLock.Common.LockValidation.MaxLockKeyLength - 2),
+                $"InstanceName must be nonblank and no longer than {Ruya.Services.DistributedLock.Common.LockValidation.MaxLockKeyLength - 2} characters when configured.")
+            .ValidateOnStart();
+
         services.TryAddTransient<IDistributedLock, CoreDistributedLock>();
+        services.TryAddSingleton<DistributedLockMetrics>();
 
         return services;
     }
@@ -98,6 +112,7 @@ public static class ServiceCollectionExtensions
     /// - lock_acquired_total: Counter of successful lock acquisitions
     /// - lock_failed_total: Counter of failed lock acquisitions
     /// - lock_released_total: Counter of successful lock releases
+    /// - lock_release_failed_total: Counter of lock releases that could not be confirmed
     /// - lock_duration_ms: Histogram of lock hold times
     /// - lock_acquisition_duration_ms: Histogram of lock acquisition times
     /// - heartbeat_success_total: Counter of successful heartbeat extensions
@@ -110,7 +125,7 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddSingleton(sp => new DistributedLockMetrics(meterName));
+        services.Replace(ServiceDescriptor.Singleton(_ => new DistributedLockMetrics(meterName)));
 
         return services;
     }

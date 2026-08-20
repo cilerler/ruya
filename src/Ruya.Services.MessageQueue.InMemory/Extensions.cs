@@ -1,5 +1,7 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Ruya.Services.MessageQueue.Abstractions;
 using Ruya.Services.MessageQueue.Extensions;
 
@@ -20,20 +22,23 @@ public static class InMemoryExtensions
         this IMessageQueueBuilder builder,
         Action<InMemoryOptions>? configureOptions = null)
     {
-        if (builder == null) throw new ArgumentNullException(nameof(builder));
+        ArgumentNullException.ThrowIfNull(builder);
 
-        // Configure options
-        if (configureOptions != null)
+        var optionsBuilder = builder.Services
+            .AddOptions<InMemoryOptions>()
+            .BindConfiguration(InMemoryOptions.ConfigurationSectionName)
+            .ValidateOnStart();
+
+        if (configureOptions is not null)
         {
-            builder.Services.Configure(configureOptions);
-        }
-        else
-        {
-            // Register default options
-            builder.Services.Configure<InMemoryOptions>(_ => { });
+            optionsBuilder.Configure(configureOptions);
         }
 
-        // Register provider
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<InMemoryOptions>, InMemoryOptionsValidator>());
+
+        builder.Services.TryAddSingleton<IInMemoryDeadLetterStore, InMemoryDeadLetterStore>();
+
         builder.AddProvider<InMemoryProvider>();
 
         return builder;

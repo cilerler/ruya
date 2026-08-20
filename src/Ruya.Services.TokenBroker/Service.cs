@@ -5,6 +5,8 @@ using System.Diagnostics.Metrics;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,6 +17,7 @@ using Microsoft.IdentityModel.Tokens;
 using Ruya.Services.TokenBroker.Contracts;
 using Ruya.Services.TokenBroker.Exceptions;
 using Ruya.Services.TokenBroker.Models;
+using Ruya.Services.TokenBroker.Validation;
 
 using TokenValidationResult = Ruya.Services.TokenBroker.Models.TokenValidationResult;
 
@@ -23,6 +26,22 @@ namespace Ruya.Services.TokenBroker;
 public sealed class TokenBroker : ITokenBroker
 {
     private static readonly ActivitySource ActivitySource = new(MetricConstants.MeterName, "1.0.0");
+    private static readonly HashSet<string> ReservedClaimTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        JwtRegisteredClaimNames.Sub,
+        JwtRegisteredClaimNames.Jti,
+        JwtRegisteredClaimNames.Iss,
+        JwtRegisteredClaimNames.Aud,
+        JwtRegisteredClaimNames.Exp,
+        JwtRegisteredClaimNames.Nbf,
+        JwtRegisteredClaimNames.Iat,
+        Constants.ActorClaimType,
+        Constants.OriginalSubjectClaimType,
+        Constants.ScopeClaimType,
+        ClaimTypes.Role,
+        "role",
+        "roles"
+    };
 
     private readonly ILogger<TokenBroker> _logger;
     private readonly TokenBrokerSettings _settings;
@@ -43,17 +62,27 @@ public sealed class TokenBroker : ITokenBroker
         IOptions<TokenBrokerSettings> options,
         TimeProvider? timeProvider = null)
     {
+        ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(meterFactory);
 
         _logger = logger;
         _settings = options.Value;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _tokenHandler = new JwtSecurityTokenHandler();
+        _tokenHandler = new JwtSecurityTokenHandler
+        {
+            MaximumTokenSizeInBytes = Constants.Defaults.MaximumTokenSizeInBytes
+        };
 
-        var securityKey = new SymmetricSecurityKey(Convert.FromBase64String(_settings.SigningKeyBase64));
-        _signingCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+        using var rsa = RSA.Create();
+        rsa.ImportFromPem(_settings.SigningPrivateKeyPem);
+        var privateKey = new RsaSecurityKey(rsa.ExportParameters(includePrivateParameters: true))
+        {
+            KeyId = _settings.SigningKeyId
+        };
+        var publicKeys = RsaPublicKeyFactory.Create(_settings.SigningPublicKeys);
 
+        _signingCredentials = new SigningCredentials(privateKey, SecurityAlgorithms.RsaSha256);
         _validationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -62,8 +91,14 @@ public sealed class TokenBroker : ITokenBroker
             ValidAudiences = _settings.Audiences,
             ValidateLifetime = true,
             ClockSkew = _settings.ClockSkew,
+            RequireSignedTokens = true,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = securityKey
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+            TryAllIssuerSigningKeys = false,
+            IssuerSigningKeyResolver = (_, _, keyId, _) =>
+                keyId is not null && publicKeys.TryGetValue(keyId, out var key)
+                    ? [key]
+                    : []
         };
 
         var meter = meterFactory.Create(MetricConstants.MeterName);
@@ -83,43 +118,43 @@ public sealed class TokenBroker : ITokenBroker
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Subject);
+        cancellationToken.ThrowIfCancellationRequested();
 
         using var activity = ActivitySource.StartActivity("CreateToken", ActivityKind.Internal);
-        activity?.SetTag("token.subject", request.Subject);
         activity?.SetTag("token.scopes_count", request.Scopes?.Count ?? 0);
+        activity?.SetTag("token.roles_count", request.Roles?.Count ?? 0);
 
         var stopwatch = Stopwatch.StartNew();
-
         try
         {
+            EnsureAuthorizedRoles(request.Roles, request.AllowedRoles);
+            EnsureNoReservedClaims(request.AdditionalClaims);
+
             var now = _timeProvider.GetUtcNow().UtcDateTime;
-            var lifetime = request.CustomLifetime ?? _settings.TokenLifetime;
+            var lifetime = GetValidatedLifetime(request.CustomLifetime);
             var expires = now.Add(lifetime);
             var notBefore = now.Subtract(_settings.ClockSkew);
-            var jti = Guid.NewGuid().ToString("N");
-
-            var claims = BuildClaims(request, jti);
+            var claims = BuildClaims(request, Guid.NewGuid().ToString("N"));
             var token = CreateJwtToken(claims, notBefore, expires);
 
+            cancellationToken.ThrowIfCancellationRequested();
             _tokensCreatedCounter.Add(1);
-            _logger.TokenCreated(jti, request.Subject, expires);
-
-            activity?.SetTag("token.jti", jti);
+            _logger.TokenCreated(expires);
             activity?.SetStatus(ActivityStatusCode.Ok);
 
             return Task.FromResult(new TokenResponse
             {
                 AccessToken = token,
                 TokenType = "Bearer",
-                ExpiresIn = (int)lifetime.TotalSeconds,
+                ExpiresIn = checked((int)lifetime.TotalSeconds),
                 ExpiresAt = expires,
                 Subject = request.Subject,
-                Scopes = request.Scopes?.ToList()
+                Scopes = request.Scopes?.Distinct(StringComparer.Ordinal).ToList()
             });
         }
-        catch (Exception ex)
+        catch
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, "Token creation failed");
             throw;
         }
         finally
@@ -134,130 +169,119 @@ public sealed class TokenBroker : ITokenBroker
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.OriginalToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ActorService);
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureTokenSize(request.OriginalToken);
 
         using var activity = ActivitySource.StartActivity("ExchangeToken", ActivityKind.Internal);
-        activity?.SetTag("token.actor_service", request.ActorService);
-
         var stopwatch = Stopwatch.StartNew();
-
         try
         {
-            // Validate and parse original token
             ClaimsPrincipal principal;
+            SecurityToken validatedToken;
             try
             {
-                principal = _tokenHandler.ValidateToken(
-                    request.OriginalToken,
-                    _validationParameters,
-                    out _);
+                principal = _tokenHandler.ValidateToken(request.OriginalToken, _validationParameters, out validatedToken);
             }
-            catch (SecurityTokenException ex)
+            catch (Exception ex) when (ex is SecurityTokenException or ArgumentException)
             {
                 _tokenValidationFailuresCounter.Add(1);
                 activity?.SetStatus(ActivityStatusCode.Error, "Token validation failed");
                 throw new InvalidTokenException("Token validation failed", ex);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             var originalSubject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
                 ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-            if (string.IsNullOrEmpty(originalSubject))
+            if (string.IsNullOrWhiteSpace(originalSubject))
             {
-                activity?.SetStatus(ActivityStatusCode.Error, "Missing subject claim");
                 throw new InvalidTokenException("Original token missing subject claim");
             }
 
-            activity?.SetTag("token.original_subject", originalSubject);
-
-            // Get original scopes and narrow if requested
             var originalScopes = principal.FindAll(Constants.ScopeClaimType)
-                .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
+            var finalScopes = (request.NarrowedScopes ?? originalScopes)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            var actorAllowedScopes = request.ActorAllowedScopes ?? [];
 
-            var finalScopes = request.NarrowedScopes?.ToList() ?? originalScopes;
-
-            // Verify narrowed scopes are subset of original
-            if (request.NarrowedScopes is not null)
+            if (finalScopes.Except(originalScopes, StringComparer.Ordinal).Any())
             {
-                var invalidScopes = finalScopes.Except(originalScopes).ToList();
-                if (invalidScopes.Count > 0)
-                {
-                    activity?.SetStatus(ActivityStatusCode.Error, "Scope elevation attempted");
-                    throw new InvalidTokenException(
-                        $"Cannot elevate scopes. Invalid: {string.Join(", ", invalidScopes)}");
-                }
+                throw new InvalidTokenException("The exchange request attempted to elevate scopes.");
+            }
+            if (finalScopes.Except(actorAllowedScopes, StringComparer.Ordinal).Any())
+            {
+                throw new InvalidTokenException("The actor service is not authorized for the requested scopes.");
             }
 
-            // Build nested actor chain
-            ActorChain newActorChain;
             var existingActorClaim = principal.FindFirst(Constants.ActorClaimType)?.Value;
-
-            if (existingActorClaim is not null)
+            var existingChain = ActorChain.TryParse(existingActorClaim);
+            if (existingActorClaim is not null && existingChain is null)
             {
-                // Parse existing chain and prepend new actor
-                var existingChain = ActorChain.TryParse(existingActorClaim);
-                newActorChain = new ActorChain
-                {
-                    Subject = request.ActorService,
-                    Actor = existingChain
-                };
-            }
-            else
-            {
-                // First exchange - create new chain
-                newActorChain = new ActorChain { Subject = request.ActorService };
+                throw new InvalidTokenException("The actor chain is malformed.");
             }
 
-            activity?.SetTag("token.actor_chain_depth", newActorChain.ToList().Count);
+            var newActorChain = new ActorChain
+            {
+                Subject = request.ActorService,
+                Actor = existingChain
+            };
+            var actorDepth = newActorChain.ToList().Count;
+            if (actorDepth > Constants.Defaults.MaximumActorChainDepth)
+            {
+                throw new InvalidTokenException("The actor chain exceeds the supported depth.");
+            }
+            activity?.SetTag("token.actor_chain_depth", actorDepth);
 
             var now = _timeProvider.GetUtcNow().UtcDateTime;
-            var lifetime = request.CustomLifetime ?? _settings.TokenLifetime;
-            var expires = now.Add(lifetime);
-            var notBefore = now.Subtract(_settings.ClockSkew);
-            var jti = Guid.NewGuid().ToString("N");
+            var lifetime = GetValidatedLifetime(request.CustomLifetime);
+            var originalExpiry = DateTime.SpecifyKind(validatedToken.ValidTo, DateTimeKind.Utc);
+            var requestedExpiry = now.Add(lifetime);
+            var expires = requestedExpiry < originalExpiry ? requestedExpiry : originalExpiry;
+            if (expires <= now)
+            {
+                throw new InvalidTokenException("The original token has no remaining lifetime.");
+            }
 
             var claims = new List<Claim>
             {
                 new(JwtRegisteredClaimNames.Sub, originalSubject),
-                new(JwtRegisteredClaimNames.Jti, jti),
-                new(Constants.OriginalSubjectClaimType, originalSubject)
+                new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
+                new(Constants.OriginalSubjectClaimType, originalSubject),
+                new(Constants.ActorClaimType, newActorChain.ToJson(), JsonClaimValueTypes.Json)
             };
-
-            // Add nested actor claim as JSON object per RFC 8693
-            claims.Add(new Claim(Constants.ActorClaimType, newActorChain.ToJson(), JsonClaimValueTypes.Json));
-
             if (finalScopes.Count > 0)
             {
                 claims.Add(new Claim(Constants.ScopeClaimType, string.Join(' ', finalScopes)));
             }
+            AddAudienceClaims(claims);
 
-            foreach (var audience in _settings.Audiences)
-            {
-                claims.Add(new Claim(JwtRegisteredClaimNames.Aud, audience));
-            }
-
-            var token = CreateJwtToken(claims, notBefore, expires);
-
+            var token = CreateJwtToken(claims, now.Subtract(_settings.ClockSkew), expires);
+            cancellationToken.ThrowIfCancellationRequested();
             _tokensExchangedCounter.Add(1);
-            _logger.TokenExchanged(jti, originalSubject, request.ActorService, expires);
-
-            activity?.SetTag("token.jti", jti);
+            _logger.TokenExchanged(request.ActorService, expires);
             activity?.SetStatus(ActivityStatusCode.Ok);
 
             return Task.FromResult(new TokenResponse
             {
                 AccessToken = token,
                 TokenType = "Bearer",
-                ExpiresIn = (int)lifetime.TotalSeconds,
+                ExpiresIn = checked((int)(expires - now).TotalSeconds),
                 ExpiresAt = expires,
                 Subject = originalSubject,
                 Actor = newActorChain,
                 Scopes = finalScopes
             });
         }
-        catch (Exception ex) when (ex is not InvalidTokenException)
+        catch (InvalidTokenException)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, "Token exchange rejected");
+            throw;
+        }
+        catch
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, "Token exchange failed");
             throw;
         }
         finally
@@ -270,54 +294,91 @@ public sealed class TokenBroker : ITokenBroker
     public Task<TokenValidationResult> ValidateTokenAsync(string token, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(token);
+        cancellationToken.ThrowIfCancellationRequested();
 
         using var activity = ActivitySource.StartActivity("ValidateToken", ActivityKind.Internal);
         _tokenValidationsCounter.Add(1);
-
         try
         {
+            EnsureTokenSize(token);
             var principal = _tokenHandler.ValidateToken(token, _validationParameters, out var validatedToken);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            var subject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
-                ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-            var actorClaim = principal.FindFirst(Constants.ActorClaimType)?.Value;
-            var actorChain = ActorChain.TryParse(actorClaim);
-
+            var actorChain = ActorChain.TryParse(principal.FindFirst(Constants.ActorClaimType)?.Value);
             var scopes = principal.FindAll(Constants.ScopeClaimType)
-                .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
-
             var roles = principal.FindAll(ClaimTypes.Role)
-                .Select(c => c.Value)
+                .Select(claim => claim.Value)
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
 
-            activity?.SetTag("token.subject", subject);
             activity?.SetTag("token.is_exchanged", actorChain is not null);
             activity?.SetStatus(ActivityStatusCode.Ok);
-
             return Task.FromResult(new TokenValidationResult
             {
                 IsValid = true,
-                Subject = subject,
+                Subject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                    ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                 ActorChain = actorChain,
                 Scopes = scopes,
                 Roles = roles,
-                ExpiresAt = validatedToken.ValidTo
+                ExpiresAt = DateTime.SpecifyKind(validatedToken.ValidTo, DateTimeKind.Utc)
             });
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is SecurityTokenException or ArgumentException or InvalidTokenException)
         {
             _tokenValidationFailuresCounter.Add(1);
-            _logger.TokenValidationFailed(ex);
+            _logger.TokenValidationFailed();
             activity?.SetStatus(ActivityStatusCode.Error, "Token validation failed");
-
             return Task.FromResult(new TokenValidationResult
             {
                 IsValid = false,
-                ErrorMessage = ex.Message
+                ErrorMessage = "Token validation failed."
             });
         }
+    }
+
+    private static void EnsureAuthorizedRoles(IReadOnlyList<string>? requestedRoles, IReadOnlyList<string>? allowedRoles)
+    {
+        if (requestedRoles is { Count: > 0 }
+            && requestedRoles.Except(allowedRoles ?? [], StringComparer.Ordinal).Any())
+        {
+            throw new InvalidTokenException("The request contains roles that were not authorized by the issuer.");
+        }
+    }
+
+    private static void EnsureNoReservedClaims(IDictionary<string, string>? additionalClaims)
+    {
+        if (additionalClaims?.Keys.Any(ReservedClaimTypes.Contains) == true)
+        {
+            throw new InvalidTokenException("Additional claims cannot replace issuer-owned claims.");
+        }
+    }
+
+    private static void EnsureTokenSize(string token)
+    {
+        if (Encoding.UTF8.GetByteCount(token) > Constants.Defaults.MaximumTokenSizeInBytes)
+        {
+            throw new InvalidTokenException("The token exceeds the supported size.");
+        }
+    }
+
+    private TimeSpan GetValidatedLifetime(TimeSpan? requestedLifetime)
+    {
+        var lifetime = requestedLifetime ?? _settings.TokenLifetime;
+        if (lifetime < TimeSpan.FromMinutes(1)
+            || lifetime > TimeSpan.FromMinutes(TokenBrokerSettings.MaxAllowedLifetimeMinutes))
+        {
+            throw new InvalidTokenException("The requested token lifetime is outside the supported range.");
+        }
+
+        return lifetime;
     }
 
     private List<Claim> BuildClaims(TokenRequest request, string jti)
@@ -328,32 +389,33 @@ public sealed class TokenBroker : ITokenBroker
             new(JwtRegisteredClaimNames.Jti, jti)
         };
 
-        if (!string.IsNullOrEmpty(request.Name))
+        if (!string.IsNullOrWhiteSpace(request.Name))
         {
             claims.Add(new Claim(JwtRegisteredClaimNames.Name, request.Name));
         }
-
         if (request.Roles is { Count: > 0 })
         {
-            claims.AddRange(request.Roles.Select(r => new Claim(ClaimTypes.Role, r)));
+            claims.AddRange(request.Roles.Distinct(StringComparer.Ordinal).Select(role => new Claim(ClaimTypes.Role, role)));
         }
-
         if (request.Scopes is { Count: > 0 })
         {
-            claims.Add(new Claim(Constants.ScopeClaimType, string.Join(' ', request.Scopes)));
+            claims.Add(new Claim(Constants.ScopeClaimType, string.Join(' ', request.Scopes.Distinct(StringComparer.Ordinal))));
         }
-
         if (request.AdditionalClaims is { Count: > 0 })
         {
-            claims.AddRange(request.AdditionalClaims.Select(kv => new Claim(kv.Key, kv.Value)));
+            claims.AddRange(request.AdditionalClaims.Select(claim => new Claim(claim.Key, claim.Value)));
         }
 
+        AddAudienceClaims(claims);
+        return claims;
+    }
+
+    private void AddAudienceClaims(List<Claim> claims)
+    {
         foreach (var audience in _settings.Audiences)
         {
             claims.Add(new Claim(JwtRegisteredClaimNames.Aud, audience));
         }
-
-        return claims;
     }
 
     private string CreateJwtToken(List<Claim> claims, DateTime notBefore, DateTime expires)

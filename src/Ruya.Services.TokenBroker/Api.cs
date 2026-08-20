@@ -19,20 +19,33 @@ public static class Api
 {
     public static WebApplication MapTokenBrokerApi(this WebApplication app)
     {
-        app.MapGroup("/api/token")
+        app.MapGroup("/api/v1/token")
            .WithTags("TokenBroker")
-           .MapCreateToken()
-           .MapExchangeToken()
-           .MapValidateToken();
+           .MapCreateToken(string.Empty)
+           .MapExchangeToken(string.Empty)
+           .MapValidateToken(string.Empty);
+
+        var legacyGroup = app.MapGroup("/api/token")
+            .WithTags("TokenBroker (legacy)")
+            .ExcludeFromDescription();
+        legacyGroup.AddEndpointFilter(async (context, next) =>
+        {
+            context.HttpContext.Response.Headers["Deprecation"] = "true";
+            return await next(context);
+        });
+        legacyGroup
+            .MapCreateToken("Legacy")
+            .MapExchangeToken("Legacy")
+            .MapValidateToken("Legacy");
 
         return app;
     }
 
-    private static RouteGroupBuilder MapCreateToken(this RouteGroupBuilder group)
+    private static RouteGroupBuilder MapCreateToken(this RouteGroupBuilder group, string nameSuffix)
     {
         group.MapPost("/", async (
-            [FromHeader(Name = Constants.ApiKeyHeader)] string apiKey,
-            [FromHeader(Name = Constants.ServiceNameHeader)] string serviceName,
+            [FromHeader(Name = Constants.ApiKeyHeader)] string? apiKey,
+            [FromHeader(Name = Constants.ServiceNameHeader)] string? serviceName,
             [FromBody] CreateTokenApiRequest request,
             [FromServices] ITokenBroker tokenBroker,
             [FromServices] IApiKeyValidator apiKeyValidator,
@@ -42,18 +55,22 @@ public static class Api
             var logger = loggerFactory.CreateLogger(LoggerCategories.Api);
             try
             {
+                if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(serviceName))
+                {
+                    return Results.Unauthorized();
+                }
+
                 var registration = await apiKeyValidator.ValidateApiKeyAsync(apiKey, cancellationToken);
                 if (registration is null)
                 {
-                    logger.LogWarning(LogEvents.TokenCreationRejected, "Token creation rejected: invalid API key for claimed service {ServiceName}", serviceName);
+                    logger.TokenCreationRejected(serviceName, "invalid API key");
                     return Results.Unauthorized();
                 }
 
                 // Verify service name matches registration
                 if (!string.Equals(registration.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase))
                 {
-                    logger.LogWarning(LogEvents.ServiceNameMismatch, "Token creation rejected: service name mismatch. Claimed: {ClaimedService}, Registered: {RegisteredService}",
-                        serviceName, registration.ServiceName);
+                    logger.ServiceNameMismatch(serviceName, registration.ServiceName);
                     return Results.Unauthorized();
                 }
 
@@ -62,9 +79,7 @@ public static class Api
                 {
                     if (request.LifetimeMinutes.Value < 1 || request.LifetimeMinutes.Value > TokenBrokerSettings.MaxAllowedLifetimeMinutes)
                     {
-                        logger.LogWarning(LogEvents.TokenCreationRejected,
-                            "Token creation rejected: service {ServiceName} requested invalid lifetime {LifetimeMinutes} minutes",
-                            serviceName, request.LifetimeMinutes.Value);
+                        logger.TokenCreationRejected(serviceName, "invalid lifetime");
                         return Results.BadRequest(new ProblemDetails
                         {
                             Title = "Invalid lifetime",
@@ -74,17 +89,30 @@ public static class Api
                 }
 
                 // Verify requested scopes are allowed
-                if (request.Scopes is not null && registration.AllowedScopes is not null)
+                if (request.Scopes is not null)
                 {
-                    var disallowedScopes = request.Scopes.Except(registration.AllowedScopes).ToList();
+                    var disallowedScopes = request.Scopes.Except(registration.AllowedScopes ?? [], StringComparer.Ordinal).ToList();
                     if (disallowedScopes.Count > 0)
                     {
-                        logger.LogWarning(LogEvents.DisallowedScopes, "Token creation rejected: service {ServiceName} requested disallowed scopes: {DisallowedScopes}",
-                            serviceName, string.Join(", ", disallowedScopes));
+                        logger.DisallowedScopes(serviceName, disallowedScopes.Count);
                         return Results.BadRequest(new ProblemDetails
                         {
                             Title = "Invalid scopes",
                             Detail = $"Service not allowed to request scopes: {string.Join(", ", disallowedScopes)}"
+                        });
+                    }
+                }
+
+                if (request.Roles is not null)
+                {
+                    var disallowedRoles = request.Roles.Except(registration.AllowedRoles ?? [], StringComparer.Ordinal).ToList();
+                    if (disallowedRoles.Count > 0)
+                    {
+                        logger.TokenCreationRejected(serviceName, "roles outside registration");
+                        return Results.BadRequest(new ProblemDetails
+                        {
+                            Title = "Invalid roles",
+                            Detail = "The request contains roles that are not authorized for this service."
                         });
                     }
                 }
@@ -94,6 +122,7 @@ public static class Api
                     Subject = serviceName,
                     Name = request.Name,
                     Roles = request.Roles,
+                    AllowedRoles = registration.AllowedRoles,
                     Scopes = request.Scopes,
                     CustomLifetime = request.LifetimeMinutes.HasValue
                         ? TimeSpan.FromMinutes(request.LifetimeMinutes.Value)
@@ -102,19 +131,18 @@ public static class Api
 
                 var response = await tokenBroker.CreateTokenAsync(tokenRequest, cancellationToken);
 
-                logger.LogInformation(LogEvents.TokenCreated, "Token created for service {ServiceName} with scopes [{Scopes}], expires {ExpiresAt}",
-                    serviceName, string.Join(", ", request.Scopes ?? []), response.ExpiresAt);
+                logger.TokenCreatedForService(serviceName, request.Scopes?.Count ?? 0, response.ExpiresAtUtc);
 
                 return Results.Ok(response);
             }
             catch (TokenBrokerException ex)
             {
-                logger.LogWarning(LogEvents.TokenCreationFailed, ex, "Token creation failed for service {ServiceName}: {ErrorCode}",
-                    serviceName, ex.ErrorCode);
-                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+                logger.TokenCreationFailed(serviceName ?? "(missing)", ex.ErrorCode);
+                return Results.Problem("Token creation was rejected.", statusCode: StatusCodes.Status400BadRequest);
             }
         })
-        .WithName("CreateToken")
+        .WithName($"CreateToken{nameSuffix}")
+        .WithMetadata(new RequestSizeLimitAttribute(64 * 1024))
         .Produces<TokenResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status400BadRequest);
@@ -122,11 +150,11 @@ public static class Api
         return group;
     }
 
-    private static RouteGroupBuilder MapExchangeToken(this RouteGroupBuilder group)
+    private static RouteGroupBuilder MapExchangeToken(this RouteGroupBuilder group, string nameSuffix)
     {
         group.MapPost("/exchange", async (
-            [FromHeader(Name = Constants.ApiKeyHeader)] string apiKey,
-            [FromHeader(Name = Constants.ServiceNameHeader)] string serviceName,
+            [FromHeader(Name = Constants.ApiKeyHeader)] string? apiKey,
+            [FromHeader(Name = Constants.ServiceNameHeader)] string? serviceName,
             [FromBody] ExchangeTokenApiRequest request,
             [FromServices] ITokenBroker tokenBroker,
             [FromServices] IApiKeyValidator apiKeyValidator,
@@ -136,23 +164,36 @@ public static class Api
             var logger = loggerFactory.CreateLogger(LoggerCategories.Api);
             try
             {
+                if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(serviceName))
+                {
+                    return Results.Unauthorized();
+                }
+
                 var registration = await apiKeyValidator.ValidateApiKeyAsync(apiKey, cancellationToken);
                 if (registration is null)
                 {
-                    logger.LogWarning(LogEvents.TokenExchangeRejected, "Token exchange rejected: invalid API key for claimed service {ServiceName}", serviceName);
+                    logger.TokenExchangeRejected(serviceName, "invalid API key");
                     return Results.Unauthorized();
                 }
 
                 if (!string.Equals(registration.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase))
                 {
-                    logger.LogWarning(LogEvents.ServiceNameMismatch, "Token exchange rejected: service name mismatch. Claimed: {ClaimedService}, Registered: {RegisteredService}",
-                        serviceName, registration.ServiceName);
+                    logger.ServiceNameMismatch(serviceName, registration.ServiceName);
                     return Results.Unauthorized();
+                }
+
+                if (string.IsNullOrWhiteSpace(request.Token))
+                {
+                    return Results.BadRequest(new ProblemDetails
+                    {
+                        Title = "Invalid token",
+                        Detail = "A token is required for exchange."
+                    });
                 }
 
                 if (!registration.CanExchangeTokens)
                 {
-                    logger.LogWarning(LogEvents.TokenExchangeRejected, "Token exchange rejected: service {ServiceName} is not allowed to exchange tokens", serviceName);
+                    logger.TokenExchangeRejected(serviceName, "exchange not allowed");
                     return Results.Problem(
                         $"Service '{serviceName}' is not allowed to exchange tokens",
                         statusCode: StatusCodes.Status403Forbidden);
@@ -163,9 +204,7 @@ public static class Api
                 {
                     if (request.LifetimeMinutes.Value < 1 || request.LifetimeMinutes.Value > TokenBrokerSettings.MaxAllowedLifetimeMinutes)
                     {
-                        logger.LogWarning(LogEvents.TokenExchangeRejected,
-                            "Token exchange rejected: service {ServiceName} requested invalid lifetime {LifetimeMinutes} minutes",
-                            serviceName, request.LifetimeMinutes.Value);
+                        logger.TokenExchangeRejected(serviceName, "invalid lifetime");
                         return Results.BadRequest(new ProblemDetails
                         {
                             Title = "Invalid lifetime",
@@ -179,6 +218,7 @@ public static class Api
                     OriginalToken = request.Token,
                     ActorService = serviceName,
                     NarrowedScopes = request.NarrowedScopes,
+                    ActorAllowedScopes = registration.AllowedScopes,
                     CustomLifetime = request.LifetimeMinutes.HasValue
                         ? TimeSpan.FromMinutes(request.LifetimeMinutes.Value)
                         : null
@@ -186,23 +226,25 @@ public static class Api
 
                 var response = await tokenBroker.ExchangeTokenAsync(exchangeRequest, cancellationToken);
 
-                logger.LogInformation(LogEvents.TokenExchanged, "Token exchanged by service {ServiceName} for subject {Subject}, actor chain: [{ActorChain}]",
-                    serviceName, response.Subject, string.Join(" -> ", response.Actor?.ToList() ?? []));
+                logger.TokenExchangedForService(
+                    serviceName,
+                    response.ExpiresAtUtc);
 
                 return Results.Ok(response);
             }
-            catch (InvalidTokenException ex)
+            catch (InvalidTokenException)
             {
-                logger.LogWarning(LogEvents.TokenExchangeFailed, ex, "Token exchange failed for service {ServiceName}: invalid token", serviceName);
-                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+                logger.TokenExchangeFailed(serviceName ?? "(missing)", "invalid token");
+                return Results.Problem("Token exchange was rejected.", statusCode: StatusCodes.Status400BadRequest);
             }
-            catch (TokenExchangeNotAllowedException ex)
+            catch (TokenExchangeNotAllowedException)
             {
-                logger.LogWarning(LogEvents.TokenExchangeFailed, ex, "Token exchange failed for service {ServiceName}: exchange not allowed", serviceName);
-                return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
+                logger.TokenExchangeFailed(serviceName ?? "(missing)", "exchange not allowed");
+                return Results.Problem("Token exchange is not allowed for this service.", statusCode: StatusCodes.Status403Forbidden);
             }
         })
-        .WithName("ExchangeToken")
+        .WithName($"ExchangeToken{nameSuffix}")
+        .WithMetadata(new RequestSizeLimitAttribute(64 * 1024))
         .Produces<TokenResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden)
@@ -211,21 +253,47 @@ public static class Api
         return group;
     }
 
-    private static RouteGroupBuilder MapValidateToken(this RouteGroupBuilder group)
+    private static RouteGroupBuilder MapValidateToken(this RouteGroupBuilder group, string nameSuffix)
     {
         group.MapPost("/validate", async (
+            [FromHeader(Name = Constants.ApiKeyHeader)] string? apiKey,
+            [FromHeader(Name = Constants.ServiceNameHeader)] string? serviceName,
             [FromBody] ValidateTokenApiRequest request,
             [FromServices] ITokenBroker tokenBroker,
+            [FromServices] IApiKeyValidator apiKeyValidator,
             CancellationToken cancellationToken) =>
         {
+            if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(serviceName))
+            {
+                return Results.Unauthorized();
+            }
+
+            var registration = await apiKeyValidator.ValidateApiKeyAsync(apiKey, cancellationToken);
+            if (registration is null
+                || !string.Equals(registration.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Unauthorized();
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Token))
+            {
+                return Results.BadRequest(new TokenValidationResult
+                {
+                    IsValid = false,
+                    ErrorMessage = "Token validation failed."
+                });
+            }
+
             var result = await tokenBroker.ValidateTokenAsync(request.Token, cancellationToken);
             return result.IsValid
                 ? Results.Ok(result)
                 : Results.BadRequest(result);
         })
-        .WithName("ValidateToken")
+        .WithName($"ValidateToken{nameSuffix}")
+        .WithMetadata(new RequestSizeLimitAttribute(64 * 1024))
         .Produces<TokenValidationResult>(StatusCodes.Status200OK)
-        .Produces<TokenValidationResult>(StatusCodes.Status400BadRequest);
+        .Produces<TokenValidationResult>(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         return group;
     }

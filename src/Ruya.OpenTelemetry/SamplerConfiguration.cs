@@ -1,5 +1,3 @@
-using System;
-
 using OpenTelemetry.Trace;
 
 namespace Ruya.OpenTelemetry;
@@ -11,11 +9,7 @@ internal static class SamplerConfiguration
 {
     public static void Configure(TracerProviderBuilder tracing, SamplingSettings settings, bool isDevelopment)
     {
-        if (isDevelopment)
-        {
-            tracing.SetSampler(new AlwaysOnSampler());
-            return;
-        }
+        _ = isDevelopment; // Retained in the internal signature for compatibility; configuration always wins.
 
         Sampler sampler = settings.Type switch
         {
@@ -29,7 +23,7 @@ internal static class SamplerConfiguration
         tracing.SetSampler(sampler);
     }
 
-    private static Sampler CreateParentBasedSampler(SamplingSettings settings)
+    private static ParentBasedSampler CreateParentBasedSampler(SamplingSettings settings)
     {
         Sampler rootSampler = settings.ParentBasedRootSampler switch
         {
@@ -40,13 +34,5 @@ internal static class SamplerConfiguration
         };
 
         return new ParentBasedSampler(rootSampler);
-    }
-
-    public static void ConfigureBatchProcessor(BatchProcessorSettings settings)
-    {
-        Environment.SetEnvironmentVariable("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", settings.MaxExportBatchSize.ToString());
-        Environment.SetEnvironmentVariable("OTEL_BSP_MAX_QUEUE_SIZE", settings.MaxQueueSize.ToString());
-        Environment.SetEnvironmentVariable("OTEL_BSP_SCHEDULE_DELAY", ((int)settings.ScheduledDelay.TotalMilliseconds).ToString());
-        Environment.SetEnvironmentVariable("OTEL_BSP_EXPORT_TIMEOUT", ((int)settings.ExporterTimeout.TotalMilliseconds).ToString());
     }
 }

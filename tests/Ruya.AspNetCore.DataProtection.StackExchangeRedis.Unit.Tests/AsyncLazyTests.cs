@@ -151,6 +151,26 @@ public class AsyncLazyTests
 	}
 
 	[TestMethod]
+	public async Task Value_FactoryFailsOnce_RetriesOnNextAccess()
+	{
+		var callCount = 0;
+		var lazy = new AsyncLazy<string>(() =>
+		{
+			var currentCall = Interlocked.Increment(ref callCount);
+			return currentCall == 1
+				? Task.FromException<string>(new InvalidOperationException("transient"))
+				: Task.FromResult("recovered");
+		});
+
+		await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => lazy.Value);
+		var result = await lazy.Value;
+
+		Assert.AreEqual("recovered", result);
+		Assert.AreEqual(2, callCount);
+		Assert.IsTrue(lazy.IsValueCreated);
+	}
+
+	[TestMethod]
 	public async Task Value_AsyncFactory_ExecutesAsynchronously()
 	{
 		// Arrange
@@ -296,6 +316,32 @@ public class AsyncLazyTests
 		// Assert - all results should be the same instance
 		var first = results[0];
 		Assert.IsTrue(results.All(r => ReferenceEquals(r, first)));
+	}
+
+	[TestMethod]
+	public async Task Value_ConcurrentAccessAfterSharedFailure_RunsOneRetryFactory()
+	{
+		var callCount = 0;
+		var firstAttempt = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var lazy = new AsyncLazy<string>(() =>
+		{
+			var call = Interlocked.Increment(ref callCount);
+			return call == 1 ? firstAttempt.Task : Task.FromResult("recovered");
+		});
+		var failedWaiters = Enumerable.Range(0, 10)
+			.Select(_ => lazy.Value)
+			.ToArray();
+
+		firstAttempt.SetException(new InvalidOperationException("transient"));
+		await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+			() => Task.WhenAll(failedWaiters));
+		var recoveredWaiters = Enumerable.Range(0, 10)
+			.Select(_ => lazy.Value)
+			.ToArray();
+		var results = await Task.WhenAll(recoveredWaiters);
+
+		Assert.AreEqual(2, callCount);
+		Assert.IsTrue(results.All(result => result == "recovered"));
 	}
 
 	#endregion

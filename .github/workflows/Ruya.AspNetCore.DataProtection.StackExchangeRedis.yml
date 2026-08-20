@@ -9,13 +9,17 @@ on:
         default: false
 
   repository_dispatch:
-    types: []
+    types: [Ruya.Diagnostics.Abstractions, Ruya.Extensions.DependencyInjection, Ruya.Primitives]
 
   push:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.AspNetCore.DataProtection.StackExchangeRedis.yml'
+      - 'src/Ruya.Diagnostics.Abstractions/**'
+      - 'src/Ruya.Extensions.DependencyInjection/**'
+      - 'src/Ruya.Primitives/**'
       - 'src/Ruya.AspNetCore.DataProtection.StackExchangeRedis/**'
+      - 'tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests/**'
 
 jobs:
   build:
@@ -24,6 +28,7 @@ jobs:
       project-name: 'Ruya.AspNetCore.DataProtection.StackExchangeRedis'
       project-path: './src/Ruya.AspNetCore.DataProtection.StackExchangeRedis/Ruya.AspNetCore.DataProtection.StackExchangeRedis.csproj'
       test-project-paths: './tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests.csproj'
+      test-configuration: 'Debug'
       dispatch-event-type: 'Ruya.AspNetCore.DataProtection.StackExchangeRedis'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

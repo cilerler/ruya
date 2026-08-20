@@ -1,13 +1,15 @@
 using System;
-using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -23,17 +25,9 @@ namespace Ruya.AspNetCore.DataProtection.StackExchangeRedis;
 /// </summary>
 public static class StartupExtensions
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     /// <summary>
-    /// Adds data protection server services with Redis key persistence.
+    /// Adds data protection services with Redis key persistence.
     /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configureSettings">Optional action to configure settings.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddDataProtectionServer(
         this IServiceCollection services,
         Action<DataProtectionSettings>? configureSettings = null)
@@ -43,6 +37,14 @@ public static class StartupExtensions
         var optionsBuilder = services.AddOptions<DataProtectionSettings>()
             .BindConfiguration(DataProtectionSettings.ConfigurationSectionName)
             .ValidateDataAnnotations()
+            .Validate<IConfiguration>(
+                HasValidRedisConnectionString,
+                "The referenced Redis connection string is missing or invalid.")
+            .Validate(
+                settings => settings.Purposes.All(purpose =>
+                    !string.IsNullOrWhiteSpace(purpose.Key) &&
+                    !string.IsNullOrWhiteSpace(purpose.Value)),
+                "DataProtectionSettings purpose names and values must be nonblank.")
             .ValidateOnStart();
 
         if (configureSettings is not null)
@@ -50,52 +52,40 @@ public static class StartupExtensions
             optionsBuilder.Configure(configureSettings);
         }
 
-        // Resolve ConnectionString from ConnectionStringKey
         optionsBuilder.Configure<IConfiguration>((settings, configuration) =>
         {
-            settings.ConnectionString = configuration.GetConnectionString(settings.ConnectionStringKey)
-                ?? throw new InvalidOperationException(
-                    $"Connection string '{settings.ConnectionStringKey}' not found in configuration.");
+            settings.ConnectionString = configuration.GetConnectionString(settings.ConnectionStringKey)!;
         });
 
+        services.TryAddSingleton<IRedisConnectionFactory, RedisConnectionFactory>();
         services.AddSingleton<IConnectionMultiplexer>(sp =>
         {
-            var options = sp.GetRequiredService<IOptions<DataProtectionSettings>>().Value;
-            if (string.IsNullOrWhiteSpace(options.ConnectionString))
-            {
-                throw new InvalidOperationException(
-                    $"Redis connection string is not configured. " +
-                    $"Ensure ConnectionStrings:{options.ConnectionStringKey} is set in configuration.");
-            }
+            var settings = sp.GetRequiredService<IOptions<DataProtectionSettings>>().Value;
 
             try
             {
-                return ConnectionMultiplexer.Connect(options.ConnectionString);
+                return sp.GetRequiredService<IRedisConnectionFactory>().Connect(settings.ConnectionString);
             }
             catch (Exception ex)
             {
-                var logger = sp.GetRequiredService<ILogger<DataProtectionService>>();
-                logger.RedisConnectionFailed(ex);
-                throw;
+                sp.GetRequiredService<ILogger<DataProtectionService>>()
+                    .RedisConnectionFailed(ex.GetType().Name);
+                throw new InvalidOperationException(
+                    "Failed to initialize the Redis connection for data protection.");
             }
         });
 
         ConfigureDataProtectionCommon(services);
-
         return services;
     }
 
     /// <summary>
     /// Adds data protection client services that fetch settings from a remote server.
     /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="defaultPurpose">The default purpose string for data protection.</param>
-    /// <param name="configureSettings">Optional action to configure settings after fetching.</param>
-    /// <returns>The service collection for chaining.</returns>
     /// <remarks>
-    /// Settings are fetched asynchronously from the remote endpoint using lazy initialization.
-    /// Services that depend on data protection should handle the case where settings may not
-    /// be ready yet. The health check will report unhealthy until initialization completes.
+    /// The remote settings are fetched once, and one singleton Redis connection is registered for
+    /// Data Protection and for Redis-backed components registered afterward that borrow an existing
+    /// <see cref="IConnectionMultiplexer"/>.
     /// </remarks>
     public static IServiceCollection AddDataProtectionClient(
         this IServiceCollection services,
@@ -108,21 +98,19 @@ public static class StartupExtensions
         services.AddOptions<DataProtectionClientSettings>()
             .BindConfiguration(DataProtectionClientSettings.ConfigurationSectionName)
             .ValidateDataAnnotations()
+            .Validate<IConfiguration>(
+                HasValidRemoteEndpoint,
+                "The referenced data protection settings endpoint is missing or invalid.")
             .ValidateOnStart()
             .Configure<IConfiguration>((settings, configuration) =>
             {
-                if (string.IsNullOrWhiteSpace(settings.ConnectionString))
-                {
-                    settings.ConnectionString = configuration.GetConnectionString(settings.ConnectionStringKey)
-                        ?? throw new InvalidOperationException(
-                            $"Connection string '{settings.ConnectionStringKey}' not found in configuration.");
-                }
+                settings.ConnectionString = configuration.GetConnectionString(settings.ConnectionStringKey)!;
             });
 
-        services.AddHttpClient(Constants.HttpClientName)
+        services.AddHttpClient(DataProtectionClientSettings.HttpClientName)
             .AddStandardResilienceHandler();
+        services.TryAddSingleton<IRedisConnectionFactory, RedisConnectionFactory>();
 
-        // Register AsyncLazy for lazy async initialization of settings
         services.AddSingleton(sp =>
         {
             var clientSettings = sp.GetRequiredService<IOptions<DataProtectionClientSettings>>().Value;
@@ -131,107 +119,91 @@ public static class StartupExtensions
 
             return new AsyncLazy<DataProtectionSettings>(async () =>
             {
-                var settings = await FetchSettingsAsync(clientSettings, httpClientFactory, logger).ConfigureAwait(false);
+                var settings = await FetchSettingsAsync(
+                    clientSettings,
+                    httpClientFactory,
+                    logger).ConfigureAwait(false);
                 settings.Purposes.Clear();
                 settings.Purposes.Add(DataProtectionService.DefaultPurpose, defaultPurpose);
                 configureSettings?.Invoke(settings);
+                ValidateFetchedSettings(settings);
                 return settings;
             });
         });
 
-        // Provide IOptions<DataProtectionSettings> that awaits the lazy value
         services.AddSingleton<IOptions<DataProtectionSettings>>(sp =>
         {
-            var lazySettings = sp.GetRequiredService<AsyncLazy<DataProtectionSettings>>();
-            // This will block on first access, but subsequent accesses return immediately
-            var settings = lazySettings.Value.GetAwaiter().GetResult();
+            var settings = sp.GetRequiredService<AsyncLazy<DataProtectionSettings>>()
+                .Value.GetAwaiter().GetResult();
             return Options.Create(settings);
         });
 
-        // Register AsyncLazy for lazy async initialization of Redis connection
         services.AddSingleton(sp =>
         {
-            var lazySettings = sp.GetRequiredService<AsyncLazy<DataProtectionSettings>>();
+            var settings = sp.GetRequiredService<AsyncLazy<DataProtectionSettings>>();
+            var connectionFactory = sp.GetRequiredService<IRedisConnectionFactory>();
             var logger = sp.GetRequiredService<ILogger<DataProtectionService>>();
 
-            return new AsyncLazy<IConnectionMultiplexer>(async () =>
+            return new RedisConnectionLifetime(async () =>
             {
-                var settings = await lazySettings.Value.ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(settings.ConnectionString))
-                {
-                    throw new InvalidOperationException("Redis connection string is not configured.");
-                }
+                var resolvedSettings = await settings.Value.ConfigureAwait(false);
 
                 try
                 {
-                    return await ConnectionMultiplexer.ConnectAsync(settings.ConnectionString).ConfigureAwait(false);
+                    return await connectionFactory.ConnectAsync(
+                        resolvedSettings.ConnectionString).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    logger.RedisConnectionFailed(ex);
-                    throw;
+                    logger.RedisConnectionFailed(ex.GetType().Name);
+                    throw new InvalidOperationException(
+                        "Failed to initialize the Redis connection for data protection.");
                 }
             });
         });
 
-        // Provide IConnectionMultiplexer that awaits the lazy value
+        services.AddSingleton(sp =>
+            sp.GetRequiredService<RedisConnectionLifetime>().Connection);
+
         services.AddSingleton<IConnectionMultiplexer>(sp =>
-        {
-            var lazyRedis = sp.GetRequiredService<AsyncLazy<IConnectionMultiplexer>>();
-            return lazyRedis.Value.GetAwaiter().GetResult();
-        });
+            sp.GetRequiredService<RedisConnectionLifetime>()
+                .GetContainerOwnedConnection());
 
-        ConfigureDataProtectionClientCommon(services);
-
+        ConfigureDataProtectionCommon(services);
         return services;
     }
 
-    private static void ConfigureDataProtectionClientCommon(IServiceCollection services)
+    /// <summary>
+    /// Asynchronously initializes remote data protection settings and the shared Redis connection.
+    /// </summary>
+    /// <remarks>
+    /// External clients can await this method during application startup so later synchronous Data
+    /// Protection operations do not perform their first remote initialization on the calling thread.
+    /// </remarks>
+    public static async Task InitializeDataProtectionClientAsync(
+        this IServiceProvider serviceProvider,
+        CancellationToken cancellationToken = default)
     {
-        services.AddSingleton<IConfigureOptions<DataProtectionOptions>>(sp =>
+        ArgumentNullException.ThrowIfNull(serviceProvider);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var settings = serviceProvider.GetService<AsyncLazy<DataProtectionSettings>>()
+            ?? throw new InvalidOperationException(
+                "Remote data protection client services are not registered. Call AddDataProtectionClient first.");
+        await settings.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        var connection = serviceProvider.GetService<AsyncLazy<IConnectionMultiplexer>>();
+        if (connection is not null)
         {
-            var lazySettings = sp.GetRequiredService<AsyncLazy<DataProtectionSettings>>();
-            return new ConfigureNamedOptions<DataProtectionOptions>(
-                Options.DefaultName,
-                options =>
-                {
-                    if (lazySettings.IsValueCreated)
-                    {
-                        options.ApplicationDiscriminator = lazySettings.ValueOrDefault?.ApplicationName;
-                    }
-                });
-        });
-
-        services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(sp =>
-        {
-            var lazySettings = sp.GetRequiredService<AsyncLazy<DataProtectionSettings>>();
-            var lazyRedis = sp.GetRequiredService<AsyncLazy<IConnectionMultiplexer>>();
-            return new ConfigureNamedOptions<KeyManagementOptions>(
-                Options.DefaultName,
-                options =>
-                {
-                    if (lazySettings.IsValueCreated && lazyRedis.IsValueCreated)
-                    {
-                        var settings = lazySettings.ValueOrDefault!;
-                        var redis = lazyRedis.ValueOrDefault!;
-                        options.NewKeyLifetime = TimeSpan.FromDays(settings.DefaultKeyLifetime);
-                        options.XmlRepository = new Microsoft.AspNetCore.DataProtection.StackExchangeRedis.RedisXmlRepository(
-                            () => redis.GetDatabase(),
-                            settings.CacheKey);
-                    }
-                });
-        });
-
-        services.AddDataProtection();
-
-        services.AddSingleton<IDataProtection, DataProtectionService>();
-
-        services.AddHealthChecks()
-            .AddCheck<DataProtectionHealthCheck>("dataprotection-redis");
+            await connection.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+            _ = serviceProvider.GetRequiredService<IConnectionMultiplexer>();
+        }
     }
 
     private static void ConfigureDataProtectionCommon(IServiceCollection services)
     {
+        services.AddDataProtection();
+
         services.AddSingleton<IConfigureOptions<DataProtectionOptions>>(sp =>
         {
             var settings = sp.GetRequiredService<IOptions<DataProtectionSettings>>().Value;
@@ -255,12 +227,8 @@ public static class StartupExtensions
                 });
         });
 
-        services.AddDataProtection();
-
         services.AddSingleton<IDataProtection, DataProtectionService>();
-
-        services.AddHealthChecks()
-            .AddCheck<DataProtectionHealthCheck>("dataprotection-redis");
+        services.AddHealthChecks().AddCheck<DataProtectionHealthCheck>("dataprotection-redis");
     }
 
     private static async Task<DataProtectionSettings> FetchSettingsAsync(
@@ -268,33 +236,128 @@ public static class StartupExtensions
         IHttpClientFactory httpClientFactory,
         ILogger logger)
     {
-        if (string.IsNullOrWhiteSpace(clientSettings.ConnectionString))
-        {
-            throw new InvalidOperationException(
-                $"Data protection client connection string is not configured. " +
-                $"Ensure ConnectionStrings:{clientSettings.ConnectionStringKey} is set in configuration.");
-        }
-
-        var client = httpClientFactory.CreateClient(Constants.HttpClientName);
-        var baseUri = new Uri(clientSettings.ConnectionString);
-        var fullUri = new Uri(baseUri, clientSettings.Endpoint);
+        var fullUri = ResolveRemoteEndpoint(clientSettings);
+        var safeEndpoint = fullUri.GetComponents(
+            UriComponents.SchemeAndServer,
+            UriFormat.UriEscaped);
 
         try
         {
-            var response = await client.GetAsync(fullUri).ConfigureAwait(false);
+            var client = httpClientFactory.CreateClient(DataProtectionClientSettings.HttpClientName);
+            using var response = await client.GetAsync(fullUri).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
-            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            var settings = JsonSerializer.Deserialize<DataProtectionSettings>(content, JsonOptions)
-                ?? throw new InvalidOperationException("Failed to deserialize data protection settings.");
+            await using var content = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            var settings = await JsonSerializer.DeserializeAsync(
+                content,
+                DataProtectionJsonSerializerContext.Default.DataProtectionSettings).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The remote data protection settings response was empty.");
 
-            logger.SettingsFetchSucceeded(fullUri.ToString());
+            ValidateFetchedSettings(settings);
+            logger.SettingsFetchSucceeded(safeEndpoint);
             return settings;
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (Exception ex)
         {
-            logger.SettingsFetchFailed(fullUri.ToString(), ex);
-            throw new InvalidOperationException($"Failed to fetch data protection settings from {fullUri}", ex);
+            logger.SettingsFetchFailed(safeEndpoint, ex.GetType().Name);
+            throw new InvalidOperationException(
+                $"Failed to fetch data protection settings from {safeEndpoint}.");
+        }
+    }
+
+    private static bool HasValidRedisConnectionString(
+        DataProtectionSettings settings,
+        IConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ConnectionStringKey))
+        {
+            return false;
+        }
+
+        var connectionString = configuration.GetConnectionString(settings.ConnectionStringKey);
+        return IsValidRedisConnectionString(connectionString);
+    }
+
+    private static bool HasValidRemoteEndpoint(
+        DataProtectionClientSettings settings,
+        IConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ConnectionStringKey) ||
+            string.IsNullOrWhiteSpace(settings.Endpoint))
+        {
+            return false;
+        }
+
+        var serviceAddress = configuration.GetConnectionString(settings.ConnectionStringKey);
+        return TryResolveRemoteEndpoint(serviceAddress, settings.Endpoint, out _);
+    }
+
+    private static Uri ResolveRemoteEndpoint(DataProtectionClientSettings settings) =>
+        TryResolveRemoteEndpoint(settings.ConnectionString, settings.Endpoint, out var endpoint)
+            ? endpoint
+            : throw new InvalidOperationException("The remote data protection settings endpoint is invalid.");
+
+    private static bool TryResolveRemoteEndpoint(
+        string? serviceAddress,
+        string? endpoint,
+        out Uri resolvedEndpoint)
+    {
+        resolvedEndpoint = null!;
+        if (!Uri.TryCreate(serviceAddress, UriKind.Absolute, out var baseUri) ||
+            string.IsNullOrWhiteSpace(endpoint) ||
+            !string.IsNullOrEmpty(baseUri.UserInfo) ||
+            !Uri.TryCreate(baseUri, endpoint, out var fullUri) ||
+            !string.IsNullOrEmpty(fullUri.UserInfo) ||
+            !IsSameOrigin(baseUri, fullUri) ||
+            !IsSecureRemoteEndpoint(fullUri))
+        {
+            return false;
+        }
+
+        resolvedEndpoint = fullUri;
+        return true;
+    }
+
+    private static bool IsSameOrigin(Uri left, Uri right) =>
+        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(left.IdnHost, right.IdnHost, StringComparison.OrdinalIgnoreCase) &&
+        left.Port == right.Port;
+
+    private static bool IsSecureRemoteEndpoint(Uri endpoint) =>
+        string.Equals(endpoint.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(endpoint.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+        endpoint.IsLoopback;
+
+    private static void ValidateFetchedSettings(DataProtectionSettings settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ApplicationName) ||
+            string.IsNullOrWhiteSpace(settings.ConnectionStringKey) ||
+            string.IsNullOrWhiteSpace(settings.CacheKey) ||
+            settings.DefaultKeyLifetime is < 1 or > 365 ||
+            settings.Purposes.Any(purpose =>
+                string.IsNullOrWhiteSpace(purpose.Key) ||
+                string.IsNullOrWhiteSpace(purpose.Value)) ||
+            !IsValidRedisConnectionString(settings.ConnectionString))
+        {
+            throw new InvalidOperationException("The remote data protection settings are invalid.");
+        }
+    }
+
+    private static bool IsValidRedisConnectionString(string? connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = ConfigurationOptions.Parse(connectionString);
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            return false;
         }
     }
 }

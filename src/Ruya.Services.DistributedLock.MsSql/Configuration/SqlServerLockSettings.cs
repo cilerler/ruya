@@ -10,18 +10,18 @@ public sealed class SqlServerLockSettings
     /// <summary>
     /// The configuration section name.
     /// </summary>
-    public const string ConfigurationSectionName = "DistributedLock:SqlServer";
+    public const string ConfigurationSectionName = $"{nameof(Ruya.Services.DistributedLock)}:SqlServer";
 
     /// <summary>
-    /// Gets or sets the SQL Server connection string.
-    /// This is populated internally from ConnectionStrings configuration using the ConnectionStringKey.
+    /// Gets the legacy SQL Server connection-string value.
+    /// The key-based registration intentionally leaves this value unpopulated so credentials
+    /// are resolved only at the provider use site. The member remains for 8.x API compatibility.
     /// </summary>
-    [Required]
-    public string ConnectionString { get; internal set; } = string.Empty;
+    public string ConnectionString { get; internal set; } = null!;
 
     /// <summary>
     /// Gets or sets the connection string key name used to retrieve the connection string from ConnectionStrings configuration section.
     /// </summary>
     [Required]
-    public string ConnectionStringKey { get; set; } = string.Empty;
+    public string ConnectionStringKey { get; set; } = null!;
 }

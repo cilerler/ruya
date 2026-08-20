@@ -42,7 +42,12 @@ public class TokenBrokerTests
         {
             Issuer = "test-issuer",
             Audiences = ["test-audience"],
-            SigningKeyBase64 = Convert.ToBase64String(new byte[32]),
+            SigningKeyId = TestSigningKeys.KeyId,
+            SigningPrivateKeyPem = TestSigningKeys.PrivateKeyPem,
+            SigningPublicKeys =
+            {
+                [TestSigningKeys.KeyId] = TestSigningKeys.PublicKeyPem
+            },
             TokenLifetime = TimeSpan.FromMinutes(15),
             ClockSkew = TimeSpan.FromSeconds(30),
             ApiKeyCacheDuration = TimeSpan.FromMinutes(5)
@@ -204,7 +209,8 @@ public class TokenBrokerTests
         var request = new TokenRequest
         {
             Subject = "test-service",
-            Roles = ["admin", "user", "reader"]
+            Roles = ["admin", "user", "reader"],
+            AllowedRoles = ["admin", "user", "reader"]
         };
 
         // Act
@@ -256,7 +262,12 @@ public class TokenBrokerTests
         {
             Issuer = "test-issuer",
             Audiences = ["audience1", "audience2", "audience3"],
-            SigningKeyBase64 = Convert.ToBase64String(new byte[32]),
+            SigningKeyId = TestSigningKeys.KeyId,
+            SigningPrivateKeyPem = TestSigningKeys.PrivateKeyPem,
+            SigningPublicKeys =
+            {
+                [TestSigningKeys.KeyId] = TestSigningKeys.PublicKeyPem
+            },
             TokenLifetime = TimeSpan.FromMinutes(15),
             ClockSkew = TimeSpan.FromSeconds(30),
             ApiKeyCacheDuration = TimeSpan.FromMinutes(5)
@@ -354,7 +365,8 @@ public class TokenBrokerTests
         var request = new TokenRequest
         {
             Subject = "test-service",
-            Roles = ["admin", "user"]
+            Roles = ["admin", "user"],
+            AllowedRoles = ["admin", "user"]
         };
         var tokenResponse = await _sut.CreateTokenAsync(request);
 
@@ -421,7 +433,8 @@ public class TokenBrokerTests
         var exchangeRequest = new TokenExchangeRequest
         {
             OriginalToken = originalToken.AccessToken,
-            ActorService = "service-a"
+            ActorService = "service-a",
+            ActorAllowedScopes = ["read", "write"]
         };
 
         // Act
@@ -477,7 +490,7 @@ public class TokenBrokerTests
     }
 
     [TestMethod]
-    public async Task ExchangeTokenAsync_InvalidOriginalToken_ThrowsSecurityTokenMalformedException()
+    public async Task ExchangeTokenAsync_InvalidOriginalToken_ThrowsInvalidTokenException()
     {
         // Arrange
         var request = new TokenExchangeRequest
@@ -487,7 +500,7 @@ public class TokenBrokerTests
         };
 
         // Act & Assert
-        await Assert.ThrowsExactlyAsync<Microsoft.IdentityModel.Tokens.SecurityTokenMalformedException>(
+        await Assert.ThrowsExactlyAsync<InvalidTokenException>(
             () => _sut.ExchangeTokenAsync(request));
     }
 
@@ -506,7 +519,8 @@ public class TokenBrokerTests
         {
             OriginalToken = originalToken.AccessToken,
             ActorService = "service-a",
-            NarrowedScopes = ["read"]
+            NarrowedScopes = ["read"],
+            ActorAllowedScopes = ["read"]
         };
 
         // Act
@@ -533,13 +547,13 @@ public class TokenBrokerTests
         {
             OriginalToken = originalToken.AccessToken,
             ActorService = "service-a",
-            NarrowedScopes = ["read", "write"]
+            NarrowedScopes = ["read", "write"],
+            ActorAllowedScopes = ["read", "write"]
         };
 
         // Act & Assert
-        var ex = await Assert.ThrowsExactlyAsync<InvalidTokenException>(
+        await Assert.ThrowsExactlyAsync<InvalidTokenException>(
             () => _sut.ExchangeTokenAsync(exchangeRequest));
-        Assert.IsTrue(ex.Message.Contains("write"));
     }
 
     [TestMethod]
@@ -557,7 +571,8 @@ public class TokenBrokerTests
         var exchange1Request = new TokenExchangeRequest
         {
             OriginalToken = originalToken.AccessToken,
-            ActorService = "service-a"
+            ActorService = "service-a",
+            ActorAllowedScopes = ["read"]
         };
         var token1 = await _sut.ExchangeTokenAsync(exchange1Request);
 
@@ -565,7 +580,8 @@ public class TokenBrokerTests
         var exchange2Request = new TokenExchangeRequest
         {
             OriginalToken = token1.AccessToken,
-            ActorService = "service-b"
+            ActorService = "service-b",
+            ActorAllowedScopes = ["read"]
         };
         var token2 = await _sut.ExchangeTokenAsync(exchange2Request);
 
@@ -573,7 +589,8 @@ public class TokenBrokerTests
         var exchange3Request = new TokenExchangeRequest
         {
             OriginalToken = token2.AccessToken,
-            ActorService = "service-c"
+            ActorService = "service-c",
+            ActorAllowedScopes = ["read"]
         };
         var token3 = await _sut.ExchangeTokenAsync(exchange3Request);
 
@@ -591,7 +608,7 @@ public class TokenBrokerTests
     }
 
     [TestMethod]
-    public async Task ExchangeTokenAsync_WithCustomLifetime_RespectsLifetime()
+    public async Task ExchangeTokenAsync_WithCustomLifetime_DoesNotOutliveOriginalToken()
     {
         // Arrange
         var originalRequest = new TokenRequest { Subject = "original-user" };
@@ -609,7 +626,7 @@ public class TokenBrokerTests
         var result = await _sut.ExchangeTokenAsync(exchangeRequest);
 
         // Assert
-        var expectedExpiry = DateTime.UtcNow.Add(customLifetime);
+        var expectedExpiry = originalToken.ExpiresAt;
         var diff = (result.ExpiresAt - expectedExpiry).Duration();
         Assert.IsTrue(diff < TimeSpan.FromSeconds(5));
     }
@@ -624,7 +641,8 @@ public class TokenBrokerTests
         var exchangeRequest = new TokenExchangeRequest
         {
             OriginalToken = originalToken.AccessToken,
-            ActorService = "service-a"
+            ActorService = "service-a",
+            ActorAllowedScopes = ["read", "write", "admin"]
         };
 
         // Act
@@ -649,7 +667,8 @@ public class TokenBrokerTests
         var exchangeRequest = new TokenExchangeRequest
         {
             OriginalToken = originalToken.AccessToken,
-            ActorService = "service-a"
+            ActorService = "service-a",
+            ActorAllowedScopes = ["read", "write", "admin"]
         };
         var exchangedToken = await _sut.ExchangeTokenAsync(exchangeRequest);
 
@@ -708,7 +727,8 @@ public class TokenBrokerTests
         var exchangeRequest = new TokenExchangeRequest
         {
             OriginalToken = originalToken.AccessToken,
-            ActorService = "service-a"
+            ActorService = "service-a",
+            ActorAllowedScopes = ["read", "write", "admin"]
         };
 
         // Act
@@ -720,5 +740,165 @@ public class TokenBrokerTests
         Assert.IsTrue(result.Scopes.Contains("read"));
         Assert.IsTrue(result.Scopes.Contains("write"));
         Assert.IsTrue(result.Scopes.Contains("admin"));
+    }
+
+    [TestMethod]
+    public async Task CreateTokenAsync_ValidRequest_UsesConfiguredRsaKeyAndAlgorithm()
+    {
+        var response = await _sut.CreateTokenAsync(new TokenRequest { Subject = "test-service" });
+
+        var token = new JwtSecurityTokenHandler().ReadJwtToken(response.AccessToken);
+
+        Assert.AreEqual(TestSigningKeys.KeyId, token.Header.Kid);
+        Assert.AreEqual(Microsoft.IdentityModel.Tokens.SecurityAlgorithms.RsaSha256, token.Header.Alg);
+    }
+
+    [TestMethod]
+    public async Task CreateTokenAsync_DisallowedRole_ThrowsInvalidTokenException()
+    {
+        var request = new TokenRequest
+        {
+            Subject = "test-service",
+            Roles = ["administrator"],
+            AllowedRoles = ["reader"]
+        };
+
+        await Assert.ThrowsExactlyAsync<InvalidTokenException>(() => _sut.CreateTokenAsync(request));
+    }
+
+    [TestMethod]
+    public async Task CreateTokenAsync_ReservedAdditionalClaim_ThrowsInvalidTokenException()
+    {
+        var request = new TokenRequest
+        {
+            Subject = "test-service",
+            AdditionalClaims = new Dictionary<string, string>
+            {
+                [JwtRegisteredClaimNames.Sub] = "forged-subject"
+            }
+        };
+
+        await Assert.ThrowsExactlyAsync<InvalidTokenException>(() => _sut.CreateTokenAsync(request));
+    }
+
+    [TestMethod]
+    public async Task ExchangeTokenAsync_ActorScopeNotRegistered_ThrowsInvalidTokenException()
+    {
+        var original = await _sut.CreateTokenAsync(new TokenRequest
+        {
+            Subject = "original-user",
+            Scopes = ["read", "write"]
+        });
+        var request = new TokenExchangeRequest
+        {
+            OriginalToken = original.AccessToken,
+            ActorService = "service-a",
+            NarrowedScopes = ["write"],
+            ActorAllowedScopes = ["read"]
+        };
+
+        await Assert.ThrowsExactlyAsync<InvalidTokenException>(() => _sut.ExchangeTokenAsync(request));
+    }
+
+    [TestMethod]
+    public async Task ValidateTokenAsync_MalformedToken_ReturnsBoundedGenericFailure()
+    {
+        var result = await _sut.ValidateTokenAsync("not-a-jwt");
+
+        Assert.IsFalse(result.IsValid);
+        Assert.AreEqual("Token validation failed.", result.ErrorMessage);
+        Assert.IsNull(result.Subject);
+        Assert.IsNull(result.Scopes);
+    }
+
+    [TestMethod]
+    public async Task ValidateTokenAsync_OversizedToken_ReturnsBoundedGenericFailure()
+    {
+        var oversizedToken = new string('a', Constants.Defaults.MaximumTokenSizeInBytes + 1);
+
+        var result = await _sut.ValidateTokenAsync(oversizedToken);
+
+        Assert.IsFalse(result.IsValid);
+        Assert.AreEqual("Token validation failed.", result.ErrorMessage);
+    }
+
+    [TestMethod]
+    public async Task CreateTokenAsync_CanceledRequest_ThrowsOperationCanceledException()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            _sut.CreateTokenAsync(
+                new TokenRequest { Subject = "test-service" },
+                cancellation.Token));
+    }
+
+    [TestMethod]
+    public async Task ExchangeTokenAsync_PreviousSigningKeyStillInRing_AcceptsUnexpiredToken()
+    {
+        var previousSettings = new TokenBrokerSettings
+        {
+            Issuer = _settings.Issuer,
+            Audiences = [.. _settings.Audiences],
+            SigningKeyId = TestSigningKeys.PreviousKeyId,
+            SigningPrivateKeyPem = TestSigningKeys.PreviousPrivateKeyPem,
+            SigningPublicKeys =
+            {
+                [TestSigningKeys.PreviousKeyId] = TestSigningKeys.PreviousPublicKeyPem
+            },
+            TokenLifetime = _settings.TokenLifetime,
+            ClockSkew = _settings.ClockSkew
+        };
+        var previousBroker = new TokenBroker(
+            Mock.Of<ILogger<TokenBroker>>(),
+            _meterFactoryMock.Object,
+            Options.Create(previousSettings),
+            _timeProvider);
+        var previousToken = await previousBroker.CreateTokenAsync(new TokenRequest
+        {
+            Subject = "original-service",
+            Scopes = ["read"]
+        });
+
+        _settings.SigningPublicKeys.Add(
+            TestSigningKeys.PreviousKeyId,
+            TestSigningKeys.PreviousPublicKeyPem);
+        var rotatedBroker = new TokenBroker(
+            Mock.Of<ILogger<TokenBroker>>(),
+            _meterFactoryMock.Object,
+            Options.Create(_settings),
+            _timeProvider);
+
+        var validation = await rotatedBroker.ValidateTokenAsync(previousToken.AccessToken);
+        var exchange = await rotatedBroker.ExchangeTokenAsync(new TokenExchangeRequest
+        {
+            OriginalToken = previousToken.AccessToken,
+            ActorService = "actor-service",
+            ActorAllowedScopes = ["read"]
+        });
+
+        Assert.IsTrue(validation.IsValid);
+        var exchangedJwt = new JwtSecurityTokenHandler().ReadJwtToken(exchange.AccessToken);
+        Assert.AreEqual(TestSigningKeys.KeyId, exchangedJwt.Header.Kid);
+    }
+
+    [TestMethod]
+    public async Task ValidateTokenAsync_UntrustedFailure_DoesNotAttachExceptionOrTokenToLog()
+    {
+        const string untrustedToken = "attacker-controlled-token-value";
+        var logger = new CapturingLogger<TokenBroker>();
+        var broker = new TokenBroker(
+            logger,
+            _meterFactoryMock.Object,
+            Options.Create(_settings),
+            _timeProvider);
+
+        var result = await broker.ValidateTokenAsync(untrustedToken);
+
+        Assert.IsFalse(result.IsValid);
+        var entry = logger.Entries.Single(logEntry => logEntry.EventId.Id == LogEvents.TokenValidationFailed);
+        Assert.IsNull(entry.Exception);
+        Assert.IsFalse(entry.Message.Contains(untrustedToken, StringComparison.Ordinal));
     }
 }

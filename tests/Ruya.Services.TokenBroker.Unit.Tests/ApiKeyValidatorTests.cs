@@ -14,6 +14,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using Moq;
 
+using Ruya.Services.DistributedLock.Abstractions.Models;
 using Ruya.Services.TokenBroker.Contracts;
 using Ruya.Services.TokenBroker.Models;
 
@@ -41,7 +42,8 @@ public class ApiKeyValidatorTests
         {
             Issuer = "test-issuer",
             Audiences = ["test-audience"],
-            SigningKeyBase64 = Convert.ToBase64String(new byte[32]),
+            SigningKeyId = TestSigningKeys.KeyId,
+            SigningPrivateKeyPem = TestSigningKeys.PrivateKeyPem,
             ApiKeyCacheDuration = TimeSpan.FromMinutes(5)
         };
 
@@ -55,7 +57,8 @@ public class ApiKeyValidatorTests
             _loggerMock.Object,
             _meterFactoryMock.Object,
             _optionsMock.Object,
-            _cacheMock.Object);
+            _cacheMock.Object,
+            new PassThroughDistributedLock());
     }
 
     [TestMethod]
@@ -69,10 +72,7 @@ public class ApiKeyValidatorTests
             ApiKeyHash = "hash",
             AllowedScopes = ["scope1"]
         };
-        var json = JsonSerializer.Serialize(registration, Constants.JsonSerializerOptions);
-
-        _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Encoding.UTF8.GetBytes(json));
+        SetupCurrentRegistration(apiKey, registration);
 
         // Act
         var result = await _sut.ValidateApiKeyAsync(apiKey);
@@ -129,9 +129,11 @@ public class ApiKeyValidatorTests
         _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Encoding.UTF8.GetBytes("invalid-json"));
 
-        // Act & Assert
-        await Assert.ThrowsExactlyAsync<JsonException>(
-            () => _sut.ValidateApiKeyAsync(apiKey));
+        // Act
+        var result = await _sut.ValidateApiKeyAsync(apiKey);
+
+        // Assert
+        Assert.IsNull(result);
     }
 
     [TestMethod]
@@ -145,10 +147,7 @@ public class ApiKeyValidatorTests
             ApiKeyHash = "hash",
             AllowedScopes = ["scope1", "scope2", "scope3"]
         };
-        var json = JsonSerializer.Serialize(registration, Constants.JsonSerializerOptions);
-
-        _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Encoding.UTF8.GetBytes(json));
+        SetupCurrentRegistration(apiKey, registration);
 
         // Act
         var result = await _sut.ValidateApiKeyAsync(apiKey);
@@ -170,10 +169,7 @@ public class ApiKeyValidatorTests
             ApiKeyHash = "hash",
             CanExchangeTokens = true
         };
-        var json = JsonSerializer.Serialize(registration, Constants.JsonSerializerOptions);
-
-        _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Encoding.UTF8.GetBytes(json));
+        SetupCurrentRegistration(apiKey, registration);
 
         // Act
         var result = await _sut.ValidateApiKeyAsync(apiKey);
@@ -194,10 +190,7 @@ public class ApiKeyValidatorTests
             ApiKeyHash = "hash",
             CanExchangeTokens = false
         };
-        var json = JsonSerializer.Serialize(registration, Constants.JsonSerializerOptions);
-
-        _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Encoding.UTF8.GetBytes(json));
+        SetupCurrentRegistration(apiKey, registration);
 
         // Act
         var result = await _sut.ValidateApiKeyAsync(apiKey);
@@ -555,5 +548,215 @@ public class ApiKeyValidatorTests
             Encoding.UTF8.GetString(storedData), Constants.JsonSerializerOptions);
         Assert.IsNotNull(storedRegistration);
         Assert.AreEqual(expectedHash, storedRegistration.ApiKeyHash);
+    }
+
+    [TestMethod]
+    public async Task ValidateApiKeyAsync_StaleRegistrationIndex_ReturnsNull()
+    {
+        var apiKey = "rotated-out-api-key";
+        var apiKeyHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)));
+        var registration = new ServiceRegistration
+        {
+            ServiceName = "test-service",
+            ApiKeyHash = apiKeyHash
+        };
+        var json = JsonSerializer.Serialize(
+            registration,
+            TokenBrokerJsonSerializerContext.Default.ServiceRegistration);
+        _cacheMock.Setup(cache => cache.GetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ApiKeysPrefix, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Encoding.UTF8.GetBytes(json));
+        _cacheMock.Setup(cache => cache.GetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ServiceNameIndexPrefix, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Encoding.UTF8.GetBytes("different-active-hash"));
+
+        var result = await _sut.ValidateApiKeyAsync(apiKey);
+
+        Assert.IsNull(result);
+    }
+
+    [TestMethod]
+    public async Task RegisterServiceAsync_IndexWriteFails_RemovesUncommittedPayload()
+    {
+        var registration = new ServiceRegistration
+        {
+            ServiceName = "test-service",
+            ApiKeyHash = string.Empty
+        };
+        string? removedKey = null;
+        _cacheMock.Setup(cache => cache.GetAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _cacheMock.Setup(cache => cache.SetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ApiKeysPrefix, StringComparison.Ordinal)),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _cacheMock.Setup(cache => cache.SetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ServiceNameIndexPrefix, StringComparison.Ordinal)),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated index failure"));
+        _cacheMock.Setup(cache => cache.RemoveAsync(
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((key, _) => removedKey = key)
+            .Returns(Task.CompletedTask);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            _sut.RegisterServiceAsync(registration, "new-api-key"));
+
+        Assert.IsNotNull(removedKey);
+        Assert.IsTrue(removedKey.StartsWith(Constants.CacheKeys.ApiKeysPrefix, StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task RegisterServiceAsync_SameActiveKeyIndexRefreshFails_PreservesActivePayload()
+    {
+        const string apiKey = "same-active-api-key";
+        var apiKeyHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)));
+        var registration = new ServiceRegistration
+        {
+            ServiceName = "test-service",
+            ApiKeyHash = apiKeyHash
+        };
+        _cacheMock.Setup(cache => cache.GetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ServiceNameIndexPrefix, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Encoding.UTF8.GetBytes(apiKeyHash));
+        _cacheMock.Setup(cache => cache.SetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ApiKeysPrefix, StringComparison.Ordinal)),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _cacheMock.Setup(cache => cache.SetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ServiceNameIndexPrefix, StringComparison.Ordinal)),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated index refresh failure"));
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            _sut.RegisterServiceAsync(registration, apiKey));
+
+        _cacheMock.Verify(
+            cache => cache.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [TestMethod]
+    public async Task RegisterServiceAsync_IndexWriteCommitsThenThrows_PreservesCommittedPayload()
+    {
+        const string newApiKey = "new-active-api-key";
+        var newApiKeyHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(newApiKey)));
+        var activeIndexHash = "previous-active-hash";
+        var registration = new ServiceRegistration
+        {
+            ServiceName = "test-service",
+            ApiKeyHash = string.Empty
+        };
+        _cacheMock.Setup(cache => cache.GetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ServiceNameIndexPrefix, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => Encoding.UTF8.GetBytes(activeIndexHash));
+        _cacheMock.Setup(cache => cache.SetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ApiKeysPrefix, StringComparison.Ordinal)),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _cacheMock.Setup(cache => cache.SetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ServiceNameIndexPrefix, StringComparison.Ordinal)),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, byte[], DistributedCacheEntryOptions, CancellationToken>(
+                (_, _, _, _) => activeIndexHash = newApiKeyHash)
+            .ThrowsAsync(new InvalidOperationException("simulated applied-then-threw write"));
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            _sut.RegisterServiceAsync(registration, newApiKey));
+
+        _cacheMock.Verify(
+            cache => cache.RemoveAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ApiKeysPrefix, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [TestMethod]
+    public async Task RegisterServiceAsync_RotationLock_UsesHeartbeatBeforeExpiry()
+    {
+        var distributedLock = new CapturingDistributedLock();
+        var validator = new ApiKeyValidator(
+            _loggerMock.Object,
+            _meterFactoryMock.Object,
+            _optionsMock.Object,
+            _cacheMock.Object,
+            distributedLock);
+        _cacheMock.Setup(cache => cache.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((byte[]?)null);
+        _cacheMock.Setup(cache => cache.SetAsync(
+                It.IsAny<string>(),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        await validator.RegisterServiceAsync(
+            new ServiceRegistration { ServiceName = "test-service", ApiKeyHash = string.Empty },
+            "new-api-key");
+
+        Assert.IsNotNull(distributedLock.LastOptions);
+        Assert.IsTrue(distributedLock.LastOptions.EnableHeartbeat);
+        Assert.IsTrue(distributedLock.LastOptions.HeartbeatInterval < distributedLock.LastOptions.CustomExpiry);
+    }
+
+    [TestMethod]
+    public async Task LegacyConstructor_ValidatesButRegistrationFailsClosedWithoutDistributedLock()
+    {
+#pragma warning disable CS0618 // Explicitly verifies the released constructor's secured compatibility behavior.
+        var legacyValidator = new ApiKeyValidator(
+            _loggerMock.Object,
+            _meterFactoryMock.Object,
+            _optionsMock.Object,
+            _cacheMock.Object);
+#pragma warning restore CS0618
+        var registration = new ServiceRegistration
+        {
+            ServiceName = "test-service",
+            ApiKeyHash = string.Empty
+        };
+        SetupCurrentRegistration("current-api-key", registration);
+
+        var validatedRegistration = await legacyValidator.ValidateApiKeyAsync("current-api-key");
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            legacyValidator.RegisterServiceAsync(registration, "new-api-key"));
+        Assert.IsNotNull(validatedRegistration);
+    }
+
+    private void SetupCurrentRegistration(string apiKey, ServiceRegistration registration)
+    {
+        var apiKeyHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)));
+        var storedRegistration = registration with { ApiKeyHash = apiKeyHash };
+        var json = JsonSerializer.Serialize(
+            storedRegistration,
+            TokenBrokerJsonSerializerContext.Default.ServiceRegistration);
+
+        _cacheMock.Setup(c => c.GetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ApiKeysPrefix, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Encoding.UTF8.GetBytes(json));
+        _cacheMock.Setup(c => c.GetAsync(
+                It.Is<string>(key => key.StartsWith(Constants.CacheKeys.ServiceNameIndexPrefix, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Encoding.UTF8.GetBytes(apiKeyHash));
     }
 }

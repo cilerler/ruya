@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.AspNetCore.Diagnostics.yml'
       - 'src/Ruya.AspNetCore.Diagnostics/**'
+      - 'tests/Ruya.AspNetCore.Diagnostics.Unit.Tests/**'
 
 jobs:
   build:

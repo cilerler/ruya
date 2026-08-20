@@ -2,7 +2,9 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations;
 using System.Data;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
@@ -101,18 +103,19 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		ArgumentNullException.ThrowIfNull(context);
 		ArgumentNullException.ThrowIfNull(entities);
 		ArgumentNullException.ThrowIfNull(options);
+		ValidateOptions(options);
 
 		using var activity = _tracing.StartActivity("BulkInsert", ActivityKind.Client);
 		activity.SetTag("db.system", "mssql");
 		activity.SetTag("db.operation", "BulkInsert");
 		activity.SetTag("db.sql.table", options.TableName);
 
-		// Materialize for retry safety — IEnumerable may be single-pass
+		// Materialize once because callers may provide a single-pass sequence.
 		var entityList = entities as IList<T> ?? entities.ToList();
 
 		if (entityList.Count == 0)
 		{
-			_logger.LogDebug("BulkInsert skipped: no entities provided");
+			_logger.BulkInsertSkipped();
 			return 0;
 		}
 
@@ -134,57 +137,58 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			throw new InvalidOperationException($"Could not determine table name for type {typeof(T).Name}. Provide TableName in options.");
 		}
 
+		tableName = NormalizeDestinationTableName(tableName);
+
 		if (columns is null || columns.Length == 0)
 		{
 			throw new InvalidOperationException($"Could not determine columns for type {typeof(T).Name}. Provide Columns in options.");
 		}
 
-		_logger.LogDebug("BulkInsert starting to {TableName}", tableName);
+		_logger.BulkInsertStarted(tableName);
 		var stopwatch = Stopwatch.StartNew();
 
 		try
 		{
-			// Use EF Core's execution strategy for transient fault retry (e.g., Azure SQL 40197)
-			var strategy = context.Database.CreateExecutionStrategy();
-			var rowsProcessed = await strategy.ExecuteAsync(async ct =>
+			// Bulk insert is not inherently idempotent. Retrying after an ambiguous commit can duplicate
+			// rows and replay progress callbacks, so retry orchestration must remain with a caller that
+			// has an operation-specific idempotency or verification contract.
+			var connection = context.Database.GetDbConnection() as SqlConnection
+				?? throw new InvalidOperationException("BulkInsert requires a SqlConnection. Ensure you're using SQL Server provider.");
+
+			var transaction = context.Database.CurrentTransaction?.GetDbTransaction() as SqlTransaction;
+
+			// A connection can be left Broken after a transient network failure. Treat it like Closed,
+			// but preserve an already-open caller connection and its transaction ownership.
+			var needsOpen = connection.State is ConnectionState.Closed or ConnectionState.Broken;
+			if (needsOpen)
 			{
-				var connection = context.Database.GetDbConnection() as SqlConnection
-					?? throw new InvalidOperationException("BulkInsert requires a SqlConnection. Ensure you're using SQL Server provider.");
-
-				var transaction = context.Database.CurrentTransaction?.GetDbTransaction() as SqlTransaction;
-
-				// On retry after transient error, connection may be Broken — treat same as Closed
-				var needsOpen = connection.State is ConnectionState.Closed or ConnectionState.Broken;
-				if (needsOpen)
+				if (connection.State == ConnectionState.Broken)
 				{
-					if (connection.State == ConnectionState.Broken)
-					{
-						await connection.CloseAsync();
-					}
-					await connection.OpenAsync(ct);
+					await connection.CloseAsync();
 				}
+				await connection.OpenAsync(cancellationToken);
+			}
 
-				try
+			try
+			{
+				await ExecuteBulkCopyAsync(
+					connection,
+					transaction,
+					entityList,
+					tableName,
+					columns,
+					options,
+					cancellationToken);
+			}
+			finally
+			{
+				if (needsOpen && connection.State == ConnectionState.Open)
 				{
-					await ExecuteBulkCopyAsync(
-						connection,
-						transaction,
-						entityList,
-						tableName,
-						columns,
-						options,
-						ct);
+					await connection.CloseAsync();
+				}
+			}
 
-					return (long)entityList.Count;
-				}
-				finally
-				{
-					if (needsOpen && connection.State == ConnectionState.Open)
-					{
-						await connection.CloseAsync();
-					}
-				}
-			}, cancellationToken);
+			var rowsProcessed = (long)entityList.Count;
 
 			stopwatch.Stop();
 
@@ -192,24 +196,22 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			activity.SetTag("db.bulk.rows_affected", rowsProcessed);
 			activity.SetStatus(ActivityStatusCode.Ok);
 
-			_logger.LogInformation(
-				"BulkInsert completed: {RowsCopied} rows to {TableName} in {ElapsedMs}ms",
-				rowsProcessed, tableName, stopwatch.ElapsedMilliseconds);
+			_logger.BulkInsertCompleted(rowsProcessed, tableName, stopwatch.ElapsedMilliseconds);
 
 			return rowsProcessed;
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			throw;
 		}
 		catch (Exception ex)
 		{
 			stopwatch.Stop();
-			activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+			activity.SetStatus(ActivityStatusCode.Error);
 			activity.SetTag("exception.type", ex.GetType().FullName);
-			activity.SetTag("exception.message", ex.Message);
-			activity.SetTag("exception.stacktrace", ex.StackTrace);
 			activity.AddEvent("exception", DateTimeOffset.UtcNow);
 
-			_logger.LogError(ex,
-				"BulkInsert failed: {TableName} after {ElapsedMs}ms - {Message}",
-				tableName, stopwatch.ElapsedMilliseconds, ex.Message);
+			_logger.BulkInsertFailed(ex, tableName, stopwatch.ElapsedMilliseconds);
 
 			throw;
 		}
@@ -225,18 +227,21 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		ArgumentNullException.ThrowIfNull(context);
 		ArgumentNullException.ThrowIfNull(reader);
 		ArgumentNullException.ThrowIfNull(options);
+		ValidateOptions(options);
 
 		if (string.IsNullOrEmpty(options.TableName))
 		{
 			throw new InvalidOperationException("TableName is required when using IDataReader overload.");
 		}
 
+		var tableName = NormalizeDestinationTableName(options.TableName);
+
 		using var activity = _tracing.StartActivity("BulkInsert", ActivityKind.Client);
 		activity.SetTag("db.system", "mssql");
 		activity.SetTag("db.operation", "BulkInsert");
-		activity.SetTag("db.sql.table", options.TableName);
+		activity.SetTag("db.sql.table", tableName);
 
-		_logger.LogDebug("BulkInsert (IDataReader) starting to {TableName}", options.TableName);
+		_logger.BulkInsertStarted(tableName);
 		var stopwatch = Stopwatch.StartNew();
 
 		try
@@ -258,6 +263,7 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 					connection,
 					transaction,
 					reader,
+					tableName,
 					options,
 					cancellationToken);
 
@@ -266,9 +272,7 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 				activity.SetTag("db.bulk.rows_affected", rowsCopied);
 				activity.SetStatus(ActivityStatusCode.Ok);
 
-				_logger.LogInformation(
-					"BulkInsert (IDataReader) completed: {RowsCopied} rows to {TableName} in {ElapsedMs}ms",
-					rowsCopied, options.TableName, stopwatch.ElapsedMilliseconds);
+				_logger.BulkInsertCompleted(rowsCopied, tableName, stopwatch.ElapsedMilliseconds);
 
 				return rowsCopied;
 			}
@@ -280,18 +284,18 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 				}
 			}
 		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			throw;
+		}
 		catch (Exception ex)
 		{
 			stopwatch.Stop();
-			activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+			activity.SetStatus(ActivityStatusCode.Error);
 			activity.SetTag("exception.type", ex.GetType().FullName);
-			activity.SetTag("exception.message", ex.Message);
-			activity.SetTag("exception.stacktrace", ex.StackTrace);
 			activity.AddEvent("exception", DateTimeOffset.UtcNow);
 
-			_logger.LogError(ex,
-				"BulkInsert (IDataReader) failed: {TableName} after {ElapsedMs}ms - {Message}",
-				options.TableName, stopwatch.ElapsedMilliseconds, ex.Message);
+			_logger.BulkInsertFailed(ex, tableName, stopwatch.ElapsedMilliseconds);
 
 			throw;
 		}
@@ -301,14 +305,19 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		SqlConnection connection,
 		SqlTransaction? transaction,
 		IDataReader reader,
+		string tableName,
 		BulkInsertOptions options,
 		CancellationToken cancellationToken)
 	{
+		await using var ownedTransaction = transaction is null
+			? (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken)
+			: null;
+		var effectiveTransaction = transaction ?? ownedTransaction;
 		var bulkCopyOptions = BuildSqlBulkCopyOptions(options);
 
-		using var bulkCopy = new SqlBulkCopy(connection, bulkCopyOptions, transaction)
+		using var bulkCopy = new SqlBulkCopy(connection, bulkCopyOptions, effectiveTransaction)
 		{
-			DestinationTableName = options.TableName,
+			DestinationTableName = tableName,
 			BatchSize = options.BatchSize,
 			BulkCopyTimeout = options.Timeout,
 			EnableStreaming = true
@@ -323,7 +332,7 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			{
 				columns = schemaTable.Rows
 					.Cast<DataRow>()
-					.Select(r => r["ColumnName"]?.ToString() ?? string.Empty)
+					.Select(r => r[SchemaTableColumn.ColumnName]?.ToString() ?? string.Empty)
 					.Where(name => !string.IsNullOrEmpty(name))
 					.ToArray();
 			}
@@ -347,11 +356,24 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			};
 		}
 
-		await bulkCopy.WriteToServerAsync(reader, cancellationToken);
+		try
+		{
+			await bulkCopy.WriteToServerAsync(reader, cancellationToken);
 
-		// Prefer reader's RecordsAffected for exact count (if the reader tracks it).
-		// SqlBulkCopy.RowsCopied only reflects the last NotifyAfter boundary, missing trailing rows.
-		return reader.RecordsAffected >= 0 ? reader.RecordsAffected : bulkCopy.RowsCopied;
+			if (ownedTransaction is not null)
+			{
+				await ownedTransaction.CommitAsync(cancellationToken);
+			}
+
+			// Prefer reader's RecordsAffected for exact count (if the reader tracks it).
+			// SqlBulkCopy.RowsCopied only reflects the last NotifyAfter boundary, missing trailing rows.
+			return reader.RecordsAffected >= 0 ? reader.RecordsAffected : bulkCopy.RowsCopied;
+		}
+		catch
+		{
+			await RollbackOwnedTransactionAsync(ownedTransaction, tableName);
+			throw;
+		}
 	}
 
 	private async Task ExecuteBulkCopyAsync<T>(
@@ -363,9 +385,13 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 		BulkInsertOptions options,
 		CancellationToken cancellationToken) where T : class
 	{
+		await using var ownedTransaction = transaction is null
+			? (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken)
+			: null;
+		var effectiveTransaction = transaction ?? ownedTransaction;
 		var bulkCopyOptions = BuildSqlBulkCopyOptions(options);
 
-		using var bulkCopy = new SqlBulkCopy(connection, bulkCopyOptions, transaction)
+		using var bulkCopy = new SqlBulkCopy(connection, bulkCopyOptions, effectiveTransaction)
 		{
 			DestinationTableName = tableName,
 			BatchSize = options.BatchSize,
@@ -393,7 +419,20 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 
 		// Use EnumerableDataReader for high-performance IDataReader.
 		using var reader = new EnumerableDataReader<T>(items, columns);
-		await bulkCopy.WriteToServerAsync(reader, cancellationToken);
+		try
+		{
+			await bulkCopy.WriteToServerAsync(reader, cancellationToken);
+
+			if (ownedTransaction is not null)
+			{
+				await ownedTransaction.CommitAsync(cancellationToken);
+			}
+		}
+		catch
+		{
+			await RollbackOwnedTransactionAsync(ownedTransaction, tableName);
+			throw;
+		}
 	}
 
 	private static SqlBulkCopyOptions BuildSqlBulkCopyOptions(BulkInsertOptions options)
@@ -416,6 +455,55 @@ public sealed class BulkInsertOperations : IBulkInsertOperations
 			result |= SqlBulkCopyOptions.TableLock;
 
 		return result;
+	}
+
+	private async Task RollbackOwnedTransactionAsync(SqlTransaction? transaction, string tableName)
+	{
+		if (transaction is null)
+		{
+			return;
+		}
+
+		try
+		{
+			await transaction.RollbackAsync(CancellationToken.None);
+		}
+		catch (Exception ex)
+		{
+			_logger.BulkInsertRollbackFailed(ex, tableName);
+		}
+	}
+
+	private static void ValidateOptions(BulkInsertOptions options)
+	{
+		Validator.ValidateObject(options, new ValidationContext(options), validateAllProperties: true);
+	}
+
+	internal static string NormalizeDestinationTableName(string tableName)
+	{
+		var parts = tableName.Split('.', StringSplitOptions.TrimEntries);
+		if (parts.Length is < 1 or > 2 || parts.Any(static part => string.IsNullOrWhiteSpace(part)))
+		{
+			throw new ArgumentException("Destination table must be a table name or a schema-qualified table name.", nameof(tableName));
+		}
+
+		using var builder = new SqlCommandBuilder();
+		return string.Join('.', parts.Select(part => builder.QuoteIdentifier(UnwrapIdentifier(part))));
+	}
+
+	private static string UnwrapIdentifier(string identifier)
+	{
+		if (identifier.Length > 1 && identifier[0] == '[' && identifier[^1] == ']')
+		{
+			return identifier[1..^1].Replace("]]", "]", StringComparison.Ordinal);
+		}
+
+		if (identifier.Contains('[', StringComparison.Ordinal) || identifier.Contains(']', StringComparison.Ordinal))
+		{
+			throw new ArgumentException("Destination table contains an invalid bracketed identifier.", nameof(identifier));
+		}
+
+		return identifier;
 	}
 
 	internal (string TableName, string[] Columns) GetEntityMetadata<T>(DbContext context)

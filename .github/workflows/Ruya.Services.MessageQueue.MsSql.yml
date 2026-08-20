@@ -15,7 +15,9 @@ on:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.Services.MessageQueue.MsSql.yml'
+      - 'src/Ruya.Services.MessageQueue/**'
       - 'src/Ruya.Services.MessageQueue.MsSql/**'
+      - 'tests/Ruya.Services.MessageQueue.MsSql.Integration.Tests/**'
 
 jobs:
   build:
@@ -23,7 +25,8 @@ jobs:
     with:
       project-name: 'Ruya.Services.MessageQueue.MsSql'
       project-path: './src/Ruya.Services.MessageQueue.MsSql/Ruya.Services.MessageQueue.MsSql.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.Services.MessageQueue.MsSql.Integration.Tests/Ruya.Services.MessageQueue.MsSql.Integration.Tests.csproj'
+      use-testcontainers: true
       dispatch-event-type: 'Ruya.Services.MessageQueue.MsSql'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

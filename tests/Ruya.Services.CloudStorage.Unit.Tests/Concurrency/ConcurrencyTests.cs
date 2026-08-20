@@ -363,6 +363,12 @@ public class ConcurrencyTests
 
         // Act & Assert
         await Assert.ThrowsAsync<OperationCanceledException>(() => uploadTask);
+        Assert.IsFalse(File.Exists(Path.Combine(_testRootPath, "bucket", "large_file.bin")));
+        Assert.AreEqual(
+            0,
+            Directory.Exists(Path.Combine(_testRootPath, "bucket"))
+                ? Directory.EnumerateFiles(Path.Combine(_testRootPath, "bucket"), "*.upload").Count()
+                : 0);
     }
 
     #endregion

@@ -45,14 +45,17 @@ internal static partial class Log
     [LoggerMessage(
         EventId = LogEvents.RedisConnectionFailed,
         Level = LogLevel.Error,
-        Message = "Failed to connect to Redis")]
-    public static partial void RedisConnectionFailed(this ILogger logger, Exception ex);
+        Message = "Failed to connect to Redis ({ExceptionType})")]
+    public static partial void RedisConnectionFailed(this ILogger logger, string exceptionType);
 
     [LoggerMessage(
         EventId = LogEvents.SettingsFetchFailed,
         Level = LogLevel.Error,
-        Message = "Failed to fetch data protection settings from {Endpoint}")]
-    public static partial void SettingsFetchFailed(this ILogger logger, string endpoint, Exception ex);
+        Message = "Failed to fetch data protection settings from {Endpoint} ({ExceptionType})")]
+    public static partial void SettingsFetchFailed(
+        this ILogger logger,
+        string endpoint,
+        string exceptionType);
 
     [LoggerMessage(
         EventId = LogEvents.SettingsFetchSucceeded,

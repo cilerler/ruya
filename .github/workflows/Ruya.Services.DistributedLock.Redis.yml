@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Services.DistributedLock.Redis.yml'
       - 'src/Ruya.Services.DistributedLock.Redis/**'
+      - 'tests/Ruya.Services.DistributedLock.Redis.Integration.Tests/**'
 
 jobs:
   build:
@@ -24,9 +25,10 @@ jobs:
       project-name: 'Ruya.Services.DistributedLock.Redis'
       project-path: './src/Ruya.Services.DistributedLock.Redis/Ruya.Services.DistributedLock.Redis.csproj'
       test-project-paths: './tests/Ruya.Services.DistributedLock.Redis.Integration.Tests/Ruya.Services.DistributedLock.Redis.Integration.Tests.csproj'
+      test-configuration: 'Debug'
       dispatch-event-type: 'Ruya.Services.DistributedLock.Redis'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
-      use-testcontainers: false
+      use-testcontainers: true
     secrets:
       PAT: ${{ secrets.PAT }}  # Required for dispatch (chain builds)
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

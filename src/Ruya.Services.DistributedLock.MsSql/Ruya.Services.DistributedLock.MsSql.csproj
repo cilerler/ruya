@@ -4,6 +4,10 @@
 		<TargetFramework>net8.0</TargetFramework>
 	</PropertyGroup>
 
+	<ItemGroup>
+		<InternalsVisibleTo Include="Ruya.Services.DistributedLock.MsSql.Integration.Tests" />
+	</ItemGroup>
+
 	<PropertyGroup>
 		<Description>SQL Server-based implementation of the distributed lock manager using sp_getapplock. Provides robust distributed locking for applications with SQL Server infrastructure.</Description>
 		<PackageTags>distributed-lock;locking;concurrency;sql-server;database</PackageTags>
@@ -25,6 +29,10 @@
 		<PackageReference Include="Microsoft.Extensions.Options" />
 		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
 		<PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Include="Resources\SQL\*.sql" />
 	</ItemGroup>
 
 </Project>

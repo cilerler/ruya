@@ -7,15 +7,15 @@ using Ruya.Services.TokenBroker.Client;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add Token Client (to request tokens from Token Service)
-builder.Services.AddTokenClient(builder.Configuration);
+builder.Services.AddTokenClient();
 
 // Add Token Validation (to validate incoming tokens)
-builder.Services.AddTokenValidation(builder.Configuration);
+builder.Services.AddTokenValidation();
 
 // Add HttpClient for calling Service B
 builder.Services.AddHttpClient("ServiceB", client =>
 {
-    client.BaseAddress = new Uri("http://service-b:8080");
+    client.BaseAddress = new Uri("https://service-b");
 });
 
 var app = builder.Build();
@@ -30,13 +30,15 @@ app.MapGet("/call-service-b", async (
     CancellationToken cancellationToken) =>
 {
     // Get a token for calling Service B
-    var token = await tokenClient.GetTokenAsync(["read:orders"], cancellationToken);
+    var token = await tokenClient.GetTokenAsync(
+        ["read:orders", "read:inventory"],
+        cancellationToken: cancellationToken);
 
     // Call Service B
     var client = httpClientFactory.CreateClient("ServiceB");
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-    var response = await client.GetAsync("/api/orders", cancellationToken);
+    using var response = await client.GetAsync("/api/orders", cancellationToken);
     response.EnsureSuccessStatusCode();
 
     return await response.Content.ReadAsStringAsync(cancellationToken);

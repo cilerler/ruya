@@ -15,7 +15,11 @@ on:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.Diagnostics.yml'
+      - 'src/Ruya.Primitives/**'
+      - 'src/Ruya.Extensions.DependencyInjection/**'
+      - 'src/Ruya.Diagnostics.Abstractions/**'
       - 'src/Ruya.Diagnostics/**'
+      - 'tests/Ruya.Diagnostics.Unit.Tests/**'
 
 jobs:
   build:
@@ -23,7 +27,8 @@ jobs:
     with:
       project-name: 'Ruya.Diagnostics'
       project-path: './src/Ruya.Diagnostics/Ruya.Diagnostics.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.Diagnostics.Unit.Tests/Ruya.Diagnostics.Unit.Tests.csproj'
+      test-configuration: 'Debug'
       dispatch-event-type: 'Ruya.Diagnostics'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
       use-testcontainers: false

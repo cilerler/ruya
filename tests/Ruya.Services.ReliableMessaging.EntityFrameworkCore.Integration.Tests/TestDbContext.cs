@@ -24,11 +24,25 @@ public sealed class TestDbContext : DbContext
 
 	public DbSet<OutboxEntry> Outbox => Set<OutboxEntry>();
 	public DbSet<InboxEntry> Inbox => Set<InboxEntry>();
+	public DbSet<TestBusinessRecord> BusinessRecords => Set<TestBusinessRecord>();
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		base.OnModelCreating(modelBuilder);
 		modelBuilder.ApplyOutboxEntryConfiguration(OutboxOptions);
 		modelBuilder.ApplyInboxEntryConfiguration(InboxOptions);
+		modelBuilder.Entity<TestBusinessRecord>(entity =>
+		{
+			entity.ToTable("BusinessRecord");
+			entity.HasKey(record => record.Id);
+			entity.Property(record => record.Id).ValueGeneratedNever();
+			entity.Property(record => record.Value).IsRequired();
+		});
 	}
+}
+
+public sealed class TestBusinessRecord
+{
+	public int Id { get; set; }
+	public string Value { get; set; } = null!;
 }

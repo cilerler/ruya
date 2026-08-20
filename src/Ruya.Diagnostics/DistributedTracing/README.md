@@ -1,25 +1,43 @@
 # Distributed Tracing
 
-## Troubleshooting
+## Registration
 
-```text
-Value cannot be null. (Parameter 'Activity is null')
-System.ArgumentNullException: Value cannot be null. (Parameter 'Activity is null')
-   at Ruya.Diagnostics.DistributedTracing.DistributedTracingService.StartOrContinueActivity(String activityName, ActivityKind activityKind, String parentKey, Boolean skipParentCheck)
-   at Ruya.Diagnostics.DistributedTracing.DistributedTracingService.StartActivity(String activityName, ActivityKind activityKind, String parentKey)
-```
-
-This error suggests that `ActivityListener` might not be configured correctly.  
-To diagnose the issue, you can use the provided configuration snippet below to test if it resolves the error.  
-However, this is a diagnose only workaroud, as **OpenTelemetry** should ideally handle this configuration.
-
-Add the following code snippet right after you call `builder.Services.AddDistributedTracingService();`.
+Register metrics and an `IDistributedCache` implementation first, then add the tracing service:
 
 ```csharp
-ActivityListener listener = new ActivityListener
-{
-    ShouldListenTo = (source) => source.Name == Ruya.Primitives.Startup.AssemblyName,
-    Sample = (ref ActivityCreationOptions<ActivityContext> options) => ActivitySamplingResult.AllDataAndRecorded,
-};
-ActivitySource.AddActivityListener(listener);
+builder.Services.AddMetrics();
+builder.Services.AddStackExchangeRedisCache(options =>
+    options.Configuration = builder.Configuration.GetConnectionString("Redis"));
+builder.Services.AddDistributedTracingService();
 ```
+
+```json
+{
+  "DistributedTracing": {
+    "CacheSlidingExpiration": "00:30:00",
+    "CacheAbsoluteExpiration": "02:00:00",
+    "EnableDebugLogging": false,
+    "DefaultTags": {
+      "app.component": "worker"
+    }
+  }
+}
+```
+
+The absolute expiration, when present, must not be shorter than the sliding expiration. Default tags are applied to every created activity; operation-specific tags override the same key.
+
+## Trace continuation
+
+Use `StartActivityAsync` for the initiator that stores a trace context and `ContinueActivityAsync` for followers that only read it. These methods use the distributed cache asynchronously and accept cancellation. Cache failures are reported with stable event IDs but do not fail the business operation. Cache keys are not written to logs or metric labels. The synchronous methods remain for compatibility and for operations that do not cross a remote-cache boundary.
+
+```csharp
+using var scope = await tracing.StartActivityAsync(
+    "DispatchOrder",
+    ActivityKind.Producer,
+    cacheKey: $"trace:order:{orderId}",
+    cancellationToken: cancellationToken);
+```
+
+`ActivityScope` copies share one lifecycle state, so disposing more than one copy stops the activity only once.
+
+Do not place personal data, credentials, message IDs, or other unbounded values in `DefaultTags` or metric labels.

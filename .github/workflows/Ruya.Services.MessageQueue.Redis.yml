@@ -15,7 +15,9 @@ on:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.Services.MessageQueue.Redis.yml'
+      - 'src/Ruya.Services.MessageQueue/**'
       - 'src/Ruya.Services.MessageQueue.Redis/**'
+      - 'tests/Ruya.Services.MessageQueue.Redis.Integration.Tests/**'
 
 jobs:
   build:
@@ -23,7 +25,9 @@ jobs:
     with:
       project-name: 'Ruya.Services.MessageQueue.Redis'
       project-path: './src/Ruya.Services.MessageQueue.Redis/Ruya.Services.MessageQueue.Redis.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.Services.MessageQueue.Redis.Integration.Tests/Ruya.Services.MessageQueue.Redis.Integration.Tests.csproj'
+      use-testcontainers: true
+      testcontainers-timeout: '600s'
       dispatch-event-type: 'Ruya.Services.MessageQueue.Redis'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

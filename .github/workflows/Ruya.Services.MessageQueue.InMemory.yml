@@ -15,7 +15,9 @@ on:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.Services.MessageQueue.InMemory.yml'
+      - 'src/Ruya.Services.MessageQueue/**'
       - 'src/Ruya.Services.MessageQueue.InMemory/**'
+      - 'tests/Ruya.Services.MessageQueue.InMemory.Integration.Tests/**'
 
 jobs:
   build:
@@ -23,7 +25,7 @@ jobs:
     with:
       project-name: 'Ruya.Services.MessageQueue.InMemory'
       project-path: './src/Ruya.Services.MessageQueue.InMemory/Ruya.Services.MessageQueue.InMemory.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.Services.MessageQueue.InMemory.Integration.Tests/Ruya.Services.MessageQueue.InMemory.Integration.Tests.csproj'
       dispatch-event-type: 'Ruya.Services.MessageQueue.InMemory'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

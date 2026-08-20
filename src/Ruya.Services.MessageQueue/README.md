@@ -1,412 +1,243 @@
 # Ruya.Services.MessageQueue
 
-A robust, provider-agnostic asynchronous messaging abstraction for .NET, designed with the **Provider Pattern**. It supports multiple message brokers (RabbitMQ, Redis, SQL Server, In-Memory) with a unified API, built-in observability, and middleware support.
+Provider-neutral asynchronous publishing and subscription APIs for .NET. The core package owns
+serialization, named-provider creation, custom middleware composition, W3C trace propagation, and
+delivery telemetry. Transport packages own broker topology and settlement.
 
-## Design Principles
+## Packages
 
-1.  **Provider Agnostic**: Core abstractions are independent of any specific broker.
-2.  **Microsoft Patterns**: Follows established .NET patterns (ILogger, Options, DI).
-3.  **Async First**: Full async/await support throughout.
-4.  **Extensibility**: Middleware pipeline for custom behavior.
-5.  **Observability**: Built-in telemetry and health checks.
-6.  **Type Safety**: Strong typing with generics.
+| Package | Provider type | Delivery model |
+|---|---|---|
+| `Ruya.Services.MessageQueue.InMemory` | `InMemory` | Process-local topics and consumer groups; useful for tests and single-process work. |
+| `Ruya.Services.MessageQueue.RabbitMq` | `RabbitMQ` | Durable queues, competing consumers, publisher confirms, retry/reject, and DLQ topology. |
+| `Ruya.Services.MessageQueue.Redis` | `Redis` | Pub/Sub subscriptions with no ack/redelivery; Streams are currently publish-only. |
+| `Ruya.Services.MessageQueue.MsSql` | `MsSql` | SQL Server Service Broker with transactional publish, receive settlement, retry, and dead-letter storage. |
 
-## Configuration
+Provider-specific READMEs are authoritative for capabilities and operational constraints. Do not assume a
+`MessageResult` has the same broker effect on transports that lack acknowledgment or redelivery.
 
-### 1. Registration
+## Registration
 
-Configure the queue and providers in `Startup.cs` or `Program.cs`.
-
-```csharp
-services.AddMessageQueue(options =>
-{
-    options.DefaultProvider = "rabbitmq";
-})
-.AddRabbitMQ(options => 
-{
-    options.Host = "localhost";
-    options.Port = 5672;
-})
-.AddRedis(options =>
-{
-    options.ConnectionString = "localhost:6379";
-});
-```
-
-### 2. Options Pattern
-
-Configuration uses the standard Options pattern with validation:
+Bind named provider instances in `MessageQueue:Providers`, then register the corresponding provider types.
+The provider-specific README owns its transport configuration and secret-handling rules:
 
 ```json
 {
   "MessageQueue": {
-    "DefaultProvider": "rabbitmq",
+    "EnableTelemetry": true,
+    "EnableHealthChecks": true,
+    "Serializer": "json",
+    "DefaultTimeout": "00:00:30",
     "Providers": {
-      "rabbitmq": { "Enabled": true, "Type": "RabbitMQ" }
-    },
-    "RabbitMQ": {
-      "Host": "localhost",
-      "Port": 5672
+      "orders-rabbitmq": {
+        "Enabled": true,
+        "Type": "RabbitMQ"
+      }
     }
   }
 }
 ```
 
-## Usage
-
-### Publishing Messages
-
-Inject `IMessageQueue` (or `IMessageQueueFactory` for named instances) and publish messages.
-
-```csharp
-public class OrderService
-{
-    private readonly IMessageQueue _queue;
-
-    public OrderService(IMessageQueueFactory factory)
-    {
-        _queue = factory.CreateQueue("rabbitmq");
-    }
-
-    public async Task CreateOrderAsync(Order order)
-    {
-        // Simple publish
-        await _queue.PublishAsync("orders.created", new OrderCreatedEvent 
-        { 
-            OrderId = order.Id 
-        });
-
-        // Fluent API with options
-        await _queue.To<OrderCreatedEvent>("orders.created")
-            .WithPriority(10)
-            .WithDelay(TimeSpan.FromMinutes(5))
-            .WithCorrelationId(Guid.NewGuid().ToString())
-            .SendAsync(new OrderCreatedEvent { OrderId = order.Id });
-    }
-}
-```
-
-### Subscribing to Messages
-
-Create a background service to handle incoming messages.
+Do not place a connection string under a named `MessageQueue:Providers` entry. The released
+`ProviderConfiguration.ConnectionString` property was never consumed and now rejects nonblank values at
+startup. Configure the selected transport's descriptive `*ConnectionStringKey` in its provider section and
+supply the matching `ConnectionStrings` value through secrets or another configuration provider.
 
 ```csharp
-public class OrderHandler : BackgroundService
-{
-    private readonly IMessageQueue _queue;
-
-    public OrderHandler(IMessageQueueFactory factory)
-    {
-        _queue = factory.CreateQueue("rabbitmq");
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        await _queue.SubscribeAsync<OrderCreatedEvent>(
-            "orders.created",
-            async context =>
-            {
-                var orderId = context.Envelope.Payload.OrderId;
-                Console.WriteLine($"Processing order: {orderId}");
-                return MessageResult.Success();
-            },
-            new SubscribeOptions
-            {
-                PrefetchCount = 10,
-                MaxConcurrency = 5,
-                RetryPolicy = new RetryPolicy { MaxRetryAttempts = 3 }
-            },
-            stoppingToken);
-    }
-}
+services
+    .AddMessageQueue()
+    .AddJsonSerializerContext(OrderContractsJsonSerializerContext.Default)
+    .AddRabbitMQ();
 ```
 
-## Patterns & Best Practices
+`AddMessageQueue()` binds `MessageQueueOptions` from `MessageQueue` and validates the result when the host
+starts. `AddRabbitMQ()` binds and validates `MessageQueue:RabbitMQ`. Application composition should use these
+parameterless APIs; the raw `IConfiguration` overloads remain only as obsolete 8.x compatibility bridges.
+An `Action<MessageQueueOptions>` overload is available for tests and compositions that already own strongly
+typed values.
 
-### Idempotency Pattern
+The named `Serializer` setting currently accepts only `json`; unsupported names fail during startup. Register
+a custom serializer explicitly with `AddSerializer<TSerializer>()`. When `EnableHealthChecks` is `false`,
+registered message-queue health checks report that they are disabled without creating or querying queues.
 
-To handle duplicate processing (e.g., after a broker crash), implement idempotency:
+`AddSingletonMessageQueue(name)` remains as an obsolete 8.x bridge. It now returns an async-lazy proxy and
+never blocks service resolution; new code should inject `IMessageQueueFactory` and await
+`CreateQueueAsync(name)` explicitly.
+
+See the
+[`Ruya.Services.MessageQueue.RabbitMq` README](../Ruya.Services.MessageQueue.RabbitMq/README.md) for the
+Development-only local example and the non-Development secrets contract.
+
+Register every producer-owned contract context used by this process. The default JSON serializer
+reflection-resolves only Ruya's generic envelope and framework metadata; the envelope payload is read and
+written with the producer's `JsonTypeInfo`. Once any context is registered, a payload missing from all
+registered contexts fails explicitly instead of silently falling back to reflection. Custom serializers own
+an equivalent explicit metadata contract. Contexts are queried in registration order; register overlapping
+contract metadata once.
+
+Other registrations use `.AddInMemoryProvider(...)`, `.AddRedis(...)`, or `.AddMsSql(...)`.
+
+`IMessageQueueFactory.CreateQueueAsync(name, cancellationToken)` requires the configured instance name
+(`orders-rabbitmq` above). It caches and owns that queue; callers do not dispose the shared instance.
+`DefaultProvider` is retained configuration metadata but does not replace explicit instance selection.
 
 ```csharp
-await queue.SubscribeAsync<OrderCreatedEvent>("orders.created", async context =>
-{
-    var messageId = context.Envelope.MessageId;
-    
-    // Check if already processed
-    if (await processedMessageStore.ContainsAsync(messageId))
-    {
-        return MessageResult.Success(); // Skip duplicate
-    }
-    
-    // Process the message
-    await ProcessOrderAsync(context.Envelope.Payload);
-    
-    // Mark as processed (atomically with business logic if possible)
-    await processedMessageStore.AddAsync(messageId);
-    
-    return MessageResult.Success();
-});
+var queue = await messageQueueFactory.CreateQueueAsync(
+    settings.MessageQueueProviderName,
+    cancellationToken);
 ```
 
-## Advanced Concepts
+`MessageQueue:DefaultTimeout` bounds finite queue operations such as queue creation, publishing, and health
+checks. `PublishOptions.Timeout` overrides that deadline for one publish or batch. Caller-requested
+cancellation remains cancellation; expiration of a configured deadline raises `TimeoutException`.
+Subscription tokens are forwarded unchanged because providers may retain them for the complete subscription
+lifetime; cancelling the host token after setup therefore continues to reach handlers.
 
-### Concurrency & Thread Safety
-
-The framework handles concurrency at multiple levels:
-
-1.  **MaxConcurrency**: Limits how many messages are processed simultaneously per subscription.
-    ```csharp
-    new SubscribeOptions { MaxConcurrency = 5 } // Only 5 handlers run at once
-# Ruya.Services.MessageQueue
-
-A robust, provider-agnostic asynchronous messaging abstraction for .NET, designed with the **Provider Pattern**. It supports multiple message brokers (RabbitMQ, Redis, SQL Server, In-Memory) with a unified API, built-in observability, and middleware support.
-
-## Design Principles
-
-1.  **Provider Agnostic**: Core abstractions are independent of any specific broker.
-2.  **Microsoft Patterns**: Follows established .NET patterns (ILogger, Options, DI).
-3.  **Async First**: Full async/await support throughout.
-4.  **Extensibility**: Middleware pipeline for custom behavior.
-5.  **Observability**: Built-in telemetry and health checks.
-6.  **Type Safety**: Strong typing with generics.
-
-## Configuration
-
-### 1. Registration
-
-Configure the bus and providers in `Startup.cs` or `Program.cs`.
+## Publishing
 
 ```csharp
-services.AddMessageQueue(options =>
-{
-    options.DefaultProvider = "rabbitmq";
-})
-.AddRabbitMQ(options => 
-{
-    options.Host = "localhost";
-    options.Port = 5672;
-})
-.AddRedis(options =>
-{
-    options.ConnectionString = "localhost:6379";
-});
-```
-
-### 2. Options Pattern
-
-Configuration uses the standard Options pattern with validation:
-
-```json
-{
-  "MessageQueue": {
-    "DefaultProvider": "rabbitmq",
-    "Providers": {
-      "rabbitmq": { "Enabled": true, "Type": "RabbitMQ" }
+var messageId = await queue.PublishAsync(
+    settings.OrderCreatedEventTopicName,
+    new OrderCreatedEvent(orderId),
+    new PublishOptions
+    {
+        CorrelationId = correlationId,
+        Source = "orders",
     },
-    "RabbitMQ": {
-      "Host": "localhost",
-      "Port": 5672
-    }
-  }
+    cancellationToken);
+```
+
+Providers generate `MessageId` when it is omitted. When a durable Outbox owns identity, pass that persisted
+identifier on every dispatch attempt:
+
+```csharp
+new PublishOptions
+{
+    MessageId = persistedEnvelopeId.ToString("D"),
+    CorrelationId = correlationId,
+    CausationId = causationId,
+    Source = source,
+    Headers = headers,
+    Timeout = TimeSpan.FromSeconds(10),
 }
 ```
 
-## Usage
+InMemory, RabbitMQ, Redis, and SQL Server preserve and return the caller-supplied value. Every provider
+rejects a caller-assigned `MessageId` for `PublishBatchAsync`, because a batch contains multiple logical
+messages and therefore needs one generated ID per message.
 
-### Publishing Messages
+## Subscribing
 
-Inject `IMessageQueue` (or `IMessageQueueFactory` for named instances) and publish messages.
-
-```csharp
-public class OrderService
-{
-    private readonly IMessageQueue _queue;
-
-    public OrderService(IMessageQueueFactory factory)
-    {
-        _queue = factory.CreateQueue("rabbitmq");
-    }
-
-    public async Task CreateOrderAsync(Order order)
-    {
-        // Simple publish
-        await _queue.PublishAsync("orders.created", new OrderCreatedEvent 
-        { 
-            OrderId = order.Id 
-        });
-
-        // Fluent API with options
-        await _queue.To<OrderCreatedEvent>("orders.created")
-            .WithPriority(10)
-            .WithDelay(TimeSpan.FromMinutes(5))
-            .WithCorrelationId(Guid.NewGuid().ToString())
-            .SendAsync(new OrderCreatedEvent { OrderId = order.Id });
-    }
-}
-```
-
-### Subscribing to Messages
-
-Create a background service to handle incoming messages.
+A long-lived host component owns and asynchronously disposes the subscription handle:
 
 ```csharp
-public class OrderHandler : BackgroundService
-{
-    private readonly IMessageQueue _queue;
-
-    public OrderHandler(IMessageQueueFactory factory)
+await using var subscription = await queue.SubscribeAsync<OrderCreatedEvent>(
+    settings.OrderCreatedEventTopicName,
+    async context =>
     {
-        _queue = factory.CreateQueue("rabbitmq");
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        await orderService.ProcessAsync(
+            context.Envelope.Payload,
+            context.CancellationToken);
+        return MessageResult.Success();
+    },
+    new SubscribeOptions
     {
-        await _queue.SubscribeAsync<OrderCreatedEvent>(
-            "orders.created",
-            async context =>
-            {
-                var orderId = context.Envelope.Payload.OrderId;
-                Console.WriteLine($"Processing order: {orderId}");
-                return MessageResult.Success();
-            },
-            new SubscribeOptions
-            {
-                PrefetchCount = 10,
-                MaxConcurrency = 5,
-                RetryPolicy = new RetryPolicy { MaxRetryAttempts = 3 }
-            },
-            stoppingToken);
-    }
-}
+        MaxConcurrency = 4,
+        MaxDeliveryCount = 3,
+        RetryPolicy = new RetryPolicy
+        {
+            MaxRetryAttempts = 2,
+            InitialDelay = TimeSpan.FromSeconds(1),
+            MaxDelay = TimeSpan.FromSeconds(4),
+            BackoffMultiplier = 2,
+            UseExponentialBackoff = true,
+            UseJitter = true,
+        },
+    },
+    stoppingToken);
 ```
 
-## Patterns & Best Practices
+- `Success` requests acknowledgment.
+- `Retry` requests redelivery under the selected provider's finite retry capability.
+- `Reject` requests terminal rejection or dead-lettering.
+- An unknown exception remains `unhandled`; `RequeueOnException` controls whether capable providers retry it.
+- Host-requested cancellation propagates. Capable providers leave the delivery unsettled or roll it back;
+  cancellation is not converted to poison or counted as a completed delivery.
 
-### Idempotency Pattern
+Set an explicit finite `MaxDeliveryCount` and nonzero `RetryPolicy` whenever the handler returns `Retry`.
+Read the selected provider README first: Redis Pub/Sub, for example, cannot honor retry or reject.
 
-To handle duplicate processing (e.g., after a broker crash), implement idempotency:
+Delivery is at least once unless a provider contract says otherwise. Keep handlers idempotent. For an atomic
+database Inbox, use the scope-aware and post-commit APIs in
+[`Ruya.Services.ReliableMessaging.MessageQueue`](../Ruya.Services.ReliableMessaging.MessageQueue/README.md).
+They commit the inbox claim and business mutation together and keep committed-state telemetry outside the
+retryable transaction callback.
+
+## Automatic telemetry
+
+`AddMessageQueue` registers its OpenTelemetry source and meter once. Applications configure exporters; they
+do not repeat the implementation-owned source/meter names.
+
+| Signal | Contract |
+|---|---|
+| ActivitySource | `Ruya.Services.MessageQueue` |
+| Meter | `Ruya.Services.MessageQueue` |
+| Producer span | `publish {destination}`, `ActivityKind.Producer` |
+| Consumer span | `consume {destination}`, `ActivityKind.Consumer` |
+| Delivery counter | `ruya.message_queue.delivery.attempts`, unit `{attempt}` |
+| Delivery histogram | `ruya.message_queue.delivery.duration`, unit `s` |
+
+The counter and histogram carry only bounded delivery labels:
+
+- `messaging.system`
+- `messaging.destination.name`
+- optional `messaging.consumer.group.name`
+- `ruya.message_queue.outcome` with exactly `success`, `retry`, `reject`, or `unhandled`
+
+Provider values are `in_memory`, `rabbitmq`, `redis`, and `mssql.service_broker`. Message IDs, message types,
+exception text, reasons, generated consumer IDs, and delivery counts are span/log detail—not metric labels.
+
+The provider starts a delivery boundary before deserialization and completes it only after broker-facing
+settlement. Malformed input, middleware failure, handler failure, and settlement failure therefore report one
+`unhandled` outcome. A handler-requested retry that reaches its cap reports the applied `reject` outcome.
+Host cancellation reports neither an outcome nor duration.
+
+When `MessageQueue:EnableTelemetry` is `true` (the default), publishing injects `traceparent` and `tracestate`
+into a copied envelope, and delivery extracts them before the consumer span. When it is `false`, queue spans,
+queue delivery metrics, and queue propagation are disabled. Logs and health behavior are unaffected.
+
+`TelemetryMiddleware` is a compatibility no-op and explicit registration is ignored. Automatic provider
+instrumentation is the single queue telemetry layer. Do not also collect a broker client's producer/consumer
+ActivitySources for the same operation unless duplicate spans are intentionally accepted.
+
+Environment and service identity are OpenTelemetry resource attributes. Whether a metrics backend exposes
+them as Prometheus labels is an exporter/collector resource-to-telemetry decision; the queue does not add
+unbounded or duplicated resource tags to every instrument.
+
+## Custom middleware
+
+Custom `IMessageMiddleware` remains supported for application concerns such as validation or policy:
 
 ```csharp
-await queue.SubscribeAsync<OrderCreatedEvent>("orders.created", async context =>
-{
-    var messageId = context.Envelope.MessageId;
-    
-    // Check if already processed
-    if (await processedMessageStore.ContainsAsync(messageId))
-    {
-        return MessageResult.Success(); // Skip duplicate
-    }
-    
-    // Process the message
-    await ProcessOrderAsync(context.Envelope.Payload);
-    
-    // Mark as processed (atomically with business logic if possible)
-    await processedMessageStore.AddAsync(messageId);
-    
-    return MessageResult.Success();
-});
+services
+    .AddMessageQueue()
+    .AddMiddleware<ValidationMessageMiddleware>();
 ```
 
-## Advanced Concepts
+Middleware runs inside the provider boundary. It does not own transport settlement, transport spans, or the
+delivery outcome instruments.
 
-### Concurrency & Thread Safety
+## Capability summary
 
-The framework handles concurrency at multiple levels:
+| Capability | InMemory | RabbitMQ | Redis | SQL Server Service Broker |
+|---|---:|---:|---:|---:|
+| Batch publish | Yes | Yes | Yes | Yes |
+| Caller-assigned single-message ID | Yes | Yes | Yes | Yes |
+| Consumer groups / competing consumers | Yes | Yes | No (Pub/Sub broadcasts) | Competing consumers only |
+| Retry / redelivery | Process-local | Yes | No | Yes |
+| Dead-letter handling | Process-local | Yes | No | SQL table |
+| Durable transactions | No | No | No | Yes |
+| Replay | No | No | No | No |
 
-1.  **MaxConcurrency**: Limits how many messages are processed simultaneously per subscription.
-    ```csharp
-    new SubscribeOptions { MaxConcurrency = 5 } // Only 5 handlers run at once
-    ```
-
-2.  **Channel Pooling (RabbitMQ)**: RabbitMQ channels are **not thread-safe**. Ruya.Services.MessageQueue manages a thread-safe `ChannelPool` for publishers, ensuring that concurrent publish operations never share a channel, preventing race conditions and data corruption.
-
-### Ruya.Services.MessageQueue vs MediatR
-
-Ruya.Services.MessageQueue and MediatR solve different problems and complement each other:
-
-| Aspect | Ruya.Services.MessageQueue | MediatR |
-|--------|----------------------------|---------|
-| **Purpose** | Integration events, cross-service communication, durable messaging | In-process command/query dispatch, domain events |
-| **Scope** | Distributed systems, microservices | Monolithic applications, within a single service boundary |
-| **Transport** | Message brokers (RabbitMQ, Redis, ASB, etc.) | In-memory, direct method calls |
-| **Durability** | Persistent messages, guaranteed delivery (broker-dependent) | Transient, fire-and-forget within process |
-| **Concurrency** | Managed by broker/provider, consumer groups | Handled by application's threading model |
-| **Observability** | Distributed tracing, metrics, health checks | Standard application logging, profiling |
-| **Error Handling** | DLQ, retries, broker-level guarantees | Exception handling within application code |
-| **Use Case** | Event-driven architectures, background tasks, inter-service communication | CQRS, domain event dispatch, internal messaging patterns |
-
-**Recommendation**: Use MediatR for internal command handling and Ruya.Services.MessageQueue for integration events between services.
-
-## Provider Capabilities
-
-| Feature | RabbitMQ | Redis Pub/Sub | Redis Streams | Azure Service Bus |
-|---------|----------|---------------|---------------|-------------------|
-| Priority | ✅ Native | ❌ Not supported | ❌ Not supported | ✅ Native |
-| Delayed Delivery | ✅ Via plugin | ⚠️ Emulated | ❌ Not supported | ✅ Native |
-| Publisher Confirms | ✅ Native | ❌ Fire-and-forget | ❌ Not applicable | ✅ Native |
-| Consumer Groups | ✅ Competing | ❌ Broadcast | ✅ Native | ✅ Native |
-| Dead Letter Queue | ✅ Native | ⚠️ Emulated | ⚠️ Emulated | ✅ Native |
-
-## Testing
-
-### Unit Testing with Moq
-
-```csharp
-var mockQueue = new Mock<IMessageQueue>();
-mockQueue.Setup(b => b.PublishAsync(It.IsAny<string>(), It.IsAny<MyEvent>(), ...))
-       .ReturnsAsync("msg-id");
-```
-
-### Integration Testing with Testcontainers
-
-```csharp
-public class RabbitMQIntegrationTests : IAsyncLifetime
-{
-    private RabbitMqContainer _container;
-
-    public async Task InitializeAsync()
-    {
-        _container = new RabbitMqBuilder().WithImage("rabbitmq:4-management").Build();
-        await _container.StartAsync();
-        
-        // Configure bus to use _container.Hostname and _container.GetMappedPublicPort(5672)
-    }
-}
-```
-
-## Architecture
-
-### Message Flow
-
-#### Publishing
-`Application` -> `IMessageQueue.PublishAsync` -> `Middleware Pipeline` -> `Serializer` -> `Provider` -> `Transport` -> `Broker`
-
-#### Subscribing
-`Broker` -> `Transport` -> `Provider` -> `Serializer` -> `Middleware Pipeline` -> `Application Handler` -> `MessageResult`
-
-### Middleware Pipeline
-
-The middleware pipeline uses the **Chain of Responsibility** pattern.
-
-```csharp
-public class ValidationMiddleware : MessageMiddleware
-{
-    public override async Task<string> PublishAsync<T>(MessageEnvelope<T> envelope, string topic, Func<MessageEnvelope<T>, string, Task<string>> next, CancellationToken ct)
-    {
-        if (envelope.Payload == null) throw new ValidationException("Payload cannot be null");
-        return await next(envelope, topic);
-    }
-}
-```
-
-### Error Handling Strategy
-
--   **Transient Errors**: Retry with exponential backoff (via `RetryPolicy`).
--   **Permanent Errors**: Send to Dead Letter Queue (via `MessageResult.Reject()`).
--   **Broker Failures**: Auto-recovery and health checks.
-
-### Observability
-
--   **Distributed Tracing**: OpenTelemetry integration with automatic span creation and context propagation.
--   **Metrics**: Publish/Consume duration, message counts, error rates.
--   **Health Checks**: Broker connectivity monitoring.
+This table describes the current implementations, not what their underlying technologies could support with
+additional code or plugins. Provider `Capabilities` must stay consistent with these implemented paths.

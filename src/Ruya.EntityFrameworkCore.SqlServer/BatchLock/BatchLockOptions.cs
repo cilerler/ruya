@@ -12,12 +12,14 @@ public sealed class BatchLockOptions
 	/// Schema name of the target table. Defaults to "dbo".
 	/// </summary>
 	[Required]
+	[StringLength(128)]
 	public string SchemaName { get; init; } = "dbo";
 
 	/// <summary>
 	/// Name of the target table.
 	/// </summary>
 	[Required]
+	[StringLength(128)]
 	public string TableName { get; init; } = null!;
 
 	/// <summary>
@@ -30,6 +32,7 @@ public sealed class BatchLockOptions
 	/// Identifier of the process locking the rows. Defaults to hostname.
 	/// </summary>
 	[Required]
+	[StringLength(261)]
 	public string LockedBy { get; init; } = System.Net.Dns.GetHostName();
 
 	/// <summary>
@@ -48,20 +51,21 @@ public sealed class BatchLockOptions
 	public string? ExcludeFields { get; init; }
 
 	/// <summary>
-	/// Custom WHERE clause. If null, default conditions are applied based on table schema.
-	/// WARNING: Ensure this value is validated to prevent SQL injection.
+	/// Custom WHERE clause that replaces the generated default predicate when supplied.
+	/// WARNING: This is a trusted developer-authored SQL escape hatch. Never include untrusted input.
 	/// </summary>
 	public string? WhereClause { get; init; }
 
 	/// <summary>
-	/// Custom ORDER BY clause. If null, ProcessingOrder column is used if it exists.
-	/// WARNING: Ensure this value is validated to prevent SQL injection.
+	/// Custom ORDER BY expression that replaces generated ordering when supplied.
+	/// WARNING: This is a trusted developer-authored SQL escape hatch. Never include untrusted input.
 	/// </summary>
 	public string? OrderByClause { get; init; }
 
 	/// <summary>
 	/// Name of the process status code field. Defaults to "ProcessStatusCode".
 	/// </summary>
+	[StringLength(128)]
 	public string? ProcessStatusCodeField { get; init; }
 
 	/// <summary>
@@ -83,18 +87,19 @@ public sealed class BatchLockOptions
 	/// <summary>
 	/// Name of the processing order field. Defaults to "ProcessingOrder".
 	/// </summary>
+	[StringLength(128)]
 	public string? ProcessingOrderField { get; init; }
 
 	/// <summary>
 	/// Name of the primary key field. Defaults to "Id".
 	/// </summary>
+	[StringLength(128)]
 	public string? PrimaryKeyField { get; init; }
 
 	/// <summary>
-	/// When true, only returns the primary key column instead of all columns.
-	/// This is set internally by the method being called (SelectForUpdate vs SelectForUpdateKeysAsync).
+	/// Enables the embedded query's diagnostic result sets.
 	/// </summary>
-	internal bool ReturnPrimaryKeyOnly { get; set; }
+	public bool Debug { get; init; }
 
 	/// <summary>
 	/// When true, sets ModifiedAt = ModifiedAt instead of SYSUTCDATETIME().

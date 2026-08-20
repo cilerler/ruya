@@ -171,3 +171,9 @@ Settings configured at startup via `appsettings.json`:
 |----------|------|---------|-------------|
 | `Timeout` | int | `30` | Default timeout in seconds |
 | `BatchSize` | int | `1000` | Default batch size |
+
+## Transactions and Retries
+
+Each call participates in the current EF Core transaction when one exists. Without a caller transaction, the operation creates one so a later failing `SqlBulkCopy` batch rolls back earlier batches from the same call.
+
+Bulk insert is not inherently idempotent, so the operation does not automatically invoke an EF Core retry execution strategy. This remains true when the `DbContext` has `EnableRetryOnFailure` configured. A caller may implement an operation-specific retry only when it can verify whether an ambiguous attempt committed or otherwise prevent duplicate rows.

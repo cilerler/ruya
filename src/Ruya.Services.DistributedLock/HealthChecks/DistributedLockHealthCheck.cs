@@ -2,7 +2,10 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Ruya.Services.DistributedLock.Abstractions;
+using Ruya.Services.DistributedLock.Core;
 
 namespace Ruya.Services.DistributedLock.HealthChecks;
 
@@ -13,15 +16,30 @@ namespace Ruya.Services.DistributedLock.HealthChecks;
 public sealed class DistributedLockHealthCheck : IHealthCheck
 {
     private readonly IDistributedLockProvider _provider;
+    private readonly ILogger<DistributedLockHealthCheck> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DistributedLockHealthCheck"/> class.
     /// </summary>
     /// <param name="provider">The distributed lock provider to check.</param>
     public DistributedLockHealthCheck(IDistributedLockProvider provider)
+        : this(provider, NullLogger<DistributedLockHealthCheck>.Instance)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DistributedLockHealthCheck"/> class.
+    /// </summary>
+    /// <param name="provider">The distributed lock provider to check.</param>
+    /// <param name="logger">The logger used for best-effort cleanup failures.</param>
+    public DistributedLockHealthCheck(
+        IDistributedLockProvider provider,
+        ILogger<DistributedLockHealthCheck> logger)
     {
         ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(logger);
         _provider = provider;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -29,6 +47,8 @@ public sealed class DistributedLockHealthCheck : IHealthCheck
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
+        string? acquiredKey = null;
+        string? acquiredValue = null;
         try
         {
             // Try to acquire and release a health check lock
@@ -48,6 +68,9 @@ public sealed class DistributedLockHealthCheck : IHealthCheck
                     "This may indicate high contention or provider issues.");
             }
 
+            acquiredKey = testKey;
+            acquiredValue = testValue;
+
             // Verify we can extend the lock
             var extended = await _provider.ExtendLockAsync(
                 testKey,
@@ -57,9 +80,6 @@ public sealed class DistributedLockHealthCheck : IHealthCheck
 
             if (!extended)
             {
-                // Still try to release
-                await _provider.ReleaseLockAsync(testKey, testValue, cancellationToken);
-
                 return HealthCheckResult.Degraded(
                     "Lock provider could not extend test lock. " +
                     "This may indicate timing or synchronization issues.");
@@ -78,19 +98,44 @@ public sealed class DistributedLockHealthCheck : IHealthCheck
                     "This may indicate state management issues.");
             }
 
+            acquiredKey = null;
+            acquiredValue = null;
+
             return HealthCheckResult.Healthy(
                 "Lock provider is responsive and all operations succeeded.");
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException ex)
         {
             return HealthCheckResult.Unhealthy(
-                "Health check was cancelled before completing.");
+                "Health check was cancelled before completing.",
+                ex);
         }
         catch (Exception ex)
         {
             return HealthCheckResult.Unhealthy(
                 "Lock provider error during health check.",
                 ex);
+        }
+        finally
+        {
+            if (acquiredKey is not null && acquiredValue is not null)
+            {
+                try
+                {
+                    await _provider.ReleaseLockAsync(
+                        acquiredKey,
+                        acquiredValue,
+                        CancellationToken.None);
+                }
+                catch (Exception cleanupException)
+                {
+                    _logger.LogHealthCheckCleanupError(cleanupException);
+                }
+            }
         }
     }
 }

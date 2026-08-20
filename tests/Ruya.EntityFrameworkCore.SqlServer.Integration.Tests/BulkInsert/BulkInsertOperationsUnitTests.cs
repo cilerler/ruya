@@ -284,6 +284,7 @@ public class BulkInsertOperationsUnitTests
     [TestMethod]
     public void BulkInsertOperationsSettings_ConfigurationSectionName_IsCorrect()
     {
+        // Pin the released external configuration contract independently of its symbol-derived implementation.
         Assert.AreEqual("BulkInsertOperations", BulkInsertOperationsSettings.ConfigurationSectionName);
     }
 
@@ -383,7 +384,9 @@ public class BulkInsertOperationsUnitTests
     public void ResolveDbColumnName_WithColumnAttribute_ReturnsAttributeName()
     {
         // Act
-        var result = BulkInsertOperations.ResolveDbColumnName(typeof(ColumnMappedTestEntity), "OrganizationId");
+        var result = BulkInsertOperations.ResolveDbColumnName(
+            typeof(ColumnMappedTestEntity),
+            nameof(ColumnMappedTestEntity.OrganizationId));
 
         // Assert
         Assert.AreEqual("OrgId", result);
@@ -393,10 +396,12 @@ public class BulkInsertOperationsUnitTests
     public void ResolveDbColumnName_WithoutColumnAttribute_ReturnsPropertyName()
     {
         // Act
-        var result = BulkInsertOperations.ResolveDbColumnName(typeof(ColumnMappedTestEntity), "Id");
+        var result = BulkInsertOperations.ResolveDbColumnName(
+            typeof(ColumnMappedTestEntity),
+            nameof(ColumnMappedTestEntity.Id));
 
         // Assert
-        Assert.AreEqual("Id", result);
+        Assert.AreEqual(nameof(ColumnMappedTestEntity.Id), result);
     }
 
     [TestMethod]

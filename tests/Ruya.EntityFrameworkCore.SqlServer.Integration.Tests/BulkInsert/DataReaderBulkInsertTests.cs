@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -475,18 +476,18 @@ internal sealed class ListDataReader<T> : IDataReader where T : class
 	public DataTable? GetSchemaTable()
 	{
 		var schemaTable = new DataTable();
-		schemaTable.Columns.Add("ColumnName", typeof(string));
-		schemaTable.Columns.Add("ColumnOrdinal", typeof(int));
-		schemaTable.Columns.Add("DataType", typeof(Type));
+		schemaTable.Columns.Add(SchemaTableColumn.ColumnName, typeof(string));
+		schemaTable.Columns.Add(SchemaTableColumn.ColumnOrdinal, typeof(int));
+		schemaTable.Columns.Add(SchemaTableColumn.DataType, typeof(Type));
 
 		var type = typeof(T);
 		for (var i = 0; i < _columns.Length; i++)
 		{
 			var prop = type.GetProperty(_columns[i]);
 			var row = schemaTable.NewRow();
-			row["ColumnName"] = _columns[i];
-			row["ColumnOrdinal"] = i;
-			row["DataType"] = prop?.PropertyType ?? typeof(object);
+			row[SchemaTableColumn.ColumnName] = _columns[i];
+			row[SchemaTableColumn.ColumnOrdinal] = i;
+			row[SchemaTableColumn.DataType] = prop?.PropertyType ?? typeof(object);
 			schemaTable.Rows.Add(row);
 		}
 

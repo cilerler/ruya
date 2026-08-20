@@ -9,13 +9,14 @@ on:
         default: false
 
   repository_dispatch:
-    types: [Ruya.Diagnostics.Abstractions, Ruya.Extensions.DependencyInjection]
+    types: [Ruya.Diagnostics.Abstractions, Ruya.Extensions.DependencyInjection, Ruya.Primitives]
 
   push:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.EntityFrameworkCore.SqlServer.yml'
       - 'src/Ruya.EntityFrameworkCore.SqlServer/**'
+      - 'tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/**'
 
 jobs:
   build:
@@ -24,6 +25,8 @@ jobs:
       project-name: 'Ruya.EntityFrameworkCore.SqlServer'
       project-path: './src/Ruya.EntityFrameworkCore.SqlServer/Ruya.EntityFrameworkCore.SqlServer.csproj'
       test-project-paths: './tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests.csproj'
+      use-testcontainers: true
+      testcontainers-timeout: '1200s'
       dispatch-event-type: 'Ruya.EntityFrameworkCore.SqlServer'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

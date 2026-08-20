@@ -31,8 +31,6 @@ public sealed class RedisLockProvider : IDistributedLockProvider
     /// <para>
     /// Example DI registration:
     /// <code>
-    /// services.AddSingleton&lt;IConnectionMultiplexer&gt;(sp =>
-    ///     ConnectionMultiplexer.Connect("localhost:6379"));
     /// services.AddRedisDistributedLock();
     /// </code>
     /// </para>
@@ -57,16 +55,35 @@ public sealed class RedisLockProvider : IDistributedLockProvider
     {
         LockValidation.ValidateLockKey(lockKey);
         LockValidation.ValidateLockValue(lockValue);
+        ExpiryValidation.Validate(expiry);
 
         cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
-            return await _database.LockTakeAsync(lockKey, lockValue, expiry);
+            bool acquired = await _database.LockTakeAsync(lockKey, lockValue, expiry);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (acquired)
+                {
+                    try
+                    {
+                        await _database.LockReleaseAsync(lockKey, lockValue);
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        _logger.LogWarning(LogEvents.CancellationCleanupFailed, cleanupException, "Redis error cleaning up a lock after caller cancellation");
+                    }
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            return acquired;
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error acquiring lock for key: {LockKey}", lockKey);
+            _logger.LogError(LogEvents.AcquireFailed, ex, "Redis error acquiring lock for key: {LockKey}", lockKey);
             throw;
         }
     }
@@ -80,16 +97,24 @@ public sealed class RedisLockProvider : IDistributedLockProvider
     {
         LockValidation.ValidateLockKey(lockKey);
         LockValidation.ValidateLockValue(lockValue);
+        ExpiryValidation.Validate(expiry);
 
         cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
-            return await _database.LockExtendAsync(lockKey, lockValue, expiry);
+            bool extended = await _database.LockExtendAsync(lockKey, lockValue, expiry);
+            if (!extended)
+            {
+                return false;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return true;
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error extending lock for key: {LockKey}", lockKey);
+            _logger.LogError(LogEvents.ExtendFailed, ex, "Redis error extending lock for key: {LockKey}", lockKey);
             throw;
         }
     }
@@ -107,11 +132,13 @@ public sealed class RedisLockProvider : IDistributedLockProvider
 
         try
         {
-            return await _database.LockReleaseAsync(lockKey, lockValue);
+            bool released = await _database.LockReleaseAsync(lockKey, lockValue);
+            cancellationToken.ThrowIfCancellationRequested();
+            return released;
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error releasing lock for key: {LockKey}", lockKey);
+            _logger.LogError(LogEvents.ReleaseFailed, ex, "Redis error releasing lock for key: {LockKey}", lockKey);
             throw;
         }
     }
@@ -127,11 +154,13 @@ public sealed class RedisLockProvider : IDistributedLockProvider
 
         try
         {
-            return await _database.KeyExistsAsync(lockKey);
+            bool exists = await _database.KeyExistsAsync(lockKey);
+            cancellationToken.ThrowIfCancellationRequested();
+            return exists;
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error checking lock existence for key: {LockKey}", lockKey);
+            _logger.LogError(LogEvents.ExistsFailed, ex, "Redis error checking lock existence for key: {LockKey}", lockKey);
             throw;
         }
     }
@@ -147,15 +176,17 @@ public sealed class RedisLockProvider : IDistributedLockProvider
 
         try
         {
-            return await _database.KeyDeleteAsync(lockKey);
+            bool deleted = await _database.KeyDeleteAsync(lockKey);
+            cancellationToken.ThrowIfCancellationRequested();
+            return deleted;
         }
         catch (RedisException ex)
         {
-            _logger.LogError(ex, "Redis error force releasing lock for key: {LockKey}", lockKey);
+            _logger.LogError(LogEvents.ForceReleaseFailed, ex, "Redis error force releasing lock for key: {LockKey}", lockKey);
             throw;
         }
     }
 
     /// <inheritdoc />
-    public string GetProviderName() => "Redis";
+    public string GetProviderName() => nameof(Ruya.Services.DistributedLock.Redis);
 }

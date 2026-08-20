@@ -6,14 +6,41 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Ruya.Diagnostics.DistributedTracing;
 using Ruya.Primitives;
+using static Ruya.Extensions.Hosting.WorkerBackgroundServiceEventIds;
 
 namespace Ruya.Extensions.Hosting;
+
+internal static class WorkerBackgroundServiceEventIds
+{
+    internal static readonly EventId StartupValidationSkipped = new(1000, nameof(StartupValidationSkipped));
+    internal static readonly EventId StartupValidationStarting = new(1001, nameof(StartupValidationStarting));
+    internal static readonly EventId StartupValidationCompleted = new(1002, nameof(StartupValidationCompleted));
+    internal static readonly EventId ServiceDisabled = new(1003, nameof(ServiceDisabled));
+    internal static readonly EventId ShutdownStarting = new(1004, nameof(ShutdownStarting));
+    internal static readonly EventId ShutdownCompleted = new(1005, nameof(ShutdownCompleted));
+    internal static readonly EventId ShutdownHostCancelled = new(1006, nameof(ShutdownHostCancelled));
+    internal static readonly EventId ShutdownTimedOut = new(1007, nameof(ShutdownTimedOut));
+    internal static readonly EventId ShutdownCancelled = new(1008, nameof(ShutdownCancelled));
+    internal static readonly EventId ShutdownFailed = new(1009, nameof(ShutdownFailed));
+    internal static readonly EventId ServiceStopped = new(1010, nameof(ServiceStopped));
+    internal static readonly EventId ExecutionModeSelected = new(1011, nameof(ExecutionModeSelected));
+    internal static readonly EventId InitialExecutionSkipped = new(1012, nameof(InitialExecutionSkipped));
+    internal static readonly EventId RunOnceCompleted = new(1013, nameof(RunOnceCompleted));
+    internal static readonly EventId LoopDelayStarting = new(1014, nameof(LoopDelayStarting));
+    internal static readonly EventId ScheduleCompleted = new(1015, nameof(ScheduleCompleted));
+    internal static readonly EventId ScheduleDelayStarting = new(1016, nameof(ScheduleDelayStarting));
+    internal static readonly EventId ExecutionStarting = new(1017, nameof(ExecutionStarting));
+    internal static readonly EventId ExecutionCompleted = new(1018, nameof(ExecutionCompleted));
+    internal static readonly EventId ExecutionCancelled = new(1019, nameof(ExecutionCancelled));
+    internal static readonly EventId ExecutionFailed = new(1020, nameof(ExecutionFailed));
+    internal static readonly EventId ExecutionRetrying = new(1021, nameof(ExecutionRetrying));
+}
 
 public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleService, IDisposable
     where TSettings : WorkerBackgroundServiceSettings
@@ -25,22 +52,21 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
     protected readonly TSettings _settings;
 #pragma warning restore IDE1006
 
-    private readonly IEnumerable<IHealthCheck> _healthChecks;
+    private readonly HealthCheckService _healthCheckService;
+    private readonly IHostApplicationLifetime _hostApplicationLifetime;
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly SemaphoreSlim _executionLock = new(1, 1);
-    private readonly object _statisticsLock = new ();
+    private readonly object _statisticsLock = new();
 
     // Health tracking (thread-safe via _statisticsLock)
     private readonly Queue<double> _executionDurations = new();
     private double _lastExecutionDuration;
-    private DateTime _lastSuccessfulCompletion = DateTime.UtcNow;
+    private DateTimeOffset _lastSuccessfulCompletion = DateTimeOffset.UtcNow;
 
     // Metrics
     private readonly UpDownCounter<int> _activeExecutions;
     private readonly Counter<long> _executionTotal;
     private readonly Counter<long> _executionSuccess;
     private readonly Counter<long> _executionFailed;
-    private readonly Counter<long> _executionSkipped;
     private readonly Counter<long> _retryTotal;
     private readonly Histogram<double> _executionDuration;
 
@@ -51,7 +77,8 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
         IDistributedTracing distributedTracing,
         IMeterFactory meterFactory,
         IOptions<TSettings> options,
-        IEnumerable<IHealthCheck> healthChecks)
+        HealthCheckService healthCheckService,
+        IHostApplicationLifetime hostApplicationLifetime)
     {
         _logger = logger;
         _tracer = distributedTracing;
@@ -65,7 +92,8 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             }
         });
         _settings = options.Value;
-        _healthChecks = healthChecks;
+        _healthCheckService = healthCheckService;
+        _hostApplicationLifetime = hostApplicationLifetime;
 
         var serviceName = JsonNamingPolicy.SnakeCaseLower.ConvertName(GetType().Name);
         _activeExecutions = _meter.CreateUpDownCounter<int>(
@@ -76,8 +104,6 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             $"app_{serviceName}_success", "executions", "Successful executions");
         _executionFailed = _meter.CreateCounter<long>(
             $"app_{serviceName}_failed", "executions", "Failed executions");
-        _executionSkipped = _meter.CreateCounter<long>(
-            $"app_{serviceName}_skipped", "executions", "Skipped (previous still running)");
         _retryTotal = _meter.CreateCounter<long>(
             $"app_{serviceName}_retries", "retries", "Total retry attempts");
         _executionDuration = _meter.CreateHistogram<double>(
@@ -88,29 +114,46 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
 
     public abstract Task DoWorkAsync(CancellationToken cancellationToken);
 
+    protected abstract bool IsTransient(Exception exception);
+
     #region IHostedLifecycleService
 
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Service starting. Validating dependencies.");
-
-        foreach (var check in _healthChecks)
+        if (!_settings.Enabled)
         {
-            var result = await check.CheckHealthAsync(new HealthCheckContext(), cancellationToken);
-            if (result.Status == HealthStatus.Unhealthy)
-            {
-                throw new InvalidOperationException($"Startup health check failed: {result.Description}");
-            }
+            _logger.LogDebug(
+                StartupValidationSkipped,
+                "Service {ServiceName} is disabled. Skipping startup validation.",
+                GetType().Name);
+            return;
         }
 
-        _logger.LogDebug("All health checks passed.");
+        _logger.LogDebug(StartupValidationStarting, "Service starting. Validating dependencies.");
+
+        var result = await _healthCheckService.CheckHealthAsync(
+            registration => registration.Tags.Contains("startup", StringComparer.Ordinal),
+            cancellationToken);
+
+        if (result.Status != HealthStatus.Healthy)
+        {
+            var failedChecks = string.Join(
+                ", ",
+                result.Entries
+                    .Where(entry => entry.Value.Status != HealthStatus.Healthy)
+                    .Select(entry => $"{entry.Key}={entry.Value.Status}"));
+            throw new InvalidOperationException(
+                $"Startup dependency health checks failed: {failedChecks}.");
+        }
+
+        _logger.LogDebug(StartupValidationCompleted, "All startup dependency health checks passed.");
     }
 
     public Task StartedAsync(CancellationToken cancellationToken)
     {
         if (!_settings.Enabled)
         {
-            _logger.LogInformation("Service {ServiceName} is disabled.", GetType().Name);
+            _logger.LogInformation(ServiceDisabled, "Service {ServiceName} is disabled.", GetType().Name);
             return Task.CompletedTask;
         }
 
@@ -120,45 +163,50 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
 
     public async Task StoppingAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("SIGTERM received. Initiating graceful shutdown.");
+        _logger.LogInformation(ShutdownStarting, "Host shutdown requested. Initiating graceful shutdown.");
         await _cancellationTokenSource.CancelAsync();
 
-        if (_executingTask is null)
+        var executingTask = _executingTask;
+        if (executingTask is null)
         {
             return;
         }
 
-        using var timeoutCts = new CancellationTokenSource(_settings.ShutdownTimeout);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(_settings.ShutdownTimeout);
 
         try
         {
-            var completedTask = await Task.WhenAny(_executingTask, Task.Delay(_settings.ShutdownTimeout, CancellationToken.None));
-
-            if (completedTask == _executingTask)
-            {
-                await _executingTask; // Propagate exceptions if any
-                _logger.LogInformation("Work completed gracefully.");
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "Shutdown timeout ({ShutdownTimeout}) exceeded. Work may be incomplete.",
-                    _settings.ShutdownTimeout);
-            }
+            await executingTask.WaitAsync(timeoutCts.Token);
+            _logger.LogInformation(ShutdownCompleted, "Work completed gracefully.");
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!executingTask.IsCompleted && cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Shutdown completed via cancellation.");
+            _logger.LogWarning(
+                ShutdownHostCancelled,
+                "Host shutdown cancellation was requested before work completed.");
+        }
+        catch (OperationCanceledException) when (!executingTask.IsCompleted && timeoutCts.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                ShutdownTimedOut,
+                "Shutdown timeout ({ShutdownTimeout}) exceeded. Work may be incomplete.",
+                _settings.ShutdownTimeout);
+        }
+        catch (OperationCanceledException) when (executingTask.IsCanceled)
+        {
+            _logger.LogInformation(ShutdownCancelled, "Shutdown completed via cancellation.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during shutdown.");
+            _logger.LogError(ShutdownFailed, ex, "Error during shutdown.");
+            throw;
         }
     }
 
     public Task StoppedAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Service stopped.");
+        _logger.LogInformation(ServiceStopped, "Service stopped.");
         return Task.CompletedTask;
     }
 
@@ -175,12 +223,12 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
         await Task.Yield();
 
         var mode = _settings.RunContinuously ? "continuous" : $"schedule: {_settings.ScheduleCronExpression}";
-        _logger.LogInformation("Service running in {Mode} mode.", mode);
+        _logger.LogInformation(ExecutionModeSelected, "Service running in {Mode} mode.", mode);
 
         var isFirstExecution = true;
         while (!cancellationToken.IsCancellationRequested)
         {
-            var shouldExecute = !isFirstExecution || _settings.RunImmediately || _settings.RunContinuously;
+            var shouldExecute = _settings.RunOnce || !isFirstExecution || _settings.RunImmediately || _settings.RunContinuously;
             if (shouldExecute)
             {
                 IdleCycle = false;
@@ -188,55 +236,62 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             }
             else
             {
-                _logger.LogInformation("Skipping initial execution (RunImmediately=false).");
+                _logger.LogInformation(
+                    InitialExecutionSkipped,
+                    "Skipping initial execution (RunImmediately=false).");
             }
 
             isFirstExecution = false;
 
             if (cancellationToken.IsCancellationRequested) break;
 
-            // Apply idle backoff if no data was found
-            if (IdleCycle && _settings.IdleBackoffDuration > TimeSpan.Zero)
+            if (_settings.RunOnce)
             {
-                _logger.LogDebug("Idle cycle detected. Backing off for {Duration}.", _settings.IdleBackoffDuration);
-                try
+                _logger.LogInformation(
+                    RunOnceCompleted,
+                    "Run-once execution completed. No further executions scheduled.");
+                break;
+            }
+
+            if (_settings.RunContinuously)
+            {
+                var loopDelay = IdleCycle && _settings.IdleBackoffDuration > TimeSpan.Zero
+                    ? _settings.IdleBackoffDuration
+                    : _settings.DelayBetweenExecutions;
+
+                if (loopDelay > TimeSpan.Zero)
                 {
-                    await Task.Delay(_settings.IdleBackoffDuration, cancellationToken);
+                    _logger.LogDebug(
+                        LoopDelayStarting,
+                        "Waiting {Duration} before next continuous execution. Idle cycle: {IdleCycle}.",
+                        loopDelay,
+                        IdleCycle);
+                    try
+                    {
+                        await Task.Delay(loopDelay, cancellationToken);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        break;
+                    }
                 }
-                catch (TaskCanceledException)
-                {
-                    break;
-                }
+
+                continue;
             }
 
             if (cancellationToken.IsCancellationRequested) break;
 
-            // Apply artificial delay between executions if configured
-            if (_settings.DelayBetweenExecutions > TimeSpan.Zero)
-            {
-                _logger.LogDebug("Waiting {Delay} before next execution.", _settings.DelayBetweenExecutions);
-                try
-                {
-                    await Task.Delay(_settings.DelayBetweenExecutions, cancellationToken);
-                }
-                catch (TaskCanceledException)
-                {
-                    break;
-                }
-            }
-
-            if (cancellationToken.IsCancellationRequested) break;
-
+            // Cron owns the scheduled delay. DelayBetweenExecutions applies only to continuous polling.
             var delay = _settings.NextOccurrence;
             if (delay == Timeout.InfiniteTimeSpan)
             {
-                _logger.LogInformation("No further executions scheduled.");
+                _logger.LogInformation(ScheduleCompleted, "No further executions scheduled.");
                 break;
             }
 
             if (delay > TimeSpan.Zero)
             {
-                _logger.LogInformation("Next execution in {Delay}.", delay);
+                _logger.LogInformation(ScheduleDelayStarting, "Next execution in {Delay}.", delay);
                 try
                 {
                     await Task.Delay(delay, cancellationToken);
@@ -251,13 +306,6 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
 
     private async Task ExecuteWorkAsync(CancellationToken cancellationToken)
     {
-        if (!await _executionLock.WaitAsync(0, cancellationToken))
-        {
-            _logger.LogWarning("Skipping execution - previous run still in progress.");
-            _executionSkipped.Add(1);
-            return;
-        }
-
         var stopwatch = Stopwatch.StartNew();
         _activeExecutions.Add(1);
         _executionTotal.Add(1);
@@ -266,29 +314,33 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
         {
             using (_logger.BeginScope("{ExecutionId}", Guid.NewGuid()))
             {
-                _logger.LogDebug("Starting execution.");
+                _logger.LogDebug(ExecutionStarting, "Starting execution.");
 
                 await ExecuteWithRetryAsync(cancellationToken);
 
                 stopwatch.Stop();
                 RecordSuccess(stopwatch.Elapsed.TotalSeconds);
-                _logger.LogDebug("Execution completed in {Duration:F2}s.", stopwatch.Elapsed.TotalSeconds);
+                _logger.LogDebug(
+                    ExecutionCompleted,
+                    "Execution completed in {Duration:F2}s.",
+                    stopwatch.Elapsed.TotalSeconds);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Execution cancelled.");
+            _logger.LogInformation(ExecutionCancelled, "Execution cancelled.");
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
             RecordFailure(stopwatch.Elapsed.TotalSeconds);
-            _logger.LogError(ex, "Execution failed after retries.");
+            _logger.LogError(ExecutionFailed, ex, "Execution failed after retries.");
+            _hostApplicationLifetime.StopApplication();
+            throw;
         }
         finally
         {
             _activeExecutions.Add(-1);
-            _executionLock.Release();
         }
     }
 
@@ -303,15 +355,16 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
                 await DoWorkAsync(cancellationToken);
                 return;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
-            catch (Exception ex) when (attempt < maxAttempts)
+            catch (Exception ex) when (attempt < maxAttempts && IsTransient(ex))
             {
                 _retryTotal.Add(1);
                 var delay = CalculateBackoffWithJitter(attempt);
                 _logger.LogWarning(
+                    ExecutionRetrying,
                     ex,
                     "Attempt {Attempt}/{Max} failed. Retrying in {DelayMs}ms.",
                     attempt,
@@ -325,9 +378,11 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
     private TimeSpan CalculateBackoffWithJitter(int attempt)
     {
         const double JitterFactor = 0.5;
-        var baseDelay = _settings.RetryBaseDelaySeconds * Math.Pow(2, attempt - 1);
-        var jitter = Random.Shared.NextDouble() * JitterFactor * baseDelay;
-        return TimeSpan.FromSeconds(baseDelay + jitter);
+        var exponentialDelay = _settings.RetryBaseDelaySeconds * Math.Pow(2, attempt - 1);
+        var cappedDelay = Math.Min(_settings.RetryMaxDelaySeconds, exponentialDelay);
+        var jitterCapacity = _settings.RetryMaxDelaySeconds - cappedDelay;
+        var jitter = Random.Shared.NextDouble() * Math.Min(jitterCapacity, JitterFactor * cappedDelay);
+        return TimeSpan.FromSeconds(cappedDelay + jitter);
     }
 
     #endregion
@@ -347,7 +402,7 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
             {
                 _executionDurations.Dequeue();
             }
-            _lastSuccessfulCompletion = DateTime.UtcNow;
+            _lastSuccessfulCompletion = DateTimeOffset.UtcNow;
         }
     }
 
@@ -378,7 +433,7 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
         }
     }
 
-    public DateTime GetLastSuccessfulCompletion()
+    public DateTimeOffset GetLastSuccessfulCompletion()
     {
         lock (_statisticsLock)
         {
@@ -391,8 +446,7 @@ public abstract class WorkerBackgroundService<TSettings> : IHostedLifecycleServi
     public void Dispose()
     {
         _cancellationTokenSource.Dispose();
-        _executionLock.Dispose();
-		_meter.Dispose();
+        _meter.Dispose();
         GC.SuppressFinalize(this);
     }
 }

@@ -17,6 +17,7 @@
     <File Path="README.md" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Ruya.AspNetCore.DataProtection.StackExchangeRedis/Ruya.AspNetCore.DataProtection.StackExchangeRedis.csproj" />
     <Project Path="src/Ruya.AspNetCore.Diagnostics/Ruya.AspNetCore.Diagnostics.csproj" />
     <Project Path="src/Ruya.AspNetCore.Middleware/Ruya.AspNetCore.Middleware.csproj" />
     <Project Path="src/Ruya.Diagnostics.Abstractions/Ruya.Diagnostics.Abstractions.csproj" />
@@ -53,11 +54,17 @@
     <Project Path="src/Ruya.Testing.Primitives/Ruya.Testing.Primitives.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests/Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.AspNetCore.Diagnostics.Unit.Tests/Ruya.AspNetCore.Diagnostics.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.AspNetCore.Middleware.Unit.Tests/Ruya.AspNetCore.Middleware.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Diagnostics.Abstractions.Unit.Tests/Ruya.Diagnostics.Abstractions.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Diagnostics.Unit.Tests/Ruya.Diagnostics.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests/Ruya.EntityFrameworkCore.SqlServer.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Extensions.Hosting.Unit.Tests/Ruya.Extensions.Hosting.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Extensions.Configuration.Unit.Tests/Ruya.Extensions.Configuration.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Extensions.DependencyInjection.Unit.Tests/Ruya.Extensions.DependencyInjection.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.OpenTelemetry.Integration.Tests/Ruya.OpenTelemetry.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Primitives.Unit.Tests/Ruya.Primitives.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests/Ruya.Services.CloudStorage.Amazon.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.CloudStorage.Azure.Integration.Tests/Ruya.Services.CloudStorage.Azure.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.CloudStorage.Google.Integration.Tests/Ruya.Services.CloudStorage.Google.Integration.Tests.csproj" />
@@ -69,10 +76,16 @@
     <Project Path="tests/Ruya.Services.DistributedLock.MsSql.Integration.Tests/Ruya.Services.DistributedLock.MsSql.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.DistributedLock.Redis.Integration.Tests/Ruya.Services.DistributedLock.Redis.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.DistributedLock.Unit.Tests/Ruya.Services.DistributedLock.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.MessageQueue.InMemory.Integration.Tests/Ruya.Services.MessageQueue.InMemory.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.MessageQueue.MsSql.Integration.Tests/Ruya.Services.MessageQueue.MsSql.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.MessageQueue.RabbitMq.Unit.Tests/Ruya.Services.MessageQueue.RabbitMq.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Services.MessageQueue.Redis.Integration.Tests/Ruya.Services.MessageQueue.Redis.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.ReliableMessaging.Unit.Tests/Ruya.Services.ReliableMessaging.Unit.Tests.csproj" />
     <Project Path="tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.ReliableMessaging.MessageQueue.Integration.Tests/Ruya.Services.ReliableMessaging.MessageQueue.Integration.Tests.csproj" />
     <Project Path="tests/Ruya.Services.TokenBroker.Unit.Tests/Ruya.Services.TokenBroker.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.System.Xml.Serialization.Unit.Tests/Ruya.System.Xml.Serialization.Unit.Tests.csproj" />
+    <Project Path="tests/Ruya.Testing.Primitives.Unit.Tests/Ruya.Testing.Primitives.Unit.Tests.csproj" />
   </Folder>
 </Solution>

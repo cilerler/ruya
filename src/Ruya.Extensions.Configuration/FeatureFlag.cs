@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 
@@ -12,6 +11,8 @@ public static class FeatureFlags
 
 	public static bool GetFeatureFlag<T>(this IConfiguration configuration) where T : class
 	{
+		ArgumentNullException.ThrowIfNull(configuration);
+
 		var featureFlagField = typeof(T).GetField(FeatureFlagSettingName, BindingFlags.Static | BindingFlags.Public) ?? throw new InvalidOperationException($"The feature flag field was not found on type {typeof(T).FullName}");
 
 		var featureFlagValue = featureFlagField.GetValue(null)?.ToString();
@@ -20,17 +21,6 @@ public static class FeatureFlags
 			throw new InvalidOperationException($"The feature flag value is null or empty for type {typeof(T).FullName}");
 		}
 
-		try
-		{
-			return configuration.GetValue<bool>($"{ConfigurationSectionName}:{featureFlagValue}");
-		}
-		catch (KeyNotFoundException)
-		{
-			return false;
-		}
-		catch (FormatException)
-		{
-			return false;
-		}
+		return configuration.GetValue<bool>($"{ConfigurationSectionName}:{featureFlagValue}");
 	}
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Metrics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -94,6 +95,20 @@ public class LocalClientTests
 
         Assert.IsTrue(exception.Message.Contains("nonexistent.txt"));
         Assert.IsTrue(exception.Message.Contains("bucket"));
+    }
+
+    [TestMethod]
+    public async Task GetFileMetadataAsync_WhenPathValidationFails_RecordsFailure()
+    {
+        string meterName = $"{nameof(LocalClientTests)}.Metadata.{Guid.NewGuid():N}";
+        using var meter = new Meter(meterName);
+        using var collector = new MetricCollector(meterName, "files_failed");
+        Client client = CreateInstrumentedClient(meter);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.GetFileMetadataAsync("bucket", "../outside.txt"));
+
+        Assert.AreEqual(1, collector.Sum);
     }
 
     [TestMethod]
@@ -206,6 +221,20 @@ public class LocalClientTests
             () => _client.UploadStreamAsync("bucket", stream, "", "text/plain"));
     }
 
+    [TestMethod]
+    public async Task UploadFileAsync_WhenSourceCannotBeOpened_RecordsFailure()
+    {
+        string meterName = $"{nameof(LocalClientTests)}.UploadFile.{Guid.NewGuid():N}";
+        using var meter = new Meter(meterName);
+        using var collector = new MetricCollector(meterName, "files_failed");
+        Client client = CreateInstrumentedClient(meter);
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            client.UploadFileAsync("bucket", Path.Combine(_testRootPath, "missing.txt"), "file.txt"));
+
+        Assert.AreEqual(1, collector.Sum);
+    }
+
     #endregion
 
     #region DownloadFileAsync Tests
@@ -241,6 +270,22 @@ public class LocalClientTests
         // Act & Assert
         await Assert.ThrowsAsync<FileNotFoundException>(
             () => _client.DownloadFileAsync("bucket", "missing.txt", targetStream));
+    }
+
+    [TestMethod]
+    public async Task DownloadFileAsync_WhenDownloadFails_RecordsFailure()
+    {
+        string meterName = $"{nameof(LocalClientTests)}.Download.{Guid.NewGuid():N}";
+        using var meter = new Meter(meterName);
+        using var collector = new MetricCollector(meterName, "files_failed");
+        Client client = CreateInstrumentedClient(meter);
+        Directory.CreateDirectory(Path.Combine(_testRootPath, "bucket"));
+        using var targetStream = new MemoryStream();
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            client.DownloadFileAsync("bucket", "missing.txt", targetStream));
+
+        Assert.AreEqual(1, collector.Sum);
     }
 
     #endregion
@@ -287,6 +332,72 @@ public class LocalClientTests
     }
 
     [TestMethod]
+    public async Task DeleteFileAsync_WhenDeletingLastRootFile_PreservesBucketDirectory()
+    {
+        string bucketPath = Path.Combine(_testRootPath, "bucket");
+        Directory.CreateDirectory(bucketPath);
+        await File.WriteAllTextAsync(Path.Combine(bucketPath, "only-file.txt"), "content");
+
+        await _client.DeleteFileAsync("bucket", "only-file.txt");
+
+        Assert.IsTrue(Directory.Exists(bucketPath));
+        Assert.IsFalse(File.Exists(Path.Combine(bucketPath, "only-file.txt")));
+    }
+
+    [TestMethod]
+    public async Task DeleteFileAsync_WhenConcurrentCleanupAlreadyRemovedDirectory_Succeeds()
+    {
+        string bucketPath = Path.Combine(_testRootPath, "bucket");
+        string nestedPath = Path.Combine(bucketPath, "shared", "leaf");
+        Directory.CreateDirectory(nestedPath);
+        await File.WriteAllTextAsync(Path.Combine(nestedPath, "file.txt"), "content");
+
+        using var meter = new Meter($"{nameof(LocalClientTests)}.ConcurrentCleanup.{Guid.NewGuid():N}");
+        Client client = CreateInstrumentedClient(
+            meter,
+            enumerateFileSystemEntries: directoryPath =>
+            {
+                if (directoryPath.Equals(nestedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    Directory.Delete(directoryPath);
+                    throw new DirectoryNotFoundException("A concurrent cleanup removed the directory.");
+                }
+
+                return Directory.EnumerateFileSystemEntries(directoryPath);
+            });
+
+        await client.DeleteFileAsync("bucket", @"shared\leaf\file.txt");
+
+        Assert.IsFalse(Directory.Exists(nestedPath));
+        Assert.IsTrue(Directory.Exists(bucketPath));
+    }
+
+    [TestMethod]
+    public async Task DeleteFileAsync_RepeatedConcurrentNestedSiblingDeletes_Succeed()
+    {
+        string bucketPath = Path.Combine(_testRootPath, "bucket");
+
+        for (int iteration = 0; iteration < 25; iteration++)
+        {
+            string relativeDirectory = $@"shared\iteration-{iteration}\leaf";
+            string nestedPath = Path.Combine(bucketPath, "shared", $"iteration-{iteration}", "leaf");
+            Directory.CreateDirectory(nestedPath);
+            await File.WriteAllTextAsync(Path.Combine(nestedPath, "first.txt"), "first");
+            await File.WriteAllTextAsync(Path.Combine(nestedPath, "second.txt"), "second");
+
+            Task firstDelete = Task.Run(() =>
+                _client.DeleteFileAsync("bucket", $@"{relativeDirectory}\first.txt"));
+            Task secondDelete = Task.Run(() =>
+                _client.DeleteFileAsync("bucket", $@"{relativeDirectory}\second.txt"));
+
+            await Task.WhenAll(firstDelete, secondDelete);
+
+            Assert.IsFalse(Directory.Exists(nestedPath));
+            Assert.IsTrue(Directory.Exists(bucketPath));
+        }
+    }
+
+    [TestMethod]
     public async Task DeleteFileAsync_DoesNotDeleteNonEmptyDirectories()
     {
         // Arrange
@@ -315,6 +426,16 @@ public class LocalClientTests
         
         // Assert
         Assert.IsFalse(File.Exists(Path.Combine(bucketPath, "nonexistent.txt")));
+#pragma warning disable CA1873 // Moq expression matchers are not evaluated as production log arguments.
+        _mockLogger.Verify(
+            logger => logger.Log(
+                LogLevel.Debug,
+                It.Is<EventId>(eventId => eventId.Id == 8405 && eventId.Name == "LocalDeleteNotFound"),
+                It.IsAny<It.IsAnyType>(),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+#pragma warning restore CA1873
     }
 
     #endregion
@@ -498,6 +619,49 @@ public class LocalClientTests
         Assert.AreEqual(2, filesReturned);
     }
 
+    [TestMethod]
+    public async Task GetFileListAsync_WhenEnumerationFails_RecordsFailure()
+    {
+        string meterName = $"{nameof(LocalClientTests)}.List.{Guid.NewGuid():N}";
+        using var meter = new Meter(meterName);
+        using var collector = new MetricCollector(meterName, "files_failed");
+        Client client = CreateInstrumentedClient(
+            meter,
+            _ => new ThrowingEnumerable<string>(new IOException("enumeration failed")));
+        Directory.CreateDirectory(Path.Combine(_testRootPath, "bucket"));
+
+        await Assert.ThrowsAsync<IOException>(async () =>
+        {
+            await foreach (CloudFileMetadata _ in client.GetFileListAsync("bucket"))
+            {
+                Assert.Fail("The failing enumerator must not yield an item.");
+            }
+        });
+
+        Assert.AreEqual(1, collector.Sum);
+    }
+
+    [TestMethod]
+    public async Task GetFileListAsync_WhenCallerCancels_DoesNotRecordFailure()
+    {
+        string meterName = $"{nameof(LocalClientTests)}.ListCancellation.{Guid.NewGuid():N}";
+        using var meter = new Meter(meterName);
+        using var collector = new MetricCollector(meterName, "files_failed");
+        Client client = CreateInstrumentedClient(meter);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (CloudFileMetadata _ in client.GetFileListAsync("bucket", cancellationToken: cancellation.Token))
+            {
+                Assert.Fail("The canceled enumerator must not yield an item.");
+            }
+        });
+
+        Assert.AreEqual(0, collector.Sum);
+    }
+
     #endregion
 
     #region GetSignedUploadUrl Tests
@@ -518,7 +682,9 @@ public class LocalClientTests
     #region Edge Cases and Security
 
     [TestMethod]
-    public async Task PathTraversal_WithDotDot_ShouldBeHandledSafely()
+    [DataRow(@"..\secret.txt")]
+    [DataRow("../secret.txt")]
+    public async Task GetFileMetadataAsync_WhenFileEscapesBucket_ThrowsArgumentException(string traversalPath)
     {
         // Arrange
         var bucketPath = Path.Combine(_testRootPath, "bucket");
@@ -528,25 +694,57 @@ public class LocalClientTests
         var secretPath = Path.Combine(_testRootPath, "secret.txt");
         await File.WriteAllTextAsync(secretPath, "secret data");
 
-        // Act - Attempt path traversal
-        // Note: This test documents current behavior.
-        // The current implementation is VULNERABLE to path traversal.
-        // This should ideally throw an exception or sanitize the path.
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _client.GetFileMetadataAsync("bucket", traversalPath));
+    }
+
+    [TestMethod]
+    [DataRow(@"..\bucket2\secret.txt")]
+    [DataRow("../bucket2/secret.txt")]
+    public async Task GetFileMetadataAsync_WhenPathUsesBucketNamePrefix_ThrowsArgumentException(string traversalPath)
+    {
+        var siblingBucketPath = Path.Combine(_testRootPath, "bucket2");
+        Directory.CreateDirectory(siblingBucketPath);
+        await File.WriteAllTextAsync(Path.Combine(siblingBucketPath, "secret.txt"), "secret data");
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _client.GetFileMetadataAsync("bucket", traversalPath));
+    }
+
+    [TestMethod]
+    public async Task GetFileMetadataAsync_WhenBucketEscapesConfiguredRoot_ThrowsArgumentException()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _client.GetFileMetadataAsync("..", "secret.txt"));
+    }
+
+    [TestMethod]
+    public async Task GetFileListAsync_WhenBucketContainsDirectoryLink_DoesNotTraverseLink()
+    {
+        string bucketPath = Path.Combine(_testRootPath, "bucket");
+        string outsidePath = Path.Combine(_testRootPath, "outside");
+        string linkPath = Path.Combine(bucketPath, "linked");
+        Directory.CreateDirectory(bucketPath);
+        Directory.CreateDirectory(outsidePath);
+        await File.WriteAllTextAsync(Path.Combine(outsidePath, "secret.txt"), "secret");
+
         try
         {
-            await _client.GetFileMetadataAsync("bucket", @"..\secret.txt");
-            // If we get here, the path traversal worked - this is a security issue
-            Assert.Inconclusive("Path traversal attack succeeded - this is a security vulnerability that should be fixed");
+            Directory.CreateSymbolicLink(linkPath, outsidePath);
         }
-        catch (FileNotFoundException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            // This might happen if the path normalization prevents the attack
-            // but isn't the ideal response (should be ArgumentException)
+            // Some Windows hosts do not permit unprivileged symbolic-link creation.
+            return;
         }
-        catch (ArgumentException)
+
+        var files = new List<CloudFileMetadata>();
+        await foreach (CloudFileMetadata file in _client.GetFileListAsync("bucket"))
         {
-            // This is the ideal response - explicitly rejecting the malicious path
+            files.Add(file);
         }
+
+        Assert.IsFalse(files.Any(file => file.Name.Contains("secret.txt", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -568,4 +766,29 @@ public class LocalClientTests
     }
 
     #endregion
+
+    private Client CreateInstrumentedClient(
+        Meter meter,
+        Func<string, IEnumerable<string>>? enumerateFiles = null,
+        Func<string, IEnumerable<string>>? enumerateFileSystemEntries = null)
+    {
+        enumerateFiles ??= rootPath => Directory.EnumerateFiles(
+            rootPath,
+            "*",
+            new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            });
+        enumerateFileSystemEntries ??= Directory.EnumerateFileSystemEntries;
+
+        using var meterFactory = new FixedMeterFactory(meter);
+        return new Client(
+            _mockLogger.Object,
+            new Ruya.Services.CloudStorage.Tests.Common.StubDistributedTracing(),
+            meterFactory,
+            Options.Create(new StorageServiceSettings { Path = _testRootPath }),
+            enumerateFiles,
+            enumerateFileSystemEntries);
+    }
 }

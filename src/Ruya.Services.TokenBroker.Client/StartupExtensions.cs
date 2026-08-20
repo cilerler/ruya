@@ -1,7 +1,13 @@
 using System;
+using System.Net.Http;
+using System.Threading.Tasks;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Options;
+
+using Polly;
 
 namespace Ruya.Services.TokenBroker.Client;
 
@@ -14,18 +20,7 @@ public static class TokenClientStartupExtensions
     public static IServiceCollection AddTokenClient(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-
-        services.AddMemoryCache();
-
-        services.AddOptions<TokenClientSettings>()
-            .BindConfiguration(TokenClientSettings.ConfigurationSectionName)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddHttpClient<ITokenClient, TokenClient>()
-            .AddStandardResilienceHandler();
-
-        return services;
+        return AddTokenClientCore(services, configureSettings: null, configureResilience: null);
     }
 
     /// <summary>
@@ -37,18 +32,7 @@ public static class TokenClientStartupExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureResilience);
-
-        services.AddMemoryCache();
-
-        services.AddOptions<TokenClientSettings>()
-            .BindConfiguration(TokenClientSettings.ConfigurationSectionName)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddHttpClient<ITokenClient, TokenClient>()
-            .AddStandardResilienceHandler(configureResilience);
-
-        return services;
+        return AddTokenClientCore(services, configureSettings: null, configureResilience);
     }
 
     /// <summary>
@@ -60,19 +44,7 @@ public static class TokenClientStartupExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureSettings);
-
-        services.AddMemoryCache();
-
-        services.AddOptions<TokenClientSettings>()
-            .BindConfiguration(TokenClientSettings.ConfigurationSectionName)
-            .Configure(configureSettings)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddHttpClient<ITokenClient, TokenClient>()
-            .AddStandardResilienceHandler();
-
-        return services;
+        return AddTokenClientCore(services, configureSettings, configureResilience: null);
     }
 
     /// <summary>
@@ -87,17 +59,48 @@ public static class TokenClientStartupExtensions
         ArgumentNullException.ThrowIfNull(configureSettings);
         ArgumentNullException.ThrowIfNull(configureResilience);
 
+        return AddTokenClientCore(services, configureSettings, configureResilience);
+    }
+
+    private static IServiceCollection AddTokenClientCore(
+        IServiceCollection services,
+        Action<TokenClientSettings>? configureSettings,
+        Action<HttpStandardResilienceOptions>? configureResilience)
+    {
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<TokenClientSettings>, TokenClientSettingsValidator>());
+
         services.AddMemoryCache();
 
-        services.AddOptions<TokenClientSettings>()
-            .BindConfiguration(TokenClientSettings.ConfigurationSectionName)
-            .Configure(configureSettings)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        var settingsBuilder = services.AddOptions<TokenClientSettings>()
+            .BindConfiguration(TokenClientSettings.ConfigurationSectionName);
+        if (configureSettings is not null)
+        {
+            settingsBuilder.Configure(configureSettings);
+        }
+        settingsBuilder.ValidateDataAnnotations().ValidateOnStart();
 
         services.AddHttpClient<ITokenClient, TokenClient>()
-            .AddStandardResilienceHandler(configureResilience);
+            .AddStandardResilienceHandler(options =>
+            {
+                configureResilience?.Invoke(options);
+                DisableRetriesForUnsafeMethods(options);
+            });
 
         return services;
     }
+
+    private static void DisableRetriesForUnsafeMethods(HttpStandardResilienceOptions options)
+    {
+        var defaultShouldHandle = options.Retry.ShouldHandle;
+        options.Retry.ShouldHandle = arguments => IsRetrySafe(arguments.Context.GetRequestMessage()?.Method)
+            ? defaultShouldHandle(arguments)
+            : ValueTask.FromResult(false);
+    }
+
+    private static bool IsRetrySafe(HttpMethod? method) =>
+        method == HttpMethod.Get
+        || method == HttpMethod.Head
+        || method == HttpMethod.Options
+        || method == HttpMethod.Trace;
 }

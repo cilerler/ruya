@@ -18,14 +18,19 @@ using System.Runtime.CompilerServices;
 
 namespace Ruya.Services.CloudStorage.Amazon;
 
-public class Client : ICloudFileService
+public class Client : ICloudFileService, IDisposable
 {
+    private const string InstrumentationName =
+        $"{nameof(Ruya)}.{nameof(Ruya.Services)}.{nameof(Ruya.Services.CloudStorage)}.{nameof(Ruya.Services.CloudStorage.Amazon)}";
+
     private readonly ILogger _logger;
     private readonly Setting _options;
     private readonly IAmazonS3 _s3Client;
+    private readonly bool _ownsS3Client;
+    private int _disposeState;
 
-    private static readonly ActivitySource _activitySource = new("Ruya.Services.CloudStorage.Amazon");
-    private static readonly Meter _meter = new("Ruya.Services.CloudStorage.Amazon");
+    private static readonly ActivitySource _activitySource = new(InstrumentationName);
+    private static readonly Meter _meter = new(InstrumentationName);
     private static readonly Counter<long> _filesUploaded = _meter.CreateCounter<long>("files_uploaded");
     private static readonly Counter<long> _bytesUploaded = _meter.CreateCounter<long>("bytes_uploaded");
     private static readonly Counter<long> _filesDownloaded = _meter.CreateCounter<long>("files_downloaded");
@@ -33,19 +38,53 @@ public class Client : ICloudFileService
     private static readonly Counter<long> _filesFailed = _meter.CreateCounter<long>("files_failed");
 
     public Client(ILogger<Client> logger, IOptions<Setting> options)
-        : this(logger, options, CreateS3Client(options.Value))
+        : this(logger, options, CreateS3Client(GetSettings(options)), ownsS3Client: true)
     {
     }
 
     public Client(ILogger<Client> logger, IOptions<Setting> options, IAmazonS3 s3Client)
+        : this(logger, options, s3Client, ownsS3Client: false)
     {
-        _logger = logger;
-        _options = options.Value;
-        _s3Client = s3Client;
+    }
+
+    private Client(ILogger<Client> logger, IOptions<Setting> options, IAmazonS3 s3Client, bool ownsS3Client)
+    {
+        try
+        {
+            ArgumentNullException.ThrowIfNull(logger);
+            ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(s3Client);
+
+            _logger = logger;
+            _options = options.Value;
+            _s3Client = s3Client;
+            _ownsS3Client = ownsS3Client;
+        }
+        catch (Exception initializationException) when (ownsS3Client && s3Client is not null)
+        {
+            try
+            {
+                s3Client.Dispose();
+            }
+            catch (Exception cleanupException)
+            {
+                throw new AggregateException(initializationException, cleanupException);
+            }
+
+            throw;
+        }
     }
 
     private static IAmazonS3 CreateS3Client(Setting settings)
     {
+        bool hasAccessKey = !string.IsNullOrWhiteSpace(settings.AccessKey);
+        bool hasSecretKey = !string.IsNullOrWhiteSpace(settings.SecretKey);
+        if (hasAccessKey != hasSecretKey)
+        {
+            throw new InvalidOperationException(
+                "AccessKey and SecretKey must either both be configured or both be omitted.");
+        }
+
         var config = new AmazonS3Config();
         if (!string.IsNullOrWhiteSpace(settings.Region))
         {
@@ -70,8 +109,6 @@ public class Client : ICloudFileService
     public async Task<CloudFileMetadata> GetFileMetadataAsync(string bucketName, string fileName, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(GetFileMetadataAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("fileName", fileName);
 
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
         if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(fileName));
@@ -97,13 +134,17 @@ public class Client : ICloudFileService
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
             _filesFailed.Add(1);
-            _logger.LogInformation("Not Found - {fileName} in bucket {bucketName}", fileName, bucketName);
+            _logger.LogInformation(LogEvents.MetadataNotFound, "Amazon cloud-storage object was not found");
             throw new FileNotFoundException($"Not Found - {fileName} in bucket {bucketName}", fileName, ex);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _filesFailed.Add(1);
-            _logger.LogError(ex, ex.Message);
+            _logger.LogError(LogEvents.MetadataFailed, ex, "Amazon cloud-storage metadata request failed");
             throw;
         }
     }
@@ -111,8 +152,11 @@ public class Client : ICloudFileService
     public async Task<CloudFileMetadata> UploadFileAsync(string bucketName, string sourcePath, string targetPath, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(UploadFileAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("sourcePath", sourcePath);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        cancellationToken.ThrowIfCancellationRequested();
 
         string contentType = "application/octet-stream";
         try
@@ -121,44 +165,40 @@ public class Client : ICloudFileService
         }
         catch (Exception e)
         {
-            _logger.LogWarning(e, "An error occured while trying to retrieve MimeType");
+            _logger.LogWarning(LogEvents.MimeTypeFailed, e, "An error occured while trying to retrieve MimeType");
         }
 
-        using FileStream fileStream = File.OpenRead(sourcePath);
+        await using FileStream fileStream = OpenUploadSourceFile(sourcePath, cancellationToken);
         return await UploadStreamAsync(bucketName, fileStream, targetPath, contentType, cancellationToken);
     }
 
     public async Task<CloudFileMetadata> UploadStreamAsync(string bucketName, Stream sourceStream, string targetPath, string contentType, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(UploadStreamAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("targetPath", targetPath);
 
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        ArgumentNullException.ThrowIfNull(sourceStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
 
         string destinationFileName = PathNormalizer.ToCloudPath(targetPath);
 
-        if (sourceStream.CanSeek)
-        {
-             sourceStream.Seek(0, SeekOrigin.Begin);
-        }
-
-        var request = new PutObjectRequest
-        {
-            BucketName = bucketName,
-            Key = destinationFileName,
-            InputStream = sourceStream,
-            ContentType = contentType,
-            AutoCloseStream = false
-        };
-
-        request.StreamTransferProgress += (sender, args) => {
-            _logger.LogTrace("Uploading {file} to {bucket}: {bytes} bytes ({percent}%)", destinationFileName, bucketName, args.TransferredBytes, args.PercentDone);
-        };
-
         try
         {
+            if (sourceStream.CanSeek)
+            {
+                 sourceStream.Seek(0, SeekOrigin.Begin);
+            }
+
+            var request = new PutObjectRequest
+            {
+                BucketName = bucketName,
+                Key = destinationFileName,
+                InputStream = sourceStream,
+                ContentType = contentType,
+                AutoCloseStream = false
+            };
+
             await _s3Client.PutObjectAsync(request, cancellationToken);
 
             if (sourceStream.CanSeek) _bytesUploaded.Add(sourceStream.Length);
@@ -166,10 +206,14 @@ public class Client : ICloudFileService
 
             return await GetFileMetadataAsync(bucketName, destinationFileName, cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+             throw;
+        }
         catch (Exception e)
         {
              _filesFailed.Add(1);
-             _logger.LogError(e, "Error uploading file");
+             _logger.LogError(LogEvents.UploadFailed, e, "Error uploading file");
              throw;
         }
     }
@@ -177,10 +221,10 @@ public class Client : ICloudFileService
     public async Task DownloadFileAsync(string bucketName, string fileName, Stream targetStream, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(DownloadFileAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("fileName", fileName);
 
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
+        if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(fileName));
+        ArgumentNullException.ThrowIfNull(targetStream);
 
         try
         {
@@ -191,25 +235,33 @@ public class Client : ICloudFileService
             };
             using var response = await _s3Client.GetObjectAsync(request, cancellationToken);
             await response.ResponseStream.CopyToAsync(targetStream, cancellationToken);
+
+            if (targetStream.CanSeek)
+            {
+                targetStream.Seek(0, SeekOrigin.Begin);
+            }
+
             _filesDownloaded.Add(1);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception e)
         {
             _filesFailed.Add(1);
-            _logger.LogError(e, "Error downloading file");
+            _logger.LogError(LogEvents.DownloadFailed, e, "Error downloading file");
             throw;
         }
 
-        if (targetStream.CanSeek) targetStream.Seek(0, SeekOrigin.Begin);
     }
 
     public async Task DeleteFileAsync(string bucketName, string fileName, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(DeleteFileAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("fileName", fileName);
 
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
+        if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(fileName));
 
         try
         {
@@ -221,10 +273,14 @@ public class Client : ICloudFileService
             await _s3Client.DeleteObjectAsync(request, cancellationToken);
             _filesDeleted.Add(1);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception e)
         {
             _filesFailed.Add(1);
-            _logger.LogError(e, "Error deleting file");
+            _logger.LogError(LogEvents.DeleteFailed, e, "Error deleting file");
             throw;
         }
     }
@@ -232,11 +288,11 @@ public class Client : ICloudFileService
     public async Task CopyFileAsync(string sourceBucketName, string sourceFileName, string destinationBucketName, string destinationFileName, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(CopyFileAsync));
-        activity?.SetTag("sourceBucket", sourceBucketName);
-        activity?.SetTag("destinationBucket", destinationBucketName);
 
         if (string.IsNullOrWhiteSpace(sourceBucketName)) throw new ArgumentException("Source bucket name cannot be null or whitespace.", nameof(sourceBucketName));
+        if (string.IsNullOrWhiteSpace(sourceFileName)) throw new ArgumentException("Source file name cannot be null or whitespace.", nameof(sourceFileName));
         if (string.IsNullOrWhiteSpace(destinationBucketName)) throw new ArgumentException("Destination bucket name cannot be null or whitespace.", nameof(destinationBucketName));
+        if (string.IsNullOrWhiteSpace(destinationFileName)) throw new ArgumentException("Destination file name cannot be null or whitespace.", nameof(destinationFileName));
 
         try
         {
@@ -249,10 +305,14 @@ public class Client : ICloudFileService
             };
             await _s3Client.CopyObjectAsync(request, cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception e)
         {
             _filesFailed.Add(1);
-            _logger.LogError(e, "Error copying file");
+            _logger.LogError(LogEvents.CopyFailed, e, "Error copying file");
             throw;
         }
     }
@@ -260,7 +320,6 @@ public class Client : ICloudFileService
     public async IAsyncEnumerable<CloudFileMetadata> GetFileListAsync(string bucketName, string? prefix = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(GetFileListAsync));
-        activity?.SetTag("bucket", bucketName);
 
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
 
@@ -277,10 +336,14 @@ public class Client : ICloudFileService
             {
                 response = await _s3Client.ListObjectsV2Async(request, cancellationToken);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception e)
             {
                 _filesFailed.Add(1);
-                _logger.LogError(e, "Error getting file list");
+                _logger.LogError(LogEvents.ListFailed, e, "Error getting file list");
                 throw;
             }
 
@@ -304,6 +367,9 @@ public class Client : ICloudFileService
     public string GetSignedUploadUrl(string bucketName, string filename, string contentType, int expirationMinutes = 60)
     {
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
+        if (string.IsNullOrWhiteSpace(filename)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(filename));
+        if (string.IsNullOrWhiteSpace(contentType)) throw new ArgumentException("Content type cannot be null or whitespace.", nameof(contentType));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expirationMinutes);
         var request = new GetPreSignedUrlRequest
         {
             BucketName = bucketName,
@@ -317,6 +383,7 @@ public class Client : ICloudFileService
 
     private string GetPreSignedUrl(string bucketName, string key, int expirationMinutes)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expirationMinutes);
         var request = new GetPreSignedUrlRequest
         {
             BucketName = bucketName,
@@ -325,5 +392,56 @@ public class Client : ICloudFileService
             Expires = DateTime.UtcNow.AddMinutes(expirationMinutes)
         };
         return _s3Client.GetPreSignedURL(request);
+    }
+
+    private static Setting GetSettings(IOptions<Setting> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.Value;
+    }
+
+    private FileStream OpenUploadSourceFile(string sourcePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return new FileStream(
+                sourcePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.UploadFailed, exception, "Could not open the Amazon cloud-storage upload source file");
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Releases resources owned by this client.
+    /// </summary>
+    /// <param name="disposing">Whether managed resources should be released.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposing || Interlocked.Exchange(ref _disposeState, 1) != 0) return;
+
+        if (_ownsS3Client)
+        {
+            _s3Client.Dispose();
+        }
     }
 }

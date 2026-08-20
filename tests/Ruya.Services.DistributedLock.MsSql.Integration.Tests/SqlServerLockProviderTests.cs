@@ -160,6 +160,37 @@ public class SqlServerLockProviderTests
         });
     }
 
+    [TestMethod]
+    public async Task AcquireLockAsync_ShouldThrow_WhenExpiryIsNotPositive()
+    {
+        using var provider = new SqlServerLockProvider(TestConnectionString, _mockLogger.Object);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            provider.AcquireLockAsync("key", "value", TimeSpan.Zero));
+    }
+
+    [TestMethod]
+    public async Task AcquireLockAsync_WhenConnectionConfigurationIsInvalid_EmitsStableFailureEventId()
+    {
+        using var provider = new SqlServerLockProvider(
+            "InvalidKeyword=invalid",
+            _mockLogger.Object);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            provider.AcquireLockAsync("key", "value", TimeSpan.FromMinutes(1)));
+
+#pragma warning disable CA1873 // Moq expression matchers are not evaluated as production log arguments.
+        _mockLogger.Verify(
+            logger => logger.Log(
+                LogLevel.Error,
+                It.Is<EventId>(eventId => eventId.Id == 8602 && eventId.Name == "SqlLockAcquireFailed"),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<ArgumentException>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+#pragma warning restore CA1873
+    }
+
     #endregion
 
     #region ExtendLockAsync Validation Tests

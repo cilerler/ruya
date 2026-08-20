@@ -55,16 +55,25 @@ public sealed class AppEnvironmentResponseHeadersMiddleware
 			return _next(httpContext);
 		}
 
-		var headers = httpContext.Response.Headers;
-		foreach (var header in _staticHeaders)
+		httpContext.Response.OnStarting(static state =>
 		{
-			headers[header.Key] = header.Value;
-		}
+			var registration = (HeaderRegistration)state;
+			foreach (var header in registration.Headers)
+			{
+				registration.Response.Headers[header.Key] = header.Value;
+			}
 
-		_logger.HeadersAdded(_staticHeaders.Count);
+			registration.Logger.HeadersAdded(registration.Headers.Count);
+			return Task.CompletedTask;
+		}, new HeaderRegistration(httpContext.Response, _staticHeaders, _logger));
 
 		return _next(httpContext);
 	}
+
+	private sealed record HeaderRegistration(
+		HttpResponse Response,
+		IReadOnlyList<KeyValuePair<string, string>> Headers,
+		ILogger Logger);
 
 	private List<KeyValuePair<string, string>> BuildStaticHeaders()
 	{

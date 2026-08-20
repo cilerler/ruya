@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Ruya.AspNetCore.DataProtection.StackExchangeRedis;
 
@@ -13,9 +14,14 @@ public sealed class DataProtectionClientSettings
     public const string ConfigurationSectionName = nameof(DataProtectionClientSettings);
 
     /// <summary>
-    /// The resolved connection string for the data protection service.
-    /// Set internally from ConnectionStringKey during configuration.
+    /// The named HTTP client used to retrieve remote data protection settings.
     /// </summary>
+    public const string HttpClientName = "DataProtectionClient";
+
+    /// <summary>
+    /// The resolved remote configuration service address.
+    /// </summary>
+    [JsonIgnore]
     public string ConnectionString { get; internal set; } = null!;
 
     /// <summary>

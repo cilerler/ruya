@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Services.ReliableMessaging.EntityFrameworkCore.yml'
       - 'src/Ruya.Services.ReliableMessaging.EntityFrameworkCore/**'
+      - 'tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests/**'
 
 jobs:
   build:
@@ -26,7 +27,7 @@ jobs:
       test-project-paths: './tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests/Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests.csproj'
       dispatch-event-type: 'Ruya.Services.ReliableMessaging.EntityFrameworkCore'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
-      use-testcontainers: false
+      use-testcontainers: true
     secrets:
       PAT: ${{ secrets.PAT }}  # Required for dispatch (chain builds)
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

@@ -9,6 +9,20 @@ namespace Ruya.Services.CloudStorage.UnitTests;
 public class CloudStorageFactoryTests
 {
     [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("   ")]
+    public void GetService_WithInvalidProviderKey_ThrowsArgumentException(string? providerKey)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ICloudStorageFactory, CloudStorageFactory>();
+        using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<ICloudStorageFactory>();
+
+        Assert.Throws<ArgumentException>(() => factory.GetService(providerKey!));
+    }
+
+    [TestMethod]
     public void GetService_WithRegisteredProvider_ReturnsService()
     {
         // Arrange

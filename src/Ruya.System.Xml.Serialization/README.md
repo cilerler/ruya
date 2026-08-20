@@ -23,7 +23,7 @@ var obj = Xml.Deserialize<MyType>(xml);
 await Parallel.ForEachAsync(records, new ParallelOptions 
 {
     MaxDegreeOfParallelism = Environment.ProcessorCount
-} async (record, ct) =>
+}, async (record, ct) =>
 {
     // Safe to call concurrently
     var xml = Xml.Serialize(record);

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -17,11 +19,9 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 {
 	private static DefaultHttpContext CreateHttpContext()
 	{
-		var context = new DefaultHttpContext
-		{
-			Response = { Body = new MemoryStream() }
-		};
-		return context;
+		var features = new FeatureCollection();
+		features.Set<IHttpResponseFeature>(new TestHttpResponseFeature());
+		return new DefaultHttpContext(features);
 	}
 
 	private static Mock<ILogger<AppEnvironmentResponseHeadersMiddleware>> CreateLoggerMock()
@@ -44,6 +44,32 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 			next,
 			loggerMock.Object,
 			options);
+	}
+
+	private static async Task InvokeAndStartAsync(
+		AppEnvironmentResponseHeadersMiddleware middleware,
+		HttpContext context)
+	{
+		await middleware.InvokeAsync(context);
+		var responseFeature = (TestHttpResponseFeature)context.Features.Get<IHttpResponseFeature>()!;
+		await responseFeature.FireOnStartingAsync();
+	}
+
+	private static void VerifyLoggedEvent(
+		Mock<ILogger<AppEnvironmentResponseHeadersMiddleware>> loggerMock,
+		LogLevel logLevel,
+		int eventId)
+	{
+#pragma warning disable CA1873 // Moq expression matchers are not evaluated as production log arguments.
+		loggerMock.Verify(
+			x => x.Log(
+				logLevel,
+				It.Is<EventId>(candidate => candidate.Id == eventId),
+				It.IsAny<It.IsAnyType>(),
+				It.IsAny<Exception?>(),
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.Once);
+#pragma warning restore CA1873
 	}
 
 	#region Constructor Validation Tests
@@ -130,7 +156,7 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 
 		// Assert
 		Assert.IsTrue(nextCalled, "Next middleware should be called");
@@ -150,17 +176,10 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 
 		// Assert
-		loggerMock.Verify(
-			x => x.Log(
-				LogLevel.Debug,
-				It.IsAny<EventId>(),
-				It.IsAny<It.IsAnyType>(),
-				It.IsAny<Exception?>(),
-				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-			Times.Once);
+		VerifyLoggedEvent(loggerMock, LogLevel.Debug, eventId: 1002);
 	}
 
 	[TestMethod]
@@ -180,13 +199,58 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 		
 		// Assert
 		Assert.IsTrue(context.Response.Headers.ContainsKey("X-ApplicationVersion"));
 		Assert.IsTrue(context.Response.Headers.ContainsKey("X-ApplicationName"));
 		Assert.IsTrue(context.Response.Headers.ContainsKey("X-Environment"));
 		Assert.IsFalse(context.Response.Headers.ContainsKey("X-MachineName"));
+	}
+
+	[TestMethod]
+	public async Task InvokeAsync_DownstreamAddsApplicationHeader_EmitsSingleAuthoritativeValue()
+	{
+		RequestDelegate next = context =>
+		{
+			context.Response.Headers.Append("X-ApplicationName", "downstream-value");
+			return Task.CompletedTask;
+		};
+		var middleware = CreateMiddleware(next);
+		var context = CreateHttpContext();
+
+		await InvokeAndStartAsync(middleware, context);
+
+		Assert.AreEqual(1, context.Response.Headers["X-ApplicationName"].Count);
+		Assert.AreEqual(Ruya.Primitives.Startup.AssemblyName, context.Response.Headers["X-ApplicationName"].ToString());
+	}
+
+	private sealed class TestHttpResponseFeature : IHttpResponseFeature
+	{
+		private readonly Stack<(Func<object, Task> Callback, object State)> _startingCallbacks = new();
+		private readonly Stack<(Func<object, Task> Callback, object State)> _completedCallbacks = new();
+
+		public int StatusCode { get; set; } = StatusCodes.Status200OK;
+		public string? ReasonPhrase { get; set; }
+		public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
+		public Stream Body { get; set; } = new MemoryStream();
+		public bool HasStarted { get; private set; }
+
+		public void OnStarting(Func<object, Task> callback, object state)
+			=> _startingCallbacks.Push((callback, state));
+
+		public void OnCompleted(Func<object, Task> callback, object state)
+			=> _completedCallbacks.Push((callback, state));
+
+		public async Task FireOnStartingAsync()
+		{
+			while (_startingCallbacks.TryPop(out var registration))
+			{
+				await registration.Callback(registration.State);
+			}
+
+			HasStarted = true;
+		}
 	}
 
 	#endregion
@@ -209,7 +273,7 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 		
 		// Assert
 		Assert.IsFalse(context.Response.Headers.ContainsKey("X-ApplicationVersion"));
@@ -233,7 +297,7 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 		
 		// Assert
 		Assert.IsTrue(context.Response.Headers.ContainsKey("X-ApplicationVersion"));
@@ -257,7 +321,7 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 		
 		// Assert
 		Assert.IsTrue(context.Response.Headers.ContainsKey("X-ApplicationVersion"));
@@ -279,7 +343,7 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 		
 		// Assert
 		Assert.IsTrue(context.Response.Headers.ContainsKey("X-MachineName"));
@@ -296,7 +360,7 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 		
 		// Assert
 		Assert.IsFalse(context.Response.Headers.ContainsKey("X-MachineName"),
@@ -322,7 +386,7 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 
 		// Assert
 		Assert.IsTrue(nextCalled, "Next middleware should be called");
@@ -359,17 +423,10 @@ public class AppEnvironmentResponseHeadersMiddlewareTests
 		var context = CreateHttpContext();
 
 		// Act
-		await middleware.InvokeAsync(context);
+		await InvokeAndStartAsync(middleware, context);
 		
 		// Assert
-		loggerMock.Verify(
-			x => x.Log(
-				LogLevel.Debug,
-				It.IsAny<EventId>(),
-				It.IsAny<It.IsAnyType>(),
-				It.IsAny<Exception?>(),
-				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-			Times.Once);
+		VerifyLoggedEvent(loggerMock, LogLevel.Debug, eventId: 1001);
 	}
 
 	#endregion

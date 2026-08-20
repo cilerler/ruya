@@ -81,5 +81,8 @@ public static class OutboxResiliencePipelineKey
 	/// <c>services.AddResiliencePipeline(OutboxResiliencePipelineKey.Dispatch, builder =&gt; ...)</c>.
 	/// The string is derived from the type's full name + member name so the literal namespace is not duplicated in source.
 	/// </summary>
-	public static readonly string Dispatch = $"{typeof(OutboxResiliencePipelineKey).FullName}.{nameof(Dispatch)}";
+	public static readonly string Dispatch =
+		(typeof(OutboxResiliencePipelineKey).FullName
+			?? throw new InvalidOperationException("The outbox resilience-pipeline key type must have a full name."))
+		+ "." + nameof(Dispatch);
 }

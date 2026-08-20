@@ -9,9 +9,14 @@ namespace Ruya.Services.MessageQueue.RabbitMq;
 public sealed class RabbitMQOptions
 {
     /// <summary>
+    /// Configuration section used by the parameterless registration overload.
+    /// </summary>
+    public const string ConfigurationSectionName = $"{nameof(Ruya.Services.MessageQueue)}:RabbitMQ";
+
+    /// <summary>
     /// RabbitMQ host
     /// </summary>
-    public string Host { get; set; } = "localhost";
+    public string Host { get; set; } = null!;
 
     /// <summary>
     /// RabbitMQ port
@@ -21,17 +26,17 @@ public sealed class RabbitMQOptions
     /// <summary>
     /// Virtual host
     /// </summary>
-    public string VirtualHost { get; set; } = "/";
+    public string VirtualHost { get; set; } = null!;
 
     /// <summary>
     /// Username
     /// </summary>
-    public string Username { get; set; } = "guest";
+    public string Username { get; set; } = null!;
 
     /// <summary>
     /// Password
     /// </summary>
-    public string Password { get; set; } = "guest";
+    public string Password { get; set; } = null!;
 
     /// <summary>
     /// Whether to use SSL/TLS
@@ -89,18 +94,18 @@ public sealed class RabbitMQOptions
     public ushort PrefetchCount { get; set; } = 10;
 
     /// <summary>
-    /// Whether to use RabbitMQ Streams
+    /// Compatibility setting for RabbitMQ Streams. The provider rejects this setting when enabled.
     /// </summary>
     public bool UseStreams { get; set; } = false;
 
     /// <summary>
-    /// Stream configuration
+    /// Compatibility settings for RabbitMQ Streams. The provider rejects non-null stream settings.
     /// </summary>
     public StreamOptions? StreamOptions { get; set; }
 }
 
 /// <summary>
-/// RabbitMQ Stream configuration
+/// Compatibility shape for RabbitMQ Stream configuration. Streams are not implemented by this provider.
 /// </summary>
 public sealed class StreamOptions
 {
@@ -132,6 +137,8 @@ public sealed class RabbitMQOptionsValidator : IValidateOptions<RabbitMQOptions>
 {
     public ValidateOptionsResult Validate(string? name, RabbitMQOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         if (string.IsNullOrWhiteSpace(options.Host))
         {
             return ValidateOptionsResult.Fail("Host is required");
@@ -142,6 +149,21 @@ public sealed class RabbitMQOptionsValidator : IValidateOptions<RabbitMQOptions>
             return ValidateOptionsResult.Fail("Port must be between 1 and 65535");
         }
 
+        if (string.IsNullOrWhiteSpace(options.VirtualHost))
+        {
+            return ValidateOptionsResult.Fail("VirtualHost is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.Username))
+        {
+            return ValidateOptionsResult.Fail("Username is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.Password))
+        {
+            return ValidateOptionsResult.Fail("Password is required");
+        }
+
         if (options.ConnectionTimeout <= TimeSpan.Zero)
         {
             return ValidateOptionsResult.Fail("ConnectionTimeout must be greater than zero");
@@ -150,6 +172,21 @@ public sealed class RabbitMQOptionsValidator : IValidateOptions<RabbitMQOptions>
         if (options.ChannelPoolSize < 1)
         {
             return ValidateOptionsResult.Fail("ChannelPoolSize must be at least 1");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.DefaultExchangeType))
+        {
+            return ValidateOptionsResult.Fail("DefaultExchangeType is required");
+        }
+
+        if (options.UsePublisherConfirms && options.PublisherConfirmTimeout <= TimeSpan.Zero)
+        {
+            return ValidateOptionsResult.Fail("PublisherConfirmTimeout must be greater than zero when publisher confirms are enabled");
+        }
+
+        if (options.UseStreams || options.StreamOptions is not null)
+        {
+            return ValidateOptionsResult.Fail("RabbitMQ Streams are not supported by this provider");
         }
 
         return ValidateOptionsResult.Success;

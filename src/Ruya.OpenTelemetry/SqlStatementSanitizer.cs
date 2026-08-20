@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -13,36 +12,33 @@ namespace Ruya.OpenTelemetry;
 /// </summary>
 public sealed partial class SqlStatementSanitizer
 {
-    private readonly SqlInstrumentationSettings _settings;
-    private readonly ConcurrentDictionary<string, Regex> _sensitivePatternCache = new();
+    internal const string RegexTimeoutMarker = "[SQL_REDACTED:REGEX_TIMEOUT]";
+    private const int RegexTimeoutMilliseconds = 250;
 
-    // Pre-compiled regex for parameter sanitization
-    [GeneratedRegex(@"'[^']*'", RegexOptions.Compiled)]
+    private readonly SqlInstrumentationSettings _settings;
+    private readonly Regex[] _sensitivePatterns;
+
+    [GeneratedRegex(@"'[^']*'", RegexOptions.Compiled | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
     private static partial Regex StringLiteralPattern();
 
-    [GeneratedRegex(@"(?<==\s*)\d+(?=\s*[,\)]|$)", RegexOptions.Compiled)]
+    [GeneratedRegex(@"(?<![\w@])[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?(?![\w])", RegexOptions.Compiled | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
     private static partial Regex NumericLiteralPattern();
 
-    [GeneratedRegex(@"0x[0-9A-Fa-f]+", RegexOptions.Compiled)]
+    [GeneratedRegex(@"0x[0-9A-Fa-f]+", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
     private static partial Regex HexLiteralPattern();
 
     public SqlStatementSanitizer(IOptions<OpenTelemetrySettings> options)
     {
+        ArgumentNullException.ThrowIfNull(options);
         _settings = options.Value.Sql;
+        _sensitivePatterns = CompileSensitivePatterns(_settings.SensitivePatterns);
+    }
 
-        // Pre-compile sensitive patterns
-        foreach (var pattern in _settings.SensitivePatterns)
-        {
-            try
-            {
-                _sensitivePatternCache.TryAdd(pattern,
-                    new Regex(pattern, RegexOptions.Compiled | RegexOptions.IgnoreCase));
-            }
-            catch (RegexParseException)
-            {
-                // Skip invalid patterns
-            }
-        }
+    internal SqlStatementSanitizer(SqlInstrumentationSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _settings = settings;
+        _sensitivePatterns = CompileSensitivePatterns(settings.SensitivePatterns);
     }
 
     public string Sanitize(string? statement)
@@ -52,32 +48,41 @@ public sealed partial class SqlStatementSanitizer
 
         var result = statement;
 
-        // Truncate if too long
-        if (result.Length > _settings.MaxStatementLength)
-        {
-            result = result[.._settings.MaxStatementLength] + "...[TRUNCATED]";
-        }
-
         if (!_settings.SanitizeStatements)
-            return result;
+            return Truncate(result);
 
-        // Redact sensitive patterns first (password='xxx' -> password='[REDACTED]')
-        foreach (var pattern in _sensitivePatternCache.Values)
+        try
         {
-            result = pattern.Replace(result, "[REDACTED]");
+            // Apply configured patterns before generic literal removal so field-level rules
+            // can replace the complete sensitive expression.
+            foreach (var pattern in _sensitivePatterns)
+            {
+                result = pattern.Replace(result, "[REDACTED]");
+            }
+
+            result = StringLiteralPattern().Replace(result, "'?'");
+            result = HexLiteralPattern().Replace(result, "0x?");
+            result = NumericLiteralPattern().Replace(result, "?");
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // Never fall back to the raw statement when a configured expression is too expensive.
+            return RegexTimeoutMarker;
         }
 
-        // Replace string literals with placeholder
-        result = StringLiteralPattern().Replace(result, "'?'");
+        return Truncate(result);
 
-        // Replace numeric literals in value positions
-        result = NumericLiteralPattern().Replace(result, "?");
-
-        // Replace hex literals
-        result = HexLiteralPattern().Replace(result, "0x?");
-
-        return result;
+        string Truncate(string value) => value.Length > _settings.MaxStatementLength
+            ? value[.._settings.MaxStatementLength] + "...[TRUNCATED]"
+            : value;
     }
+
+    private static Regex[] CompileSensitivePatterns(IEnumerable<string> patterns) => patterns
+        .Select(pattern => new Regex(
+            pattern,
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(RegexTimeoutMilliseconds)))
+        .ToArray();
 
     /// <summary>
     /// Sanitizes stored procedure parameters.
@@ -87,7 +92,7 @@ public sealed partial class SqlStatementSanitizer
         var sanitized = parameters.Select(p =>
         {
             var isSensitive = _settings.SensitivePatterns
-                .Any(pattern => p.Key.Contains(pattern.Replace(@"\s*=\s*'[^']*'", ""),
+                .Any(pattern => p.Key.Contains(pattern.Replace(@"\s*=\s*'[^']*'", "", StringComparison.Ordinal),
                     StringComparison.OrdinalIgnoreCase));
 
             var value = isSensitive ? "[REDACTED]" : "?";

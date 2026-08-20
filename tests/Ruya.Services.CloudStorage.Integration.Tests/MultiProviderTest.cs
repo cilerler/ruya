@@ -36,7 +36,7 @@ public class MultiProviderTest
         services.AddSingleton<IDistributedTracing, StubDistributedTracing>();
 
         // Register both
-        services.AddAzureStorageService(config);
+        services.AddAzureStorageService();
         services.AddLocalStorageService();
 
         var sp = services.BuildServiceProvider();

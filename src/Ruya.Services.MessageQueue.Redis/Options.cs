@@ -8,11 +8,23 @@ namespace Ruya.Services.MessageQueue.Redis;
 /// </summary>
 public sealed class RedisOptions
 {
+    public const string ConfigurationSectionName =
+        $"{nameof(Ruya.Services.MessageQueue)}:{nameof(Ruya.Services.MessageQueue.Redis)}";
+
     /// <summary>
-    /// Redis connection string
+    /// Descriptive key used to resolve the Redis connection from the top-level
+    /// <c>ConnectionStrings</c> catalog.
+    /// </summary>
+    public string? RedisConnectionStringKey { get; set; }
+
+    /// <summary>
+    /// Resolved Redis connection string. Retained for released 8.x typed-configuration compatibility;
+    /// standard configuration should set <see cref="RedisConnectionStringKey"/> instead.
     /// Format: host:port,password=xxx,ssl=true
     /// </summary>
     public required string ConnectionString { get; set; }
+
+    internal bool ConnectionStringResolvedFromCatalog { get; set; }
 
     /// <summary>
     /// Redis database number
@@ -35,7 +47,7 @@ public sealed class RedisOptions
     public bool UsePubSub { get; set; } = true;
 
     /// <summary>
-    /// Whether to use Redis Streams
+    /// Whether to publish to Redis Streams. Stream subscription is not implemented.
     /// </summary>
     public bool UseStreams { get; set; } = false;
 
@@ -133,11 +145,80 @@ public sealed class RedisOptionsValidator : IValidateOptions<RedisOptions>
             return ValidateOptionsResult.Fail("ConnectionTimeout must be greater than zero");
         }
 
-        if (!options.UsePubSub && !options.UseStreams)
+        if (options.ConnectionTimeout.TotalMilliseconds > int.MaxValue)
         {
-            return ValidateOptionsResult.Fail("At least one of UsePubSub or UseStreams must be enabled");
+            return ValidateOptionsResult.Fail("ConnectionTimeout cannot exceed Int32.MaxValue milliseconds");
+        }
+
+        if (options.SyncTimeout <= TimeSpan.Zero)
+        {
+            return ValidateOptionsResult.Fail("SyncTimeout must be greater than zero");
+        }
+
+        if (options.SyncTimeout.TotalMilliseconds > int.MaxValue)
+        {
+            return ValidateOptionsResult.Fail("SyncTimeout cannot exceed Int32.MaxValue milliseconds");
+        }
+
+        if (options.RetryCount < 0)
+        {
+            return ValidateOptionsResult.Fail("RetryCount must be non-negative");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.KeyPrefix))
+        {
+            return ValidateOptionsResult.Fail("KeyPrefix is required");
+        }
+
+        if (options.UsePubSub == options.UseStreams)
+        {
+            return ValidateOptionsResult.Fail("Exactly one of UsePubSub or UseStreams must be enabled");
+        }
+
+        if (options.StreamOptions is { } streamOptions)
+        {
+            if (streamOptions.MaxLength is <= 0)
+            {
+                return ValidateOptionsResult.Fail("StreamOptions.MaxLength must be greater than zero when configured");
+            }
+
+            if (string.IsNullOrWhiteSpace(streamOptions.DefaultConsumerGroup))
+            {
+                return ValidateOptionsResult.Fail("StreamOptions.DefaultConsumerGroup is required");
+            }
+
+            if (streamOptions.BlockTimeout <= TimeSpan.Zero)
+            {
+                return ValidateOptionsResult.Fail("StreamOptions.BlockTimeout must be greater than zero");
+            }
+
+            if (streamOptions.Count < 1)
+            {
+                return ValidateOptionsResult.Fail("StreamOptions.Count must be at least one");
+            }
+
+            if (streamOptions.IdleTimeout <= TimeSpan.Zero)
+            {
+                return ValidateOptionsResult.Fail("StreamOptions.IdleTimeout must be greater than zero");
+            }
         }
 
         return ValidateOptionsResult.Success;
+    }
+}
+
+internal sealed class RedisConnectionStringCatalogValidator : IValidateOptions<RedisOptions>
+{
+    public ValidateOptionsResult Validate(string? name, RedisOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.RedisConnectionStringKey))
+        {
+            return ValidateOptionsResult.Skip;
+        }
+
+        return !options.ConnectionStringResolvedFromCatalog
+            ? ValidateOptionsResult.Fail(
+                "RedisConnectionStringKey must identify a configured connection string.")
+            : ValidateOptionsResult.Success;
     }
 }

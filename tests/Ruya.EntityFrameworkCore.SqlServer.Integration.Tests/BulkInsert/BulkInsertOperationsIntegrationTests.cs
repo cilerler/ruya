@@ -230,6 +230,26 @@ public class BulkInsertOperationsIntegrationTests
     }
 
     [TestMethod]
+    public async Task BulkInsertAsync_RetryEnabledContextWithCallerTransaction_ExecutesOnceAndCommits()
+    {
+        var dbContextOptions = new DbContextOptionsBuilder<TestDbContext>()
+            .UseSqlServer(
+                _fixture.ConnectionString,
+                sqlServer => sqlServer.EnableRetryOnFailure())
+            .Options;
+        await using var retryEnabledContext = new TestDbContext(dbContextOptions);
+        await using var transaction = await retryEnabledContext.Database.BeginTransactionAsync();
+        var products = TestDataGenerator.CreateProducts(25, 1);
+
+        var result = await _bulkOperations.BulkInsertAsync(retryEnabledContext, products);
+        await transaction.CommitAsync();
+
+        Assert.AreEqual(25, result);
+        await using var verifyContext = _fixture.CreateDbContext();
+        Assert.AreEqual(25, await verifyContext.Products.CountAsync());
+    }
+
+    [TestMethod]
     public async Task BulkInsertAsync_WithTransaction_RollbackDiscardsData()
     {
         // Arrange
@@ -424,6 +444,26 @@ public class BulkInsertOperationsIntegrationTests
             }));
     }
 
+    [TestMethod]
+    public async Task BulkInsertAsync_LaterBatchViolatesConstraint_RollsBackEntireOperation()
+    {
+        var products = new[]
+        {
+            TestDataGenerator.CreateProduct(1, categoryId: 1),
+            TestDataGenerator.CreateProduct(2, categoryId: 999)
+        };
+
+        await Assert.ThrowsAsync<Exception>(
+            () => _context.BulkInsertAsync(products, options =>
+            {
+                options.BatchSize = 1;
+                options.CheckConstraints = true;
+            }));
+
+        await using var verifyContext = _fixture.CreateDbContext();
+        Assert.AreEqual(0, await verifyContext.Products.CountAsync());
+    }
+
     #endregion
 
     #region Cancellation Tests
@@ -453,20 +493,22 @@ public class BulkInsertOperationsIntegrationTests
     {
         // Arrange
         var tasks = new List<Task<long>>();
+        await using var categoryContext = _fixture.CreateDbContext();
+        var categoryIds = await categoryContext.Categories
+            .OrderBy(static category => category.Id)
+            .Select(static category => category.Id)
+            .ToArrayAsync();
+        Assert.HasCount(5, categoryIds);
 
         // Act
         for (var i = 0; i < 5; i++)
         {
-            var categoryId = i % 5 + 1;
+            var categoryId = categoryIds[i];
             var products = TestDataGenerator.CreateProducts(100, categoryId)
                 .Select((p, idx) => { p.Name = $"Batch{i}-{idx:D4}"; return p; })
                 .ToArray();
 
-            await using var context = _fixture.CreateDbContext();
-            var sp = _fixture.CreateServiceProvider();
-            var bulkOps = sp.GetRequiredService<IBulkInsertOperations>();
-
-            tasks.Add(bulkOps.BulkInsertAsync(context, products));
+            tasks.Add(InsertBatchAsync(products));
         }
 
         var results = await Task.WhenAll(tasks);
@@ -477,6 +519,14 @@ public class BulkInsertOperationsIntegrationTests
         await using var verifyContext = _fixture.CreateDbContext();
         var totalCount = await verifyContext.Products.CountAsync();
         Assert.AreEqual(500, totalCount);
+
+        async Task<long> InsertBatchAsync(Product[] products)
+        {
+            await using var context = _fixture.CreateDbContext();
+            await using var serviceProvider = _fixture.CreateServiceProvider();
+            var bulkOperations = serviceProvider.GetRequiredService<IBulkInsertOperations>();
+            return await bulkOperations.BulkInsertAsync(context, products);
+        }
     }
 
     #endregion

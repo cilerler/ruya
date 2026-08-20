@@ -23,14 +23,15 @@ using Ruya.Primitives;
 
 namespace Ruya.Services.CloudStorage.Google;
 
-public class Client : ICloudFileService
+public class Client : ICloudFileService, IDisposable
 {
     private readonly ILogger _logger;
     private readonly IDistributedTracing _tracer;
     private readonly Meter _meter;
-    private readonly StorageServiceSettings _settings;
     private readonly StorageClient _storageClient;
     private readonly UrlSigner _urlSigner;
+    private readonly bool _ownsStorageClient;
+    private int _disposeState;
     private readonly Counter<long> _filesUploaded;
     private readonly Counter<long> _bytesUploaded;
     private readonly Counter<long> _filesDownloaded;
@@ -38,32 +39,92 @@ public class Client : ICloudFileService
     private readonly Counter<long> _filesFailed;
 
     public Client(ILogger<Client> logger, IDistributedTracing distributedTracing, IMeterFactory meterFactory, IOptions<StorageServiceSettings> options)
-        : this(logger, distributedTracing, meterFactory, options, CreateStorageClient(options.Value), CreateUrlSigner(options.Value))
+        : this(logger, distributedTracing, meterFactory, options, CreateOwnedDependencies(GetSettings(options)))
     {
     }
 
     public Client(ILogger<Client> logger, IDistributedTracing distributedTracing, IMeterFactory meterFactory, IOptions<StorageServiceSettings> options, StorageClient storageClient, UrlSigner urlSigner)
+        : this(logger, distributedTracing, meterFactory, options, storageClient, urlSigner, ownsStorageClient: false)
     {
-        _logger = logger;
-        _tracer = distributedTracing;
-        _meter = meterFactory.Create(new MeterOptions(Startup.AssemblyName)
-        {
-            Version = Startup.AssemblyVersion,
-            Tags = new TagList
-                {
-                    { "code.namespace", GetType().Namespace },
-                    { "code.class", GetType().Name }
-                }
-        });
-        _settings = options.Value;
-        _storageClient = storageClient;
-        _urlSigner = urlSigner;
+    }
 
-        _filesUploaded = _meter.CreateCounter<long>("files_uploaded");
-        _bytesUploaded = _meter.CreateCounter<long>("bytes_uploaded");
-        _filesDownloaded = _meter.CreateCounter<long>("files_downloaded");
-        _filesDeleted = _meter.CreateCounter<long>("files_deleted");
-        _filesFailed = _meter.CreateCounter<long>("files_failed");
+    internal Client(
+        ILogger<Client> logger,
+        IDistributedTracing distributedTracing,
+        IMeterFactory meterFactory,
+        IOptions<StorageServiceSettings> options,
+        StorageClient storageClient,
+        UrlSigner urlSigner,
+        bool ownsStorageClient)
+    {
+        try
+        {
+            ArgumentNullException.ThrowIfNull(logger);
+            ArgumentNullException.ThrowIfNull(distributedTracing);
+            ArgumentNullException.ThrowIfNull(meterFactory);
+            ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(storageClient);
+            ArgumentNullException.ThrowIfNull(urlSigner);
+
+            _logger = logger;
+            _tracer = distributedTracing;
+            _meter = meterFactory.Create(new MeterOptions(Startup.AssemblyName)
+            {
+                Version = Startup.AssemblyVersion,
+                Tags = new TagList
+                    {
+                        { "code.namespace", GetType().Namespace },
+                        { "code.class", GetType().Name }
+                    }
+            });
+            _storageClient = storageClient;
+            _urlSigner = urlSigner;
+            _ownsStorageClient = ownsStorageClient;
+
+            _filesUploaded = _meter.CreateCounter<long>("files_uploaded");
+            _bytesUploaded = _meter.CreateCounter<long>("bytes_uploaded");
+            _filesDownloaded = _meter.CreateCounter<long>("files_downloaded");
+            _filesDeleted = _meter.CreateCounter<long>("files_deleted");
+            _filesFailed = _meter.CreateCounter<long>("files_failed");
+        }
+        catch (Exception initializationException) when (ownsStorageClient && storageClient is not null)
+        {
+            try
+            {
+                storageClient.Dispose();
+            }
+            catch (Exception cleanupException)
+            {
+                throw new AggregateException(initializationException, cleanupException);
+            }
+
+            throw;
+        }
+    }
+
+    private Client(
+        ILogger<Client> logger,
+        IDistributedTracing distributedTracing,
+        IMeterFactory meterFactory,
+        IOptions<StorageServiceSettings> options,
+        OwnedDependencies dependencies)
+        : this(
+            logger,
+            distributedTracing,
+            meterFactory,
+            options,
+            dependencies.StorageClient,
+            dependencies.UrlSigner,
+            ownsStorageClient: true)
+    {
+    }
+
+    private sealed record OwnedDependencies(StorageClient StorageClient, UrlSigner UrlSigner);
+
+    private static StorageServiceSettings GetSettings(IOptions<StorageServiceSettings> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.Value;
     }
 
 
@@ -90,6 +151,20 @@ public class Client : ICloudFileService
 		}
     }
 
+    private static OwnedDependencies CreateOwnedDependencies(StorageServiceSettings settings)
+    {
+        StorageClient storageClient = CreateStorageClient(settings);
+        try
+        {
+            return new OwnedDependencies(storageClient, CreateUrlSigner(settings));
+        }
+        catch
+        {
+            storageClient.Dispose();
+            throw;
+        }
+    }
+
     private static UrlSigner CreateUrlSigner(StorageServiceSettings settings)
     {
         GoogleCredential credentials = GetGoogleCredentials(settings);
@@ -114,8 +189,6 @@ public class Client : ICloudFileService
     public async Task<CloudFileMetadata> GetFileMetadataAsync(string bucketName, string fileName, CancellationToken cancellationToken = default)
     {
         using var activity = _tracer.StartActivity(nameof(GetFileMetadataAsync));
-        activity.SetTag("bucket", bucketName);
-        activity.SetTag("fileName", fileName);
 
          if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
          if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(fileName));
@@ -134,17 +207,27 @@ public class Client : ICloudFileService
             );
             return output;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (GoogleApiException gex)
         {
             if (gex.HttpStatusCode == HttpStatusCode.NotFound)
             {
                 _filesFailed.Add(1);
-                _logger.LogInformation("Not Found - {fileName} in bucket {bucketName}", fileName, bucketName);
+                _logger.LogInformation(LogEvents.MetadataNotFound, "Google cloud-storage object was not found");
                 throw new FileNotFoundException($"Not Found - {fileName} in bucket {bucketName}", fileName, gex);
             }
 
             _filesFailed.Add(1);
-            _logger.LogError(gex, gex.Error.Message);
+            _logger.LogError(LogEvents.MetadataFailed, gex, "Google cloud-storage metadata request failed");
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.MetadataFailed, exception, "Google cloud-storage metadata request failed");
             throw;
         }
     }
@@ -152,8 +235,11 @@ public class Client : ICloudFileService
     public async Task<CloudFileMetadata> UploadFileAsync(string bucketName, string sourcePath, string targetPath, CancellationToken cancellationToken = default)
     {
         using var activity = _tracer.StartActivity(nameof(UploadFileAsync));
-        activity.SetTag("bucket", bucketName);
-        activity.SetTag("sourcePath", sourcePath);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        cancellationToken.ThrowIfCancellationRequested();
 
         string contentType = "application/octet-stream";
         try
@@ -162,89 +248,103 @@ public class Client : ICloudFileService
         }
         catch (Exception e)
         {
-            _logger.LogWarning(e, "An error occured while trying to retrieve MimeType");
+            _logger.LogWarning(LogEvents.MimeTypeFailed, e, "An error occured while trying to retrieve MimeType");
         }
 
-        using FileStream fileStream = File.OpenRead(sourcePath);
+        await using FileStream fileStream = OpenUploadSourceFile(sourcePath, cancellationToken);
         return await UploadStreamAsync(bucketName, fileStream, targetPath, contentType, cancellationToken);
     }
 
     public async Task<CloudFileMetadata> UploadStreamAsync(string bucketName, Stream sourceStream, string targetPath, string contentType, CancellationToken cancellationToken = default)
     {
         using var activity = _tracer.StartActivity(nameof(UploadStreamAsync));
-        activity.SetTag("bucket", bucketName);
-        activity.SetTag("targetPath", targetPath);
 
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        ArgumentNullException.ThrowIfNull(sourceStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
 
         string destinationFileName = PathNormalizer.ToCloudPath(targetPath);
 
-        var progress = new Progress<global::Google.Apis.Upload.IUploadProgress>(p =>
-            _logger.LogTrace("destination gs://{bucket}/{destinationFileName}, bytes: {BytesSent}, status: {Status}",
-                bucketName, destinationFileName, p.BytesSent, p.Status));
-
-        if (sourceStream.CanSeek)
-        {
-             sourceStream.Seek(0, SeekOrigin.Begin);
-        }
-
-        Object upload;
         try
         {
-            upload = await _storageClient.UploadObjectAsync(bucketName, destinationFileName, contentType, sourceStream, progress: progress, cancellationToken: cancellationToken);
+            if (sourceStream.CanSeek)
+            {
+                 sourceStream.Seek(0, SeekOrigin.Begin);
+            }
+
+            Object upload = await _storageClient.UploadObjectAsync(bucketName, destinationFileName, contentType, sourceStream, progress: null, cancellationToken: cancellationToken);
 
             if (sourceStream.CanSeek) _bytesUploaded.Add(sourceStream.Length);
             _filesUploaded.Add(1);
+
+            return new CloudFileMetadata(
+                bucketName,
+                destinationFileName,
+                upload.Size,
+                GetUpdatedTime(upload),
+                upload.ContentType,
+                 _urlSigner.Sign(bucketName, destinationFileName, TimeSpan.FromHours(1), HttpMethod.Get)
+            );
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (GoogleApiException gex)
         {
             _filesFailed.Add(1);
-            _logger.LogError(gex, "Encountered an error while uploading file stream. {BucketName} {FileName}", bucketName, destinationFileName);
+            _logger.LogError(LogEvents.UploadFailed, gex, "Google cloud-storage stream upload failed");
             throw;
         }
-
-        var output = new CloudFileMetadata(
-            bucketName,
-            destinationFileName,
-            upload.Size,
-            GetUpdatedTime(upload),
-            upload.ContentType,
-             _urlSigner.Sign(bucketName, destinationFileName, TimeSpan.FromHours(1), HttpMethod.Get)
-        );
-        return output;
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.UploadFailed, exception, "Google cloud-storage stream upload failed");
+            throw;
+        }
     }
 
     public async Task DownloadFileAsync(string bucketName, string fileName, Stream targetStream, CancellationToken cancellationToken = default)
     {
         using var activity = _tracer.StartActivity(nameof(DownloadFileAsync));
-        activity.SetTag("bucket", bucketName);
-        activity.SetTag("fileName", fileName);
 
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        ArgumentNullException.ThrowIfNull(targetStream);
 
         try
         {
             await _storageClient.DownloadObjectAsync(bucketName, fileName, targetStream, cancellationToken: cancellationToken);
+
+            if (targetStream.CanSeek)
+            {
+                targetStream.Seek(0, SeekOrigin.Begin);
+            }
+
             _filesDownloaded.Add(1);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (GoogleApiException gex)
         {
             _filesFailed.Add(1);
-            _logger.LogError(gex, "Encountered an error while dowloading file. {BucketName} {FileName}", bucketName, fileName);
+            _logger.LogError(LogEvents.DownloadFailed, gex, "Google cloud-storage download failed");
             throw;
         }
-
-        if (targetStream.CanSeek)
-             targetStream.Seek(0, SeekOrigin.Begin);
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.DownloadFailed, exception, "Google cloud-storage download failed");
+            throw;
+        }
     }
 
     public async Task DeleteFileAsync(string bucketName, string fileName, CancellationToken cancellationToken = default)
     {
         using var activity = _tracer.StartActivity(nameof(DeleteFileAsync));
-        activity.SetTag("bucket", bucketName);
-        activity.SetTag("fileName", fileName);
 
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
@@ -254,16 +354,26 @@ public class Client : ICloudFileService
             await _storageClient.DeleteObjectAsync(bucketName, fileName, cancellationToken: cancellationToken);
             _filesDeleted.Add(1);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (GoogleApiException gex)
         {
              if (gex.HttpStatusCode == HttpStatusCode.NotFound)
              {
-                 _logger.LogWarning("File Not Found - {fileName} in bucket {bucketName}", fileName, bucketName);
+                 _logger.LogDebug(LogEvents.DeleteNotFound, "Google cloud-storage object was already absent while deleting a file");
                  return;
              }
 
             _filesFailed.Add(1);
-            _logger.LogError(gex, "Encountered an error while deleting file. {BucketName} {FileName}", bucketName, fileName);
+            _logger.LogError(LogEvents.DeleteFailed, gex, "Google cloud-storage delete failed");
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.DeleteFailed, exception, "Google cloud-storage delete failed");
             throw;
         }
     }
@@ -271,21 +381,30 @@ public class Client : ICloudFileService
     public async Task CopyFileAsync(string sourceBucketName, string sourceFileName, string destinationBucketName, string destinationFileName, CancellationToken cancellationToken = default)
     {
         using var activity = _tracer.StartActivity(nameof(CopyFileAsync));
-        activity.SetTag("sourceBucket", sourceBucketName);
-        activity.SetTag("destinationBucket", destinationBucketName);
 
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceBucketName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceFileName);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationBucketName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationFileName);
 
         try
         {
             await _storageClient.CopyObjectAsync(sourceBucketName, sourceFileName, destinationBucketName, destinationFileName, cancellationToken: cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (GoogleApiException gex)
         {
             _filesFailed.Add(1);
-            _logger.LogError(gex, "Encountered an error while copying file. {SourceBucket} {SourceFile} {DestinationBucket} {DestinationFileName}",
-                sourceBucketName, sourceFileName, destinationBucketName, destinationFileName);
+            _logger.LogError(LogEvents.CopyFailed, gex, "Google cloud-storage copy failed");
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.CopyFailed, exception, "Google cloud-storage copy failed");
             throw;
         }
     }
@@ -293,7 +412,6 @@ public class Client : ICloudFileService
     public async IAsyncEnumerable<CloudFileMetadata> GetFileListAsync(string bucketName, string? prefix = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using var activity = _tracer.StartActivity(nameof(GetFileListAsync));
-        activity.SetTag("bucket", bucketName);
 
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
 
@@ -303,23 +421,68 @@ public class Client : ICloudFileService
         {
              fileList = _storageClient.ListObjectsAsync(bucketName, prefix);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception e)
         {
             _filesFailed.Add(1);
-            _logger.LogError(e, "Encountered an error while getting file list. {Prefix} {BucketName}", prefix, bucketName);
+            _logger.LogError(LogEvents.ListFailed, e, "Google cloud-storage listing failed");
             throw;
         }
 
-        await foreach (var file in fileList.WithCancellation(cancellationToken))
+        IAsyncEnumerator<Object> enumerator;
+        try
         {
-            yield return new CloudFileMetadata(
-                file.Bucket,
-                file.Name,
-                file.Size,
-                GetUpdatedTime(file),
-                file.ContentType,
-                 _urlSigner.Sign(file.Bucket, file.Name, TimeSpan.FromHours(1), HttpMethod.Get)
-            );
+            enumerator = fileList.GetAsyncEnumerator(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.ListFailed, exception, "Google cloud-storage listing failed");
+            throw;
+        }
+
+        await using (enumerator)
+        {
+            while (true)
+            {
+                CloudFileMetadata metadata;
+                try
+                {
+                    if (!await enumerator.MoveNextAsync())
+                    {
+                        break;
+                    }
+
+                    Object file = enumerator.Current;
+                    metadata = new CloudFileMetadata(
+                        file.Bucket,
+                        file.Name,
+                        file.Size,
+                        GetUpdatedTime(file),
+                        file.ContentType,
+                         _urlSigner.Sign(file.Bucket, file.Name, TimeSpan.FromHours(1), HttpMethod.Get)
+                    );
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _filesFailed.Add(1);
+                    _logger.LogError(LogEvents.ListFailed, exception, "Google cloud-storage listing failed");
+                    throw;
+                }
+
+                yield return metadata;
+            }
         }
     }
 
@@ -327,10 +490,12 @@ public class Client : ICloudFileService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
         ArgumentException.ThrowIfNullOrWhiteSpace(filename);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expirationMinutes);
 
         var contentHeaders = new Dictionary<string, IEnumerable<string>> { { "Content-Type", new[] { contentType } } };
 
-        string normalizedFileName = filename.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string normalizedFileName = filename;
         UrlSigner.RequestTemplate template = UrlSigner.RequestTemplate
             .FromBucket(bucketName)
             .WithObjectName(normalizedFileName)
@@ -352,5 +517,50 @@ public class Client : ICloudFileService
         }
 
         return obj.Updated;
+    }
+
+    private FileStream OpenUploadSourceFile(string sourcePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return new FileStream(
+                sourcePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.UploadFailed, exception, "Could not open the Google cloud-storage upload source file");
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Releases resources owned by this client.
+    /// </summary>
+    /// <param name="disposing">Whether managed resources should be released.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposing || Interlocked.Exchange(ref _disposeState, 1) != 0) return;
+
+        if (_ownsStorageClient)
+        {
+            _storageClient.Dispose();
+        }
     }
 }

@@ -15,6 +15,19 @@ namespace Ruya.Services.MessageQueue.RabbitMq;
 /// </summary>
 internal sealed class ChannelPool : IAsyncDisposable
 {
+    private static readonly EventId PoolCreated = new(1000, nameof(PoolCreated));
+    private static readonly EventId ExistingChannelBorrowed = new(1001, nameof(ExistingChannelBorrowed));
+    private static readonly EventId ClosedChannelDisposed = new(1002, nameof(ClosedChannelDisposed));
+    private static readonly EventId ClosedChannelDisposeFailed = new(1003, nameof(ClosedChannelDisposeFailed));
+    private static readonly EventId ChannelCreated = new(1004, nameof(ChannelCreated));
+    private static readonly EventId ChannelCreateRetrying = new(1005, nameof(ChannelCreateRetrying));
+    private static readonly EventId ChannelDisposeDuringPoolDisposalFailed = new(1006, nameof(ChannelDisposeDuringPoolDisposalFailed));
+    private static readonly EventId ChannelReturned = new(1007, nameof(ChannelReturned));
+    private static readonly EventId ClosedReturnedChannelDisposed = new(1008, nameof(ClosedReturnedChannelDisposed));
+    private static readonly EventId PoolDisposing = new(1009, nameof(PoolDisposing));
+    private static readonly EventId PooledChannelDisposeFailed = new(1010, nameof(PooledChannelDisposeFailed));
+    private static readonly EventId PoolDisposed = new(1011, nameof(PoolDisposed));
+
     private readonly IConnection _connection;
     private readonly int _maxSize;
     private readonly ILogger _logger;
@@ -32,7 +45,7 @@ internal sealed class ChannelPool : IAsyncDisposable
         _semaphore = new SemaphoreSlim(maxSize, maxSize);
         _enablePublisherConfirms = enablePublisherConfirms;
 
-        _logger.LogDebug("ChannelPool created with max size: {MaxSize}", _maxSize);
+        _logger.LogDebug(PoolCreated, "ChannelPool created with max size: {MaxSize}", _maxSize);
     }
 
     /// <summary>
@@ -53,7 +66,7 @@ internal sealed class ChannelPool : IAsyncDisposable
             {
                 if (channel.IsOpen)
                 {
-                    _logger.LogTrace("Borrowed existing channel from pool (IsOpen: {IsOpen})", channel.IsOpen);
+                    _logger.LogTrace(ExistingChannelBorrowed, "Borrowed existing channel from pool (IsOpen: {IsOpen})", channel.IsOpen);
                     return channel;
                 }
                 else
@@ -62,17 +75,19 @@ internal sealed class ChannelPool : IAsyncDisposable
                     try
                     {
                         channel.Dispose();
-                        _logger.LogDebug("Disposed closed channel from pool");
+                        _logger.LogDebug(ClosedChannelDisposed, "Disposed closed channel from pool");
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Error disposing closed channel");
+                        _logger.LogWarning(ClosedChannelDisposeFailed, ex, "Error disposing closed channel");
                     }
                 }
             }
 
             // No available channels, create a new one
-            var options = new CreateChannelOptions(_enablePublisherConfirms, false);
+            var options = new CreateChannelOptions(
+                publisherConfirmationsEnabled: _enablePublisherConfirms,
+                publisherConfirmationTrackingEnabled: _enablePublisherConfirms);
 
             // Retry loop for connection recovery
             var retryCount = 0;
@@ -81,7 +96,7 @@ internal sealed class ChannelPool : IAsyncDisposable
                 try
                 {
                     var newChannel = await _connection.CreateChannelAsync(options, cancellationToken);
-                    _logger.LogTrace("Created new channel for pool");
+                    _logger.LogTrace(ChannelCreated, "Created new channel for pool");
                     return newChannel;
                 }
                 catch (Exception ex)
@@ -94,7 +109,11 @@ internal sealed class ChannelPool : IAsyncDisposable
                         retryCount++;
                         if (retryCount > 30) throw; // Give up after 30 retries
 
-                        _logger.LogWarning(ex, "Connection issue creating channel, waiting for recovery (Attempt {Attempt}/30)...", retryCount);
+                        _logger.LogWarning(
+                            ChannelCreateRetrying,
+                            ex,
+                            "Connection issue creating channel, waiting for recovery (Attempt {Attempt}/30)...",
+                            retryCount);
                         await Task.Delay(1000, cancellationToken);
                     }
                     else
@@ -130,7 +149,7 @@ internal sealed class ChannelPool : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Error disposing channel during pool disposal");
+                    _logger.LogWarning(ChannelDisposeDuringPoolDisposalFailed, ex, "Error disposing channel during pool disposal");
                 }
                 return;
             }
@@ -139,13 +158,13 @@ internal sealed class ChannelPool : IAsyncDisposable
             {
                 // Return the channel to the pool for reuse
                 _channels.Add(channel);
-                _logger.LogTrace("Returned channel to pool");
+                _logger.LogTrace(ChannelReturned, "Returned channel to pool");
             }
             else
             {
                 // Channel is closed, dispose it instead of returning to pool
                 channel.Dispose();
-                _logger.LogDebug("Disposed closed channel instead of returning to pool");
+                _logger.LogDebug(ClosedReturnedChannelDisposed, "Disposed closed channel instead of returning to pool");
             }
         }
         finally
@@ -161,7 +180,7 @@ internal sealed class ChannelPool : IAsyncDisposable
 
         _disposed = true;
 
-        _logger.LogDebug("Disposing ChannelPool with {Count} channels", _channels.Count);
+        _logger.LogDebug(PoolDisposing, "Disposing ChannelPool with {Count} channels", _channels.Count);
 
         // Dispose all channels in the pool
         while (_channels.TryTake(out var channel))
@@ -176,12 +195,12 @@ internal sealed class ChannelPool : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error disposing channel from pool");
+                _logger.LogWarning(PooledChannelDisposeFailed, ex, "Error disposing channel from pool");
             }
         }
 
         _semaphore.Dispose();
 
-        _logger.LogInformation("ChannelPool disposed");
+        _logger.LogInformation(PoolDisposed, "ChannelPool disposed");
     }
 }

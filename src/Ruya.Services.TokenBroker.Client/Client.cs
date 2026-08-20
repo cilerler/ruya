@@ -70,6 +70,7 @@ public sealed class TokenClient : ITokenClient, IDisposable
 
     public async Task<string> GetTokenAsync(string[]? scopes = null, bool forceRefresh = false, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Validate scopes if provided
         if (scopes is not null && scopes.Any(string.IsNullOrWhiteSpace))
         {
@@ -81,7 +82,7 @@ public sealed class TokenClient : ITokenClient, IDisposable
         // First check without lock for fast path (skip if force refresh)
         if (!forceRefresh && _cache.TryGetValue<CachedToken>(cacheKey, out var cached) && cached is not null)
         {
-            if (cached.ExpiresAt > DateTime.UtcNow.Add(_settings.TokenRefreshBuffer))
+            if (cached.ExpiresAt > DateTimeOffset.UtcNow.Add(_settings.TokenRefreshBuffer))
             {
                 _tokenCacheHitsCounter.Add(1);
                 return cached.AccessToken;
@@ -95,7 +96,7 @@ public sealed class TokenClient : ITokenClient, IDisposable
             // Double-check after acquiring lock - another thread may have already refreshed (skip if force refresh)
             if (!forceRefresh && _cache.TryGetValue<CachedToken>(cacheKey, out cached) && cached is not null)
             {
-                if (cached.ExpiresAt > DateTime.UtcNow.Add(_settings.TokenRefreshBuffer))
+                if (cached.ExpiresAt > DateTimeOffset.UtcNow.Add(_settings.TokenRefreshBuffer))
                 {
                     _tokenCacheHitsCounter.Add(1);
                     return cached.AccessToken;
@@ -114,12 +115,18 @@ public sealed class TokenClient : ITokenClient, IDisposable
             try
             {
                 response = await _httpClient.PostAsJsonAsync(
-                    "api/token", request, Constants.JsonSerializerOptions, cancellationToken);
+                    "api/v1/token", request, TokenBrokerJsonSerializerContext.Default.CreateTokenApiRequest, cancellationToken);
             }
             catch (HttpRequestException ex)
             {
                 _tokenRequestFailuresCounter.Add(1);
-                _logger.FailedToGetToken(ex);
+                _logger.FailedToGetToken(ex.GetType().Name);
+                throw;
+            }
+            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                _tokenRequestFailuresCounter.Add(1);
+                _logger.FailedToGetToken(ex.GetType().Name);
                 throw;
             }
             finally
@@ -128,24 +135,26 @@ public sealed class TokenClient : ITokenClient, IDisposable
                 _tokenRequestDuration.Record(stopwatch.Elapsed.TotalSeconds);
             }
 
-            if (!response.IsSuccessStatusCode)
+            using (response)
             {
-                _tokenRequestFailuresCounter.Add(1);
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.FailedToGetTokenStatus(response.StatusCode, errorContent);
-                response.EnsureSuccessStatusCode();
+                if (!response.IsSuccessStatusCode)
+                {
+                    _tokenRequestFailuresCounter.Add(1);
+                    _logger.FailedToGetTokenStatus(response.StatusCode);
+                    response.EnsureSuccessStatusCode();
+                }
+
+                var tokenResponse = await response.Content.ReadFromJsonAsync(
+                    TokenBrokerJsonSerializerContext.Default.TokenResponse, cancellationToken)
+                    ?? throw new InvalidOperationException("Failed to deserialize token response");
+
+                _cache.Set(cacheKey, new CachedToken(tokenResponse.AccessToken, tokenResponse.ExpiresAtUtc),
+                    tokenResponse.ExpiresAtUtc.Subtract(_settings.TokenRefreshBuffer));
+
+                _logger.ObtainedNewToken(_settings.ServiceName, tokenResponse.ExpiresAtUtc);
+
+                return tokenResponse.AccessToken;
             }
-
-            var tokenResponse = await response.Content.ReadFromJsonAsync<TokenResponse>(
-                Constants.JsonSerializerOptions, cancellationToken)
-                ?? throw new InvalidOperationException("Failed to deserialize token response");
-
-            _cache.Set(cacheKey, new CachedToken(tokenResponse.AccessToken, tokenResponse.ExpiresAt),
-                tokenResponse.ExpiresAt.Subtract(_settings.TokenRefreshBuffer));
-
-            _logger.ObtainedNewToken(_settings.ServiceName, tokenResponse.ExpiresAt);
-
-            return tokenResponse.AccessToken;
         }
         finally
         {
@@ -156,6 +165,7 @@ public sealed class TokenClient : ITokenClient, IDisposable
     public async Task<string> ExchangeTokenAsync(string originalToken, string[]? narrowedScopes = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(originalToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Validate narrowed scopes if provided
         if (narrowedScopes is not null && narrowedScopes.Any(string.IsNullOrWhiteSpace))
@@ -176,12 +186,18 @@ public sealed class TokenClient : ITokenClient, IDisposable
         try
         {
             response = await _httpClient.PostAsJsonAsync(
-                "api/token/exchange", request, Constants.JsonSerializerOptions, cancellationToken);
+                "api/v1/token/exchange", request, TokenBrokerJsonSerializerContext.Default.ExchangeTokenApiRequest, cancellationToken);
         }
         catch (HttpRequestException ex)
         {
             _tokenExchangeFailuresCounter.Add(1);
-            _logger.FailedToExchangeToken(ex);
+            _logger.FailedToExchangeToken(ex.GetType().Name);
+            throw;
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _tokenExchangeFailuresCounter.Add(1);
+            _logger.FailedToExchangeToken(ex.GetType().Name);
             throw;
         }
         finally
@@ -190,21 +206,23 @@ public sealed class TokenClient : ITokenClient, IDisposable
             _tokenRequestDuration.Record(stopwatch.Elapsed.TotalSeconds);
         }
 
-        if (!response.IsSuccessStatusCode)
+        using (response)
         {
-            _tokenExchangeFailuresCounter.Add(1);
-            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.FailedToExchangeTokenStatus(response.StatusCode, errorContent);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                _tokenExchangeFailuresCounter.Add(1);
+                _logger.FailedToExchangeTokenStatus(response.StatusCode);
+                response.EnsureSuccessStatusCode();
+            }
+
+            var tokenResponse = await response.Content.ReadFromJsonAsync(
+                TokenBrokerJsonSerializerContext.Default.TokenResponse, cancellationToken)
+                ?? throw new InvalidOperationException("Failed to deserialize token response");
+
+            _logger.ExchangedToken(tokenResponse.ExpiresAtUtc);
+
+            return tokenResponse.AccessToken;
         }
-
-        var tokenResponse = await response.Content.ReadFromJsonAsync<TokenResponse>(
-            Constants.JsonSerializerOptions, cancellationToken)
-            ?? throw new InvalidOperationException("Failed to deserialize token response");
-
-        _logger.ExchangedToken(tokenResponse.ExpiresAt);
-
-        return tokenResponse.AccessToken;
     }
 
     public void Dispose()
@@ -212,5 +230,5 @@ public sealed class TokenClient : ITokenClient, IDisposable
         _tokenLock.Dispose();
     }
 
-    private sealed record CachedToken(string AccessToken, DateTime ExpiresAt);
+    private sealed record CachedToken(string AccessToken, DateTimeOffset ExpiresAt);
 }

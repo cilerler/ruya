@@ -96,9 +96,9 @@ A provider-agnostic async messaging abstraction with unified API and middleware 
 |---------|-------------|-------|
 | [Ruya.Services.MessageQueue](src/Ruya.Services.MessageQueue/README.md) | Core abstractions, middleware pipeline, telemetry, and health checks. | [![](https://img.shields.io/nuget/v/Ruya.Services.MessageQueue.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.MessageQueue) |
 | [Ruya.Services.MessageQueue.InMemory](src/Ruya.Services.MessageQueue.InMemory/README.md) | `System.Threading.Channels`-based provider for testing and single-process apps. | [![](https://img.shields.io/nuget/v/Ruya.Services.MessageQueue.InMemory.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.MessageQueue.InMemory) |
-| [Ruya.Services.MessageQueue.MsSql](src/Ruya.Services.MessageQueue.MsSql/README.md) | SQL Server provider with Service Broker (default) and table-based modes. | [![](https://img.shields.io/nuget/v/Ruya.Services.MessageQueue.MsSql.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.MessageQueue.MsSql) |
+| [Ruya.Services.MessageQueue.MsSql](src/Ruya.Services.MessageQueue.MsSql/README.md) | SQL Server Service Broker provider with transactional publish, receive, retry, and dead-letter storage. | [![](https://img.shields.io/nuget/v/Ruya.Services.MessageQueue.MsSql.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.MessageQueue.MsSql) |
 | [Ruya.Services.MessageQueue.RabbitMq](src/Ruya.Services.MessageQueue.RabbitMq/README.md) | RabbitMQ provider with durable exchanges, delayed delivery, and priority queues. | [![](https://img.shields.io/nuget/v/Ruya.Services.MessageQueue.RabbitMq.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.MessageQueue.RabbitMq) |
-| [Ruya.Services.MessageQueue.Redis](src/Ruya.Services.MessageQueue.Redis/README.md) | Redis Pub/Sub and Streams provider for low-latency messaging. | [![](https://img.shields.io/nuget/v/Ruya.Services.MessageQueue.Redis.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.MessageQueue.Redis) |
+| [Ruya.Services.MessageQueue.Redis](src/Ruya.Services.MessageQueue.Redis/README.md) | Redis Pub/Sub subscriptions and Streams publishing for low-latency messaging. | [![](https://img.shields.io/nuget/v/Ruya.Services.MessageQueue.Redis.svg?logo=nuget)](https://www.nuget.org/packages/Ruya.Services.MessageQueue.Redis) |
 
 ## Reliable Messaging
 
@@ -108,7 +108,7 @@ Transactional Outbox + Inbox primitives for reliable, persistence- and transport
 |---------|-------------|
 | [Ruya.Services.ReliableMessaging](src/Ruya.Services.ReliableMessaging/README.md) | Core Outbox/Inbox abstractions with per-`TContext` registration. |
 | [Ruya.Services.ReliableMessaging.EntityFrameworkCore](src/Ruya.Services.ReliableMessaging.EntityFrameworkCore/README.md) | EF Core storage adapter with a `SaveChangesAsync` interceptor for atomic commits. |
-| [Ruya.Services.ReliableMessaging.MessageQueue](src/Ruya.Services.ReliableMessaging.MessageQueue/README.md) | `Ruya.Services.MessageQueue` transport adapter with consumer-side inbox dedup. |
+| [Ruya.Services.ReliableMessaging.MessageQueue](src/Ruya.Services.ReliableMessaging.MessageQueue/README.md) | `Ruya.Services.MessageQueue` transport adapter with scope-aware atomic Inbox processing. |
 
 ## Cloud Storage
 

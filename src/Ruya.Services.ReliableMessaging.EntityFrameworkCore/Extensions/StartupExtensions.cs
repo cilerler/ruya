@@ -38,7 +38,11 @@ public static class StartupExtensions
 	{
 		ArgumentNullException.ThrowIfNull(builder);
 
-		builder.Services.TryAddScoped<IInboxStore<TDbContext>, EntityFrameworkInboxStore<TDbContext>>();
+		builder.Services.TryAddScoped<EntityFrameworkInboxStore<TDbContext>>();
+		builder.Services.TryAddScoped<IInboxStore<TDbContext>>(services =>
+			services.GetRequiredService<EntityFrameworkInboxStore<TDbContext>>());
+		builder.Services.TryAddScoped<IAtomicInboxStore<TDbContext>>(services =>
+			services.GetRequiredService<EntityFrameworkInboxStore<TDbContext>>());
 
 		return builder;
 	}

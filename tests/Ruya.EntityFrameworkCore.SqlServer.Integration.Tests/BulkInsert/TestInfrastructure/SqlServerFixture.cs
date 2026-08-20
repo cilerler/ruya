@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,15 @@ namespace Ruya.EntityFrameworkCore.SqlServer.Tests.TestInfrastructure;
 /// </summary>
 public sealed class SqlServerFixture : IAsyncDisposable
 {
+    private const string DatabaseName = "RuyaEntityFrameworkCoreTests";
+    private const string CreateDatabaseSql = """
+        IF DB_ID(N'RuyaEntityFrameworkCoreTests') IS NULL
+            CREATE DATABASE [RuyaEntityFrameworkCoreTests];
+
+        ALTER DATABASE [RuyaEntityFrameworkCoreTests]
+            SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
+        """;
+
     private readonly MsSqlContainer _container;
     private bool _isInitialized;
 
@@ -28,13 +38,17 @@ public sealed class SqlServerFixture : IAsyncDisposable
             .Build();
     }
 
-    public string ConnectionString => _container.GetConnectionString();
+    public string ConnectionString => new SqlConnectionStringBuilder(_container.GetConnectionString())
+    {
+        InitialCatalog = DatabaseName
+    }.ConnectionString;
 
     public async Task InitializeAsync()
     {
         if (_isInitialized) return;
 
         await _container.StartAsync();
+        await CreateDatabaseAsync();
         await CreateDatabaseSchemaAsync();
         _isInitialized = true;
     }
@@ -48,6 +62,15 @@ public sealed class SqlServerFixture : IAsyncDisposable
     {
         await using var context = CreateDbContext();
         await context.Database.EnsureCreatedAsync();
+    }
+
+    private async Task CreateDatabaseAsync()
+    {
+        await using var connection = new SqlConnection(_container.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = CreateDatabaseSql;
+        await command.ExecuteNonQueryAsync();
     }
 
     public TestDbContext CreateDbContext()
@@ -95,6 +118,7 @@ public sealed class SqlServerFixture : IAsyncDisposable
         await using var context = CreateDbContext();
 
         // Delete in correct order due to FK constraints
+        await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.BatchItems");
         await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.ColumnMappedProducts");
         await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.OrderItems");
         await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Orders");
@@ -102,6 +126,7 @@ public sealed class SqlServerFixture : IAsyncDisposable
         await context.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Categories");
 
         // Reset identity seeds
+        await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('dbo.BatchItems', RESEED, 0)");
         await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('dbo.ColumnMappedProducts', RESEED, 0)");
         await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('dbo.OrderItems', RESEED, 0)");
         await context.Database.ExecuteSqlRawAsync("DBCC CHECKIDENT ('dbo.Orders', RESEED, 0)");

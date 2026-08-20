@@ -6,12 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Ruya.Services.MessageQueue.Abstractions;
+using Ruya.Services.MessageQueue.Serialization;
 
 namespace Ruya.Services.ReliableMessaging.MessageQueue;
 
 /// <summary>
 /// <see cref="IOutboundDispatcher"/> implementation that forwards outbox envelopes to
-/// <see cref="IMessageQueue.PublishAsync{TMessage}"/> via <see cref="IMessageQueueFactory"/>.
+/// <see cref="IMessagePublisher.PublishAsync{TMessage}"/> via <see cref="IMessageQueueFactory"/>.
 /// </summary>
 public sealed class MessageQueueOutboundDispatcher : IOutboundDispatcher
 {
@@ -23,6 +24,7 @@ public sealed class MessageQueueOutboundDispatcher : IOutboundDispatcher
 	private static readonly ConcurrentDictionary<Type, MethodInfo> _publishMethodsByType = new();
 
 	private readonly IMessageQueueFactory _factory;
+	private readonly IMessageJsonTypeInfoResolver? _messageTypeInfoResolver;
 	private readonly MessageQueueDispatcherOptions _options;
 
 	public MessageQueueOutboundDispatcher(
@@ -33,6 +35,20 @@ public sealed class MessageQueueOutboundDispatcher : IOutboundDispatcher
 		ArgumentNullException.ThrowIfNull(options);
 		_factory = factory;
 		_options = options.Value;
+	}
+
+	/// <summary>
+	/// Creates a dispatcher that reconstructs persisted payloads with registered producer-owned
+	/// source-generated JSON metadata.
+	/// </summary>
+	public MessageQueueOutboundDispatcher(
+		IMessageQueueFactory factory,
+		IOptions<MessageQueueDispatcherOptions> options,
+		IMessageJsonTypeInfoResolver messageTypeInfoResolver)
+		: this(factory, options)
+	{
+		ArgumentNullException.ThrowIfNull(messageTypeInfoResolver);
+		_messageTypeInfoResolver = messageTypeInfoResolver;
 	}
 
 	public async Task DispatchAsync(ReliableMessageEnvelope envelope, CancellationToken cancellationToken = default)
@@ -47,9 +63,7 @@ public sealed class MessageQueueOutboundDispatcher : IOutboundDispatcher
 			?? throw new InvalidOperationException(
 				$"Could not resolve payload type '{envelope.PayloadType}' for envelope '{envelope.MessageId}'.");
 
-		var payload = JsonSerializer.Deserialize(envelope.PayloadJson, payloadType, _serializerOptions)
-			?? throw new InvalidOperationException(
-				$"Deserialized payload was null for envelope '{envelope.MessageId}'.");
+		var payload = DeserializePayload(envelope, payloadType);
 
 		var publishOptions = BuildPublishOptions(envelope);
 
@@ -61,9 +75,34 @@ public sealed class MessageQueueOutboundDispatcher : IOutboundDispatcher
 		await task.ConfigureAwait(false);
 	}
 
+	private object DeserializePayload(ReliableMessageEnvelope envelope, Type payloadType)
+	{
+		var payloadTypeInfo = _messageTypeInfoResolver?.GetTypeInfo(payloadType);
+		if (payloadTypeInfo is not null)
+		{
+			return JsonSerializer.Deserialize(envelope.PayloadJson, payloadTypeInfo)
+				?? throw new InvalidOperationException(
+					$"Deserialized payload was null for envelope '{envelope.MessageId}'.");
+		}
+
+		if (_messageTypeInfoResolver?.HasRegistrations == true)
+		{
+			throw new NotSupportedException(
+				$"No registered source-generated JsonSerializerContext provides metadata for message payload type '{payloadType.FullName}'. " +
+				"Register the producer-owned context with AddJsonSerializerContext().");
+		}
+
+		return JsonSerializer.Deserialize(envelope.PayloadJson, payloadType, _serializerOptions)
+			?? throw new InvalidOperationException(
+				$"Deserialized payload was null for envelope '{envelope.MessageId}'.");
+	}
+
 	private static PublishOptions BuildPublishOptions(ReliableMessageEnvelope envelope)
 	{
-		var options = new PublishOptions();
+		var options = new PublishOptions
+		{
+			MessageId = envelope.MessageId.ToString("D"),
+		};
 
 		if (envelope.Headers is null || envelope.Headers.Count == 0)
 		{

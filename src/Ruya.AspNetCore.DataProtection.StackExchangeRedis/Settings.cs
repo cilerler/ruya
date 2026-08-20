@@ -39,8 +39,13 @@ public sealed class DataProtectionSettings
     public required string ConnectionStringKey { get; set; }
 
     /// <summary>
-    /// The resolved Redis connection string. Set internally from ConnectionStringKey during configuration.
+    /// The resolved Redis connection string. Server mode resolves it from
+    /// <see cref="ConnectionStringKey"/>; remote client mode receives it at runtime.
     /// </summary>
+    /// <remarks>
+    /// Remote clients must treat this as a runtime credential and must not persist, log, or trace it.
+    /// </remarks>
+    [JsonInclude]
     public string ConnectionString { get; internal set; } = null!;
 
     /// <summary>

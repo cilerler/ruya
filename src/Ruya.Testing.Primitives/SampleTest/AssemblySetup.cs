@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Threading.Tasks;
 
 namespace Ruya.Testing.Primitives.SampleTest;
 
@@ -16,8 +17,5 @@ public static class AssemblySetup
 	}
 
 	[AssemblyCleanup]
-	public static void Cleanup()
-	{
-		TestHost.Cleanup();
-	}
+	public static async Task Cleanup() => await TestHost.CleanupAsync();
 }

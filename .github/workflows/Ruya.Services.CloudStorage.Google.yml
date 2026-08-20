@@ -15,7 +15,10 @@ on:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.Services.CloudStorage.Google.yml'
+      - 'src/Ruya.Services.CloudStorage.Abstractions/**'
       - 'src/Ruya.Services.CloudStorage.Google/**'
+      - 'tests/Ruya.Services.CloudStorage.Google.Integration.Tests/**'
+      - 'tests/Ruya.Services.CloudStorage.Tests.Common/**'
 
 jobs:
   build:
@@ -24,6 +27,9 @@ jobs:
       project-name: 'Ruya.Services.CloudStorage.Google'
       project-path: './src/Ruya.Services.CloudStorage.Google/Ruya.Services.CloudStorage.Google.csproj'
       test-project-paths: './tests/Ruya.Services.CloudStorage.Google.Integration.Tests/Ruya.Services.CloudStorage.Google.Integration.Tests.csproj'
+      test-configuration: 'Debug'
+      use-testcontainers: true
+      testcontainers-timeout: '600s'
       dispatch-event-type: 'Ruya.Services.CloudStorage.Google'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

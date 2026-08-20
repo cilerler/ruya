@@ -10,7 +10,7 @@ public class PingPongTests : TestBase<PingPongTests>
 	[TestCategory("Category1")]
 	[Priority(1)]
 	[TestMethod]
-	public void ShouldReturnPong()
+	public void Ping_InputProvided_ReturnsPong()
 	{
 		Logger.LogInformation("Starting upload test...");
 
@@ -28,7 +28,7 @@ public class PingPongTests : TestBase<PingPongTests>
 	[DataRow("Alpha", DisplayName = "PingPong Check: Alpha")]
 	[DataRow("Beta")]
 	[DataRow("Gamma")]
-	public void ShouldReturnPongForMultipleInputs(string input)
+	public void Ping_MultipleInputsProvided_ReturnsPong(string input)
 	{
 		Logger.LogInformation("Starting test '{TestName}' with input: {Input}", TestContext.TestName, input);
 
@@ -43,7 +43,7 @@ public class PingPongTests : TestBase<PingPongTests>
 	[Timeout(2000)]
 	[DataTestMethod]
 	[DynamicData(nameof(GetComplexScenarios))]
-	public void ShouldHandleComplexObject(PingPongScenario scenario)
+	public void Ping_ComplexScenarioProvided_ReturnsExpectedPrefix(PingPongScenario scenario)
 	{
 		Logger.LogInformation("Testing Scenario: {Input}, Active: {Active}", scenario.Input, scenario.IsActive);
 
@@ -75,7 +75,7 @@ public class PingPongTests : TestBase<PingPongTests>
 	[Timeout(2000)]
 	[DataTestMethod]
 	[DynamicData(nameof(GetComplexScenarios), DynamicDataDisplayName = nameof(GetCustomDisplayName))]
-	public void ShouldHandleComplexObject(PingPongScenario scenario)
+	public void Ping_ComplexScenarioWithCustomDisplayName_ReturnsExpectedPrefix(PingPongScenario scenario)
 	{
 		Logger.LogInformation("Testing Scenario: {Input}", scenario.Input);
 

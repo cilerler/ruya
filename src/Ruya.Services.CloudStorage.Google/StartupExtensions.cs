@@ -5,6 +5,7 @@ using System.Text.Json;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 using Ruya.Services.CloudStorage.Abstractions;
 using Ruya.Services.CloudStorage.Google;
@@ -18,22 +19,20 @@ public static partial class StartupExtensions
 		ArgumentNullException.ThrowIfNull(serviceCollection);
 
 		serviceCollection.AddOptions<StorageServiceSettings>()
+		.BindConfiguration(StorageServiceSettings.ConfigurationSectionName)
 		.ValidateDataAnnotations()
 		.ValidateOnStart()
 		.Validate(settings => !string.IsNullOrWhiteSpace(settings.Credential), "Credential cannot be null.")
-		.Configure<IConfiguration>((settings, configuration) =>
+		.PostConfigure<IConfiguration>((settings, configuration) =>
 		{
 			ArgumentNullException.ThrowIfNull(configuration);
 			var section = configuration.GetSection(StorageServiceSettings.ConfigurationSectionName);
-#pragma warning disable S3236 // Caller information arguments should not be provided explicitly
-			ArgumentNullException.ThrowIfNull(section.Exists() ? string.Empty : null, StorageServiceSettings.ConfigurationSectionName);
-#pragma warning restore S3236 // Caller information arguments should not be provided explicitly
-			section.Bind(settings);
+			if (!section.Exists()) return;
 
 			var credential = configuration.GetSection(StorageServiceSettings.ConfigurationSectionName)[nameof(StorageServiceSettings.Credential)];
 			if (string.IsNullOrWhiteSpace(credential))
 			{
-				var credentialSection = section.GetSection("Credential");
+				var credentialSection = section.GetSection(nameof(StorageServiceSettings.Credential));
 				if (credentialSection.Exists() && credentialSection.GetChildren().Any())
 				{
 					credential = JsonSerializer.Serialize(credentialSection.Get<Dictionary<string, object>>());
@@ -43,7 +42,7 @@ public static partial class StartupExtensions
 			settings.Credential = credential;
 		});
 
-		serviceCollection.AddKeyedTransient<ICloudFileService, Client>(StorageServiceSettings.ProviderName);
+		serviceCollection.AddKeyedSingleton<ICloudFileService, Client>(StorageServiceSettings.ProviderName);
 		serviceCollection.AddCloudStorageFactory();
 		return serviceCollection;
 	}

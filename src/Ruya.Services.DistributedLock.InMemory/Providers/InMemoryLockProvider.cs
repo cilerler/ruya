@@ -22,28 +22,8 @@ public sealed class InMemoryLockProvider : IDistributedLockProvider, IDisposable
 
     private sealed class LockEntry
     {
-        private DateTimeOffset _expiresAt;
-        private readonly object _lock = new();
-
-        public string Value { get; init; } = string.Empty;
-
-        public DateTimeOffset ExpiresAt
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    return _expiresAt;
-                }
-            }
-            set
-            {
-                lock (_lock)
-                {
-                    _expiresAt = value;
-                }
-            }
-        }
+        public required string Value { get; init; }
+        public required DateTimeOffset ExpiresAt { get; init; }
 
         public bool IsExpired() => DateTimeOffset.UtcNow >= ExpiresAt;
     }
@@ -70,6 +50,7 @@ public sealed class InMemoryLockProvider : IDistributedLockProvider, IDisposable
     {
         LockValidation.ValidateLockKey(lockKey);
         LockValidation.ValidateLockValue(lockValue);
+        ExpiryValidation.Validate(expiry);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -105,26 +86,31 @@ public sealed class InMemoryLockProvider : IDistributedLockProvider, IDisposable
     {
         LockValidation.ValidateLockKey(lockKey);
         LockValidation.ValidateLockValue(lockValue);
+        ExpiryValidation.Validate(expiry);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_locks.TryGetValue(lockKey, out var entry))
+        while (_locks.TryGetValue(lockKey, out var entry))
         {
-            return Task.FromResult(false);
+            if (entry.Value != lockValue || entry.IsExpired())
+            {
+                return Task.FromResult(false);
+            }
+
+            var extendedEntry = new LockEntry
+            {
+                Value = lockValue,
+                ExpiresAt = DateTimeOffset.UtcNow.Add(expiry)
+            };
+
+            if (_locks.TryUpdate(lockKey, extendedEntry, entry))
+            {
+                return Task.FromResult(true);
+            }
         }
 
-        // Only extend if the lock value matches and hasn't expired
-        // The Value comparison is safe because it's init-only
-        // The ExpiresAt access is thread-safe due to the property lock
-        if (entry.Value != lockValue || entry.IsExpired())
-        {
-            return Task.FromResult(false);
-        }
-
-        // Extend the expiry (thread-safe due to property lock)
-        entry.ExpiresAt = DateTimeOffset.UtcNow.Add(expiry);
-        return Task.FromResult(true);
+        return Task.FromResult(false);
     }
 
     /// <inheritdoc />
@@ -197,7 +183,7 @@ public sealed class InMemoryLockProvider : IDistributedLockProvider, IDisposable
     }
 
     /// <inheritdoc />
-    public string GetProviderName() => "InMemory";
+    public string GetProviderName() => nameof(Ruya.Services.DistributedLock.InMemory);
 
     /// <summary>
     /// Clears all locks. Useful for testing.
@@ -211,7 +197,14 @@ public sealed class InMemoryLockProvider : IDistributedLockProvider, IDisposable
     /// <summary>
     /// Gets the count of active locks.
     /// </summary>
-    public int LockCount => _locks.Count;
+    public int LockCount
+    {
+        get
+        {
+            CleanupExpiredLocks(state: null);
+            return _locks.Count;
+        }
+    }
 
     private void CleanupExpiredLocks(object? state)
     {

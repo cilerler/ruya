@@ -19,6 +19,7 @@
 		<PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
 		<PackageReference Include="Polly" />
 		<PackageReference Include="OpenTelemetry.Api" />
+		<PackageReference Include="OpenTelemetry.Extensions.Hosting" />
 	</ItemGroup>
 
 	<ItemGroup>

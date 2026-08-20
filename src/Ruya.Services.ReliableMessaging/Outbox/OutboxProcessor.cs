@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -180,6 +182,11 @@ public sealed partial class OutboxProcessor<TContext> : BackgroundService
 
 	private static ReliableMessageEnvelope ToEnvelope(OutboxEntry entry)
 	{
+		var headers = string.IsNullOrWhiteSpace(entry.HeadersJson)
+			? null
+			: JsonSerializer.Deserialize<Dictionary<string, string>>(entry.HeadersJson)
+				?? throw new InvalidOperationException($"Outbox entry '{entry.Id}' headers deserialized to null.");
+
 		return new ReliableMessageEnvelope
 		{
 			MessageId = entry.Id,
@@ -188,7 +195,7 @@ public sealed partial class OutboxProcessor<TContext> : BackgroundService
 			PayloadJson = entry.PayloadJson,
 			PayloadType = entry.PayloadType,
 			EnqueuedAt = entry.EnqueuedAt,
-			Headers = null, // headers are carried out-of-band by dispatcher adapters if needed
+			Headers = headers,
 		};
 	}
 

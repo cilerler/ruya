@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Extensions.Configuration.yml'
       - 'src/Ruya.Extensions.Configuration/**'
+      - 'tests/Ruya.Extensions.Configuration.Unit.Tests/**'
 
 jobs:
   build:
@@ -23,7 +24,7 @@ jobs:
     with:
       project-name: 'Ruya.Extensions.Configuration'
       project-path: './src/Ruya.Extensions.Configuration/Ruya.Extensions.Configuration.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.Extensions.Configuration.Unit.Tests/Ruya.Extensions.Configuration.Unit.Tests.csproj'
       dispatch-event-type: 'Ruya.Extensions.Configuration'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

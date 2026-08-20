@@ -17,6 +17,8 @@ public class EnumerableDataReaderTests
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public decimal? Price { get; set; }
+        public byte[] Data { get; set; } = [];
+        public string Text { get; set; } = string.Empty;
         public readonly string ReadOnlyField = "ReadOnly";
         public string WriteOnlyField = "WriteOnly";
     }
@@ -39,7 +41,7 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = new[] { new TestEntity { Id = 1, Name = "A" } };
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Id", "Name" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Id), nameof(TestEntity.Name)]);
 
         // Act
         var result = reader.Read();
@@ -53,7 +55,7 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = Array.Empty<TestEntity>();
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Id", "Name" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Id), nameof(TestEntity.Name)]);
 
         // Act
         var result = reader.Read();
@@ -67,7 +69,7 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = new[] { new TestEntity { Id = 1, Name = "A", Price = 10.5m } };
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Id", "Name", "Price" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Id), nameof(TestEntity.Name), nameof(TestEntity.Price)]);
         reader.Read();
 
         // Act
@@ -86,7 +88,7 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = new[] { new TestEntity { Id = 1, Name = "A", Price = null } };
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Price" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Price)]);
         reader.Read();
 
         // Act
@@ -97,11 +99,51 @@ public class EnumerableDataReaderTests
     }
 
     [TestMethod]
+    public void GetBytes_WithNullBuffer_ReturnsSourceLength()
+    {
+        var data = new[] { new TestEntity { Data = [1, 2, 3, 4] } };
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Data)]);
+        Assert.IsTrue(reader.Read());
+
+        var length = reader.GetBytes(0, 0, null, 0, 0);
+
+        Assert.AreEqual(4L, length);
+    }
+
+    [TestMethod]
+    public void GetBytes_WithOffsets_CopiesRequestedRange()
+    {
+        var data = new[] { new TestEntity { Data = [1, 2, 3, 4] } };
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Data)]);
+        Assert.IsTrue(reader.Read());
+        var destination = new byte[5];
+
+        var copied = reader.GetBytes(0, 1, destination, 2, 2);
+
+        Assert.AreEqual(2L, copied);
+        CollectionAssert.AreEqual(new byte[] { 0, 0, 2, 3, 0 }, destination);
+    }
+
+    [TestMethod]
+    public void GetChars_WithOffsets_CopiesRequestedRange()
+    {
+        var data = new[] { new TestEntity { Text = "abcdef" } };
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Text)]);
+        Assert.IsTrue(reader.Read());
+        var destination = new char[4];
+
+        var copied = reader.GetChars(0, 2, destination, 1, 3);
+
+        Assert.AreEqual(3L, copied);
+        CollectionAssert.AreEqual(new[] { '\0', 'c', 'd', 'e' }, destination);
+    }
+
+    [TestMethod]
     public void FieldCount_ReturnsCorrectNumberOfMembers()
     {
         // Arrange
         var data = Array.Empty<TestEntity>();
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Id", "Name", "Price" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Id), nameof(TestEntity.Name), nameof(TestEntity.Price)]);
 
         // Assert
         Assert.AreEqual(3, reader.FieldCount);
@@ -112,12 +154,12 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = Array.Empty<TestEntity>();
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Id", "Name", "Price" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Id), nameof(TestEntity.Name), nameof(TestEntity.Price)]);
 
         // Act & Assert
-        Assert.AreEqual(0, reader.GetOrdinal("Id"));
-        Assert.AreEqual(1, reader.GetOrdinal("Name"));
-        Assert.AreEqual(2, reader.GetOrdinal("Price"));
+        Assert.AreEqual(0, reader.GetOrdinal(nameof(TestEntity.Id)));
+        Assert.AreEqual(1, reader.GetOrdinal(nameof(TestEntity.Name)));
+        Assert.AreEqual(2, reader.GetOrdinal(nameof(TestEntity.Price)));
     }
 
     [TestMethod]
@@ -125,7 +167,7 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = Array.Empty<TestEntity>();
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Id" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Id)]);
 
         // Act & Assert
         Assert.Throws<IndexOutOfRangeException>(() => reader.GetOrdinal("InvalidName"));
@@ -136,11 +178,11 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = Array.Empty<TestEntity>();
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Id", "Name" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Id), nameof(TestEntity.Name)]);
 
         // Act & Assert
-        Assert.AreEqual("Id", reader.GetName(0));
-        Assert.AreEqual("Name", reader.GetName(1));
+        Assert.AreEqual(nameof(TestEntity.Id), reader.GetName(0));
+        Assert.AreEqual(nameof(TestEntity.Name), reader.GetName(1));
     }
 
     [TestMethod]
@@ -148,7 +190,7 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = new[] { new TestEntity { Price = null } };
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Price" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Price)]);
         reader.Read();
 
         // Act
@@ -163,7 +205,7 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = new[] { new TestEntity { Price = 10.5m } };
-        using var reader = new EnumerableDataReader<TestEntity>(data, new[] { "Price" });
+        using var reader = new EnumerableDataReader<TestEntity>(data, [nameof(TestEntity.Price)]);
         reader.Read();
 
         // Act
@@ -207,7 +249,7 @@ public class EnumerableDataReaderTests
     {
         // Arrange — "Id" resolves by property name, "OrgId" resolves by [Column] attribute
         var data = new[] { new ColumnMappedEntity { Id = 1, OrganizationId = 99, UnmappedProperty = "test" } };
-        using var reader = new EnumerableDataReader<ColumnMappedEntity>(data, new[] { "Id", "OrgId", "UnmappedProperty" });
+        using var reader = new EnumerableDataReader<ColumnMappedEntity>(data, [nameof(ColumnMappedEntity.Id), "OrgId", nameof(ColumnMappedEntity.UnmappedProperty)]);
         reader.Read();
 
         // Act & Assert
@@ -221,10 +263,10 @@ public class EnumerableDataReaderTests
     {
         // Arrange
         var data = Array.Empty<ColumnMappedEntity>();
-        using var reader = new EnumerableDataReader<ColumnMappedEntity>(data, new[] { "Id", "OrgId" });
+        using var reader = new EnumerableDataReader<ColumnMappedEntity>(data, [nameof(ColumnMappedEntity.Id), "OrgId"]);
 
         // Act & Assert
-        Assert.AreEqual(0, reader.GetOrdinal("Id"));
+        Assert.AreEqual(0, reader.GetOrdinal(nameof(ColumnMappedEntity.Id)));
         Assert.AreEqual(1, reader.GetOrdinal("OrgId"));
     }
 

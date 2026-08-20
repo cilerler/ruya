@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ruya.Services.MessageQueue.Abstractions;
 using Ruya.Services.MessageQueue.Serialization;
+using Ruya.Services.MessageQueue.Telemetry;
 
 
 namespace Ruya.Services.MessageQueue.InMemory;
@@ -24,26 +25,32 @@ public sealed class InMemoryProvider : IMessageQueueProvider
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public string ProviderName => "InMemory";
+    public string ProviderName => nameof(Ruya.Services.MessageQueue.InMemory);
 
     public ProviderCapabilities Capabilities => new()
     {
-        SupportsPriority = true,
+        SupportsPriority = false,
         SupportsDelayedDelivery = true,
+        SupportsTimeToLive = true,
+        SupportsPublisherConfirms = false,
         SupportsDeadLetterQueue = true,
-        SupportsReplay = true, // When message store is enabled
+        SupportsReplay = false,
+        SupportsBatchPublish = true,
         SupportsTransactions = false, // In-memory is not durable
         SupportsConsumerGroups = true,
-        MaxPriorityLevel = 255
+        MaxPriorityLevel = null
     };
 
     public Task<IMessageQueue> CreateAsync(string name, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Creating InMemory message bus instance: {Name}", name);
+        cancellationToken.ThrowIfCancellationRequested();
+        _logger.LogInformation(InMemoryLogEvents.Provider, "Creating InMemory message bus instance: {Name}", name);
 
         var options = _serviceProvider.GetRequiredService<IOptions<InMemoryOptions>>();
         var serializer = _serviceProvider.GetRequiredService<IMessageSerializer>();
         var middlewares = _serviceProvider.GetServices<IMessageMiddleware>();
+        var telemetry = _serviceProvider.GetRequiredService<MessageQueueTelemetry>();
+        var deadLetterStore = _serviceProvider.GetRequiredService<IInMemoryDeadLetterStore>();
         var logger = _serviceProvider.GetRequiredService<ILogger<InMemoryMessageQueue>>();
 
         var queue = new InMemoryMessageQueue(
@@ -51,9 +58,11 @@ public sealed class InMemoryProvider : IMessageQueueProvider
             options,
             serializer,
             middlewares,
+            telemetry,
+            deadLetterStore,
             logger);
 
-        _logger.LogInformation("InMemory message queue '{Name}' created successfully", name);
+        _logger.LogInformation(InMemoryLogEvents.Provider, "InMemory message queue '{Name}' created successfully", name);
 
         return Task.FromResult<IMessageQueue>(queue);
     }

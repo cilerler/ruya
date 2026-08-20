@@ -31,7 +31,7 @@ public sealed class SubscribeOptions
     ///
     /// Provider Support:
     /// - RabbitMQ: Full support with * and # wildcards for topic exchanges
-    /// - Redis: Full support via PSUBSCRIBE (pattern mapped to Redis syntax)
+    /// - Redis: Full support via topic-scoped subscription and the shared routing matcher
     /// - InMemory: Full support (regex-based pattern matching for testing)
     /// - SQL Server: Not supported (subscribes to all messages on topic)
     ///
@@ -46,7 +46,7 @@ public sealed class SubscribeOptions
     ///
     /// Provider Support:
     /// - RabbitMQ: Full support (creates multiple queue bindings)
-    /// - Redis: Partial support (uses first pattern only, limitation of Redis Pub/Sub)
+    /// - Redis: Full support via topic-scoped subscription and the shared routing matcher
     /// - InMemory: Full support (matches against any pattern in the list)
     /// - SQL Server: Not supported
     ///
@@ -90,23 +90,21 @@ public sealed class SubscribeOptions
     /// should requeue the message back to the source queue. Default <c>false</c> — exceptions are
     /// treated as poison messages and rejected. The broker routes to the configured DLX, or drops the
     /// message if no DLX is configured.
-    /// <para>Set to <c>true</c> only if you genuinely want infinite redelivery on every exception
-    /// (e.g. for a known-transient infrastructure error path). Beware: a malformed message with this
-    /// flag on creates a tight redelivery loop.</para>
+    /// <para>Set to <c>true</c> only for a known-transient infrastructure error path. RabbitMQ applies
+    /// the same finite effective delivery cap used by explicit Retry results.</para>
     /// <para>Does not affect explicit <see cref="MessageResult.Retry"/> returns from the user handler —
     /// those still requeue (subject to <see cref="MaxDeliveryCount"/>).</para>
     /// </summary>
     public bool RequeueOnException { get; set; }
 
     /// <summary>
-    /// Maximum number of deliveries before the broker rejects the message without requeue.
+    /// Maximum number of deliveries before the provider rejects the message without requeue.
     /// Applies to both the <see cref="MessageStatus.Retry"/> result path and the unhandled-exception
-    /// path (when <see cref="RequeueOnException"/> is true). Default <c>null</c> means no cap on the
-    /// Retry path.
-    /// <para>Provider note: RabbitMQ derives the live count from the <c>x-death</c> header which is
-    /// only populated when the queue is configured with a Dead-Letter Exchange. If no DLX is wired
-    /// (<see cref="DeadLetterQueue"/> is null), the count effectively maxes at 2 (first delivery + one
-    /// redelivery) so this cap behaves as "max one retry."</para>
+    /// path (when <see cref="RequeueOnException"/> is true). <para>For RabbitMQ, <c>null</c> resolves to one
+    /// initial delivery plus <see cref="RetryPolicy.MaxRetryAttempts"/>. RabbitMQ tracks
+    /// immediate-requeue attempts in the queue instance because <c>BasicNack(requeue: true)</c> does
+    /// not increment <c>x-death</c>; that process-local count resets if the queue instance restarts.
+    /// Configure a smaller explicit cap when that reset would exceed the service's retry budget.</para>
     /// </summary>
     public int? MaxDeliveryCount { get; set; }
 }
@@ -140,6 +138,12 @@ public sealed class RetryPolicy
     /// Whether to use exponential backoff
     /// </summary>
     public bool UseExponentialBackoff { get; set; } = true;
+
+    /// <summary>
+    /// Whether providers should add bounded random jitter to retry delays to avoid synchronized
+    /// retry storms. Default is true.
+    /// </summary>
+    public bool UseJitter { get; set; } = true;
 }
 
 /// <summary>

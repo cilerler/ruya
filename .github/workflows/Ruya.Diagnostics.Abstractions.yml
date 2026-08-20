@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Diagnostics.Abstractions.yml'
       - 'src/Ruya.Diagnostics.Abstractions/**'
+      - 'tests/Ruya.Diagnostics.Abstractions.Unit.Tests/**'
 
 jobs:
   build:
@@ -23,9 +24,11 @@ jobs:
     with:
       project-name: 'Ruya.Diagnostics.Abstractions'
       project-path: './src/Ruya.Diagnostics.Abstractions/Ruya.Diagnostics.Abstractions.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.Diagnostics.Abstractions.Unit.Tests/Ruya.Diagnostics.Abstractions.Unit.Tests.csproj'
+      test-configuration: 'Debug'
       dispatch-event-type: 'Ruya.Diagnostics.Abstractions'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
+      use-testcontainers: false
     secrets:
       PAT: ${{ secrets.PAT }}
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}

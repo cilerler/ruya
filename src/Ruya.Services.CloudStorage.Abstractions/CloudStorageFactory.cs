@@ -7,6 +7,8 @@ public class CloudStorageFactory(IServiceProvider serviceProvider) : ICloudStora
 {
     public ICloudFileService GetService(string providerKey)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerKey);
+
         if (serviceProvider is IKeyedServiceProvider keyedProvider)
         {
             var service = keyedProvider.GetKeyedService<ICloudFileService>(providerKey);

@@ -28,6 +28,7 @@
 
 	<ItemGroup>
 
+		<!-- Core telemetry contract tests currently use the in-memory provider as their deterministic transport. -->
 		<ProjectReference Include="..\..\src\Ruya.Services.MessageQueue.InMemory\Ruya.Services.MessageQueue.InMemory.csproj" />
 		<ProjectReference Include="..\..\src\Ruya.Services.MessageQueue.RabbitMq\Ruya.Services.MessageQueue.RabbitMq.csproj" />
 

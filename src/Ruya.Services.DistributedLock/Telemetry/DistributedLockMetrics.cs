@@ -17,6 +17,7 @@ public sealed class DistributedLockMetrics : IDisposable
     private readonly Counter<long> _lockAcquiredCounter;
     private readonly Counter<long> _lockFailedCounter;
     private readonly Counter<long> _lockReleasedCounter;
+    private readonly Counter<long> _lockReleaseFailedCounter;
     private readonly Histogram<double> _lockDurationHistogram;
     private readonly Histogram<double> _lockAcquisitionDurationHistogram;
     private readonly Counter<long> _heartbeatSuccessCounter;
@@ -43,6 +44,10 @@ public sealed class DistributedLockMetrics : IDisposable
         _lockReleasedCounter = _meter.CreateCounter<long>(
             "lock_released_total",
             description: "Total number of locks successfully released");
+
+        _lockReleaseFailedCounter = _meter.CreateCounter<long>(
+            "lock_release_failed_total",
+            description: "Total number of lock releases that could not be confirmed");
 
         _heartbeatSuccessCounter = _meter.CreateCounter<long>(
             "heartbeat_success_total",
@@ -103,6 +108,15 @@ public sealed class DistributedLockMetrics : IDisposable
         _lockReleasedCounter.Add(1, new KeyValuePair<string, object?>("provider", providerType));
         _lockDurationHistogram.Record(holdDurationMs, new KeyValuePair<string, object?>("provider", providerType));
         _activeLocks.Add(-1, new KeyValuePair<string, object?>("provider", providerType));
+    }
+
+    /// <summary>
+    /// Records a lock lifecycle that ended without a confirmed provider release.
+    /// </summary>
+    public void RecordLockReleaseFailed(string providerType, double holdDurationMs)
+    {
+        _lockReleaseFailedCounter.Add(1, new KeyValuePair<string, object?>("provider", providerType));
+        _lockDurationHistogram.Record(holdDurationMs, new KeyValuePair<string, object?>("provider", providerType));
     }
 
     /// <summary>

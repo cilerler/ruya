@@ -9,6 +9,13 @@ namespace Ruya.Services.MessageQueue.Abstractions;
 public sealed class PublishOptions
 {
     /// <summary>
+    /// Caller-assigned message identifier. When omitted, the provider generates an identifier.
+    /// This option is not valid for batch publishing because every message in a batch needs a
+    /// distinct identifier.
+    /// </summary>
+    public string? MessageId { get; set; }
+
+    /// <summary>
     /// Message priority (0-255, where higher values indicate higher priority)
     /// Default is 0 (normal priority)
     /// </summary>
@@ -31,8 +38,8 @@ public sealed class PublishOptions
     public bool Persistent { get; set; } = true;
 
     /// <summary>
-    /// Whether to wait for publisher confirmation
-    /// Default is true for reliability
+    /// Whether a provider with publisher-confirm support should wait for broker confirmation.
+    /// A provider-level setting may disable publisher confirms entirely.
     /// </summary>
     public bool WaitForConfirmation { get; set; } = true;
 
@@ -71,7 +78,8 @@ public sealed class PublishOptions
     public string? RoutingKey { get; set; }
 
     /// <summary>
-    /// Timeout for publish operation
+    /// Timeout for this publish operation. When omitted, the message-queue default applies.
     /// </summary>
     public TimeSpan? Timeout { get; set; }
+
 }

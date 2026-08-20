@@ -10,11 +10,11 @@
 		<Version>8.2</Version>
 	</PropertyGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Release'">
+	<ItemGroup Condition="'$(Configuration)' == 'Release' And '$(UseLocalMessageQueueProjectReference)' != 'true'">
 		<PackageReference Include="Ruya.Services.MessageQueue" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+	<ItemGroup Condition="'$(Configuration)' == 'Debug' Or '$(UseLocalMessageQueueProjectReference)' == 'true'">
 		<ProjectReference Include="..\Ruya.Services.MessageQueue\Ruya.Services.MessageQueue.csproj" />
 	</ItemGroup>
 

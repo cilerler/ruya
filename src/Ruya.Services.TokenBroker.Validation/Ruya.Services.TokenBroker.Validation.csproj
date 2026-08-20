@@ -4,6 +4,10 @@
 		<TargetFramework>net8.0</TargetFramework>
 	</PropertyGroup>
 
+	<ItemGroup>
+		<InternalsVisibleTo Include="Ruya.Services.TokenBroker" />
+	</ItemGroup>
+
 	<PropertyGroup>
 		<Description>Lightweight JWT validation library for Token Service - validates incoming tokens without token issuance dependencies</Description>
 		<PackageTags>token;service;validation;jwt;authentication</PackageTags>
@@ -18,11 +22,11 @@
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Release'">
+	<ItemGroup Condition="'$(Configuration)' == 'Release' And '$(UseLocalTokenBrokerProjectReferences)' != 'true'">
 		<PackageReference Include="Ruya.Services.TokenBroker.Abstractions" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+	<ItemGroup Condition="'$(Configuration)' == 'Debug' Or '$(UseLocalTokenBrokerProjectReferences)' == 'true'">
 		<ProjectReference Include="..\Ruya.Services.TokenBroker.Abstractions\Ruya.Services.TokenBroker.Abstractions.csproj" />
 	</ItemGroup>
 

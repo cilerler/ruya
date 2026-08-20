@@ -16,6 +16,7 @@ using Ruya.Services.CloudStorage.Abstractions;
 namespace Ruya.Services.CloudStorage.UnitTests.Amazon;
 
 [TestClass]
+[DoNotParallelize]
 public class AmazonClientTests
 {
     private Mock<IAmazonS3> _mockS3Client = null!;
@@ -35,6 +36,17 @@ public class AmazonClientTests
             Region = "us-east-1"
         });
         _client = new Client(_mockLogger.Object, _options, _mockS3Client.Object);
+    }
+
+    [TestCleanup]
+    public void Cleanup() => _client.Dispose();
+
+    [TestMethod]
+    public void Dispose_DoesNotDisposeInjectedS3Client()
+    {
+        _client.Dispose();
+
+        _mockS3Client.Verify(client => client.Dispose(), Times.Never);
     }
 
     #region GetFileMetadataAsync Tests
@@ -87,6 +99,17 @@ public class AmazonClientTests
 
         Assert.IsTrue(exception.Message.Contains("non-existent.txt"));
         Assert.IsTrue(exception.Message.Contains("test-bucket"));
+
+#pragma warning disable CA1873 // Moq expression matchers are not evaluated as production log arguments.
+        _mockLogger.Verify(
+            logger => logger.Log(
+                LogLevel.Information,
+                It.Is<EventId>(eventId => eventId.Id == 8100 && eventId.Name == "AmazonMetadataNotFound"),
+                It.IsAny<It.IsAnyType>(),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+#pragma warning restore CA1873
     }
 
     [TestMethod]
@@ -251,6 +274,20 @@ public class AmazonClientTests
         await _client.UploadStreamAsync("bucket", stream, "file.txt", "text/plain");
 
         // Assert is in the callback
+    }
+
+    [TestMethod]
+    public async Task UploadFileAsync_WhenSourceCannotBeOpened_RecordsFailure()
+    {
+        using var collector = new MetricCollector("Ruya.Services.CloudStorage.Amazon", "files_failed");
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            _client.UploadFileAsync(
+                "bucket",
+                Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"),
+                "file.txt"));
+
+        Assert.AreEqual(1, collector.Sum);
     }
 
     #endregion

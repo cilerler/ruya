@@ -22,6 +22,11 @@ on:
         required: false
         type: string
         default: ''
+      test-configuration:
+        description: 'Build configuration used for test projects'
+        required: false
+        type: string
+        default: 'Release'
       dispatch-event-type:
         description: 'Event type for repository dispatch (used for chain builds)'
         required: false
@@ -37,6 +42,16 @@ on:
         required: false
         type: boolean
         default: false
+      use-local-tokenbroker-project-references:
+        description: 'Build and test the current TokenBroker source graph instead of installed sibling packages'
+        required: false
+        type: boolean
+        default: false
+      testcontainers-timeout:
+        description: 'Whole test-run timeout used when Testcontainers are enabled'
+        required: false
+        type: string
+        default: '300s'
       triggered-branch:
         description: 'Branch that triggered this workflow (for repository_dispatch)'
         required: false
@@ -52,6 +67,9 @@ on:
       environment-type:
         description: 'Environment type (production, staging, testing, integration, development)'
         value: ${{ jobs.build.outputs.environment-type }}
+      source-sha:
+        description: 'The exact commit checked out and built'
+        value: ${{ jobs.build.outputs.source-sha }}
     secrets:
       PAT:
         description: 'Required for repository dispatch (chain builds)'
@@ -122,12 +140,25 @@ jobs:
       environment-type: ${{ steps.extract-metadata.outputs.environment-type }}
       is-production: ${{ steps.extract-metadata.outputs.is-production }}
       dispatch-repos-json: ${{ steps.compute-dispatch-repos.outputs.repos-json }}
+      source-sha: ${{ steps.capture-source-sha.outputs.sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.branch-guard.outputs.target-branch }}
+
+      - name: Capture Checked Out Commit
+        id: capture-source-sha
+        run: |
+          $sourceSha = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceSha)) {
+            throw 'Unable to resolve the checked-out commit.'
+          }
+
+          $sourceSha = $sourceSha.Trim()
+          "sha=$sourceSha" >> $env:GITHUB_OUTPUT
+          Write-Host "Checked out commit: $sourceSha"
 
       - name: Extract Metadata
         id: extract-metadata
@@ -228,14 +259,29 @@ jobs:
             --store-password-in-clear-text
 
       - name: Restore
-        run: dotnet restore '${{ inputs.project-path }}' -p:Configuration=Release -p:Version=${{ steps.compute-version.outputs.version }}
+        run: |
+          $restoreArgs = @(
+            'restore', '${{ inputs.project-path }}'
+            '-p:Configuration=Release'
+            '-p:Version=${{ steps.compute-version.outputs.version }}'
+          )
+          if ('${{ inputs.use-local-tokenbroker-project-references }}' -eq 'true') {
+            $restoreArgs += '-p:UseLocalTokenBrokerProjectReferences=true'
+          }
+          dotnet @restoreArgs
 
       - name: Build
         run: |
-          dotnet build '${{ inputs.project-path }}' `
-            --configuration Release `
-            --no-restore `
-            -p:Version=${{ steps.compute-version.outputs.version }}
+          $buildArgs = @(
+            'build', '${{ inputs.project-path }}'
+            '--configuration', 'Release'
+            '--no-restore'
+            '-p:Version=${{ steps.compute-version.outputs.version }}'
+          )
+          if ('${{ inputs.use-local-tokenbroker-project-references }}' -eq 'true') {
+            $buildArgs += '-p:UseLocalTokenBrokerProjectReferences=true'
+          }
+          dotnet @buildArgs
 
       - name: Upload Build Output
         uses: actions/upload-artifact@v5
@@ -260,7 +306,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.build.outputs.branch }}
+          ref: ${{ needs.build.outputs.source-sha }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -301,8 +347,7 @@ jobs:
           }
 
           if ($resolvedPaths.Count -eq 0) {
-            Write-Warning "No test projects found"
-            exit 0
+            throw "No test projects resolved from test-project-paths."
           }
 
           $failed = $false
@@ -311,14 +356,18 @@ jobs:
 
             $testArgs = @(
               '--project', $testProject
-              '--configuration', 'Release'
+              '--configuration', '${{ inputs.test-configuration }}'
               '--verbosity', 'normal'
               '-p:CollectCoverage=true'
               '-p:CoverletOutputFormat=cobertura'
             )
 
+            if ('${{ inputs.use-local-tokenbroker-project-references }}' -eq 'true') {
+              $testArgs += '-p:UseLocalTokenBrokerProjectReferences=true'
+            }
+
             if ('${{ inputs.use-testcontainers }}' -eq 'true') {
-              $testArgs += '--', '--timeout', '300000'
+              $testArgs += '--', '--timeout', '${{ inputs.testcontainers-timeout }}'
             }
 
             dotnet test @testArgs
@@ -340,7 +389,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.build.outputs.branch }}
+          ref: ${{ needs.build.outputs.source-sha }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -428,12 +477,13 @@ jobs:
         with:
           script: |
             const tagName = `${{ inputs.project-name }}.${{ needs.build.outputs.version }}`;
+            const sourceSha = '${{ needs.build.outputs.source-sha }}';
             try {
               await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 ref: `refs/tags/${tagName}`,
-                sha: context.sha
+                sha: sourceSha
               });
             } catch (error) {
               if (error.status !== 422) throw error;
@@ -444,6 +494,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.project-name }}.${{ needs.build.outputs.version }}
+          target_commitish: ${{ needs.build.outputs.source-sha }}
           name: ${{ inputs.project-name }} v${{ needs.build.outputs.version }}
           draft: false
           prerelease: false
@@ -511,7 +562,7 @@ jobs:
           event-type: ${{ inputs.dispatch-event-type }}
           client-payload: |
             {
-              "sha": "${{ github.sha }}",
+              "sha": "${{ needs.build.outputs.source-sha }}",
               "version": "${{ needs.build.outputs.version }}",
               "source-repo": "${{ github.repository }}",
               "source-project": "${{ inputs.project-name }}",

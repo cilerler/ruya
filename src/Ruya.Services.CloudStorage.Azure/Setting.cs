@@ -1,19 +1,16 @@
-using System;
-using System.Text.Json;
-
 namespace Ruya.Services.CloudStorage.Azure;
 
 public class Setting
 {
-    public const string ProviderName = "Azure";
-	public const string ConfigurationSectionName = $"CloudStorage:{ProviderName}";
+    public const string ProviderName = nameof(Ruya.Services.CloudStorage.Azure);
+	public const string ConfigurationSectionName = $"{nameof(Ruya.Services.CloudStorage)}:{ProviderName}";
 
-	public string ConnectionStringKey { get; set; }
+	public string ConnectionStringKey { get; set; } = null!;
 
-	private string _container;
+	private string _container = null!;
 	public string Container
 	{
 		get => _container;
-		set => _container = value.ToLower();
+		set => _container = value?.ToLowerInvariant() ?? null!;
 	}
 }

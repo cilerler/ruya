@@ -23,6 +23,9 @@ namespace Ruya.Services.CloudStorage.Azure;
 
 public class Client : ICloudFileService
 {
+    private const string InstrumentationName =
+        $"{nameof(Ruya)}.{nameof(Ruya.Services)}.{nameof(Ruya.Services.CloudStorage)}.{nameof(Ruya.Services.CloudStorage.Azure)}";
+
     private readonly ILogger _logger;
     private readonly BlobServiceClient _serviceClient;
 
@@ -30,8 +33,8 @@ public class Client : ICloudFileService
     // Key: Bucket/Container Name, Value: True if exists (we only cache existence)
     private readonly ConcurrentDictionary<string, bool> _containerExistenceCache = new();
 
-    private static readonly ActivitySource _activitySource = new("Ruya.Services.CloudStorage.Azure");
-    private static readonly Meter _meter = new("Ruya.Services.CloudStorage.Azure");
+    private static readonly ActivitySource _activitySource = new(InstrumentationName);
+    private static readonly Meter _meter = new(InstrumentationName);
     private static readonly Counter<long> _filesUploaded = _meter.CreateCounter<long>("files_uploaded");
     private static readonly Counter<long> _bytesUploaded = _meter.CreateCounter<long>("bytes_uploaded");
     private static readonly Counter<long> _filesDownloaded = _meter.CreateCounter<long>("files_downloaded");
@@ -39,37 +42,45 @@ public class Client : ICloudFileService
     private static readonly Counter<long> _filesFailed = _meter.CreateCounter<long>("files_failed");
 
     public Client(IConfiguration configuration, ILogger<Client> logger, IOptions<Setting> options)
-        : this(logger, CreateBlobServiceClient(configuration, options.Value))
+        : this(logger, CreateBlobServiceClient(configuration, GetSettings(options)))
     {
     }
 
     public Client(ILogger<Client> logger, BlobServiceClient serviceClient)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(serviceClient);
+
         _logger = logger;
         _serviceClient = serviceClient;
     }
 
     private static BlobServiceClient CreateBlobServiceClient(IConfiguration configuration, Setting settings)
     {
+        ArgumentNullException.ThrowIfNull(configuration);
         var connectionString = configuration.GetConnectionString(settings.ConnectionStringKey)
-            ?? throw new ArgumentNullException(nameof(Setting.ConnectionStringKey));
+            ?? throw new InvalidOperationException(
+                $"Connection string catalog entry '{settings.ConnectionStringKey}' is not configured.");
         return new BlobServiceClient(connectionString);
+    }
+
+    private static Setting GetSettings(IOptions<Setting> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.Value;
     }
 
     public async Task<CloudFileMetadata> GetFileMetadataAsync(string bucketName, string fileName, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(GetFileMetadataAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("fileName", fileName);
 
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
         if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(fileName));
 
-        var containerClient = await GetContainerClientAsync(bucketName, cancellationToken);
-        var blobClient = containerClient.GetBlobClient(fileName);
-
         try
         {
+            var containerClient = await GetContainerClientAsync(bucketName, createIfMissing: false, cancellationToken);
+            var blobClient = containerClient.GetBlobClient(fileName);
             var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
 
             return new CloudFileMetadata(
@@ -84,13 +95,17 @@ public class Client : ICloudFileService
         catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
         {
              _filesFailed.Add(1);
-             _logger.LogInformation("Not Found - {fileName} in container {containerName}", fileName, bucketName);
+             _logger.LogInformation(LogEvents.MetadataNotFound, "Azure cloud-storage object was not found");
              throw new FileNotFoundException($"Not Found - {fileName} in container {bucketName}", fileName, ex);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+             throw;
         }
         catch (Exception ex)
         {
              _filesFailed.Add(1);
-             _logger.LogError(ex, ex.Message);
+             _logger.LogError(LogEvents.MetadataFailed, ex, "Azure cloud-storage metadata request failed");
              throw;
         }
     }
@@ -98,8 +113,11 @@ public class Client : ICloudFileService
     public async Task<CloudFileMetadata> UploadFileAsync(string bucketName, string sourcePath, string targetPath, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(UploadFileAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("sourcePath", sourcePath);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        cancellationToken.ThrowIfCancellationRequested();
 
         string contentType = "application/octet-stream";
         try
@@ -108,30 +126,29 @@ public class Client : ICloudFileService
         }
         catch (Exception e)
         {
-            _logger.LogWarning(e, "An error occured while trying to retrieve MimeType");
+            _logger.LogWarning(LogEvents.MimeTypeFailed, e, "An error occured while trying to retrieve MimeType");
         }
 
-        using FileStream fileStream = File.OpenRead(sourcePath);
+        await using FileStream fileStream = OpenUploadSourceFile(sourcePath, cancellationToken);
         return await UploadStreamAsync(bucketName, fileStream, targetPath, contentType, cancellationToken);
     }
 
     public async Task<CloudFileMetadata> UploadStreamAsync(string bucketName, Stream sourceStream, string targetPath, string contentType, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(UploadStreamAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("targetPath", targetPath);
 
         ArgumentException.ThrowIfNullOrWhiteSpace(bucketName);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
-
-        var containerClient = await GetContainerClientAsync(bucketName, cancellationToken);
+        ArgumentNullException.ThrowIfNull(sourceStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
 
         string destinationFileName = PathNormalizer.ToCloudPath(targetPath);
 
-        var blobClient = containerClient.GetBlobClient(destinationFileName);
-
         try
         {
+             var containerClient = await GetContainerClientAsync(bucketName, createIfMissing: true, cancellationToken);
+             var blobClient = containerClient.GetBlobClient(destinationFileName);
+
              if (sourceStream.CanSeek)
              {
                  sourceStream.Seek(0, SeekOrigin.Begin);
@@ -139,8 +156,7 @@ public class Client : ICloudFileService
 
             var uploadOptions = new BlobUploadOptions
             {
-                HttpHeaders = new BlobHttpHeaders { ContentType = contentType },
-                ProgressHandler = new Progress<long>(p => _logger.LogTrace("Uploading {file} to {container}: {bytes} bytes", destinationFileName, bucketName, p))
+                HttpHeaders = new BlobHttpHeaders { ContentType = contentType }
             };
 
             await blobClient.UploadAsync(sourceStream, uploadOptions, cancellationToken);
@@ -159,10 +175,14 @@ public class Client : ICloudFileService
                 GetBlobSasUri(blobClient, BlobSasPermissions.Read, 60)
             );
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+             throw;
+        }
         catch (Exception e)
         {
              _filesFailed.Add(1);
-             _logger.LogError(e, "Encountered an error while uploading file stream. {ContainerName} {FileName}", bucketName, destinationFileName);
+             _logger.LogError(LogEvents.UploadFailed, e, "Azure cloud-storage stream upload failed");
              throw;
         }
     }
@@ -170,49 +190,66 @@ public class Client : ICloudFileService
     public async Task DownloadFileAsync(string bucketName, string fileName, Stream targetStream, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(DownloadFileAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("fileName", fileName);
 
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
-
-        var containerClient = await GetContainerClientAsync(bucketName, cancellationToken);
-        var blobClient = containerClient.GetBlobClient(fileName);
+        if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(fileName));
+        ArgumentNullException.ThrowIfNull(targetStream);
 
         try
         {
+            var containerClient = await GetContainerClientAsync(bucketName, createIfMissing: false, cancellationToken);
+            var blobClient = containerClient.GetBlobClient(fileName);
             await blobClient.DownloadToAsync(targetStream, cancellationToken);
+
+            if (targetStream.CanSeek)
+            {
+                targetStream.Seek(0, SeekOrigin.Begin);
+            }
+
             _filesDownloaded.Add(1);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+             throw;
         }
         catch (Exception e)
         {
              _filesFailed.Add(1);
-             _logger.LogError(e, "Encountered an error while dowloading file. {ContainerName} {FileName}", bucketName, fileName);
+             _logger.LogError(LogEvents.DownloadFailed, e, "Azure cloud-storage download failed");
              throw;
         }
 
-        if (targetStream.CanSeek) targetStream.Seek(0, SeekOrigin.Begin);
     }
 
     public async Task DeleteFileAsync(string bucketName, string fileName, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(DeleteFileAsync));
-        activity?.SetTag("bucket", bucketName);
-        activity?.SetTag("fileName", fileName);
 
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
-
-        var containerClient = await GetContainerClientAsync(bucketName, cancellationToken);
-        var blobClient = containerClient.GetBlobClient(fileName);
+        if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(fileName));
 
         try
         {
+            var containerClient = await GetContainerClientAsync(bucketName, createIfMissing: false, cancellationToken);
+            var blobClient = containerClient.GetBlobClient(fileName);
             await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken);
             _filesDeleted.Add(1);
+        }
+        catch (RequestFailedException e) when (e.Status == (int)HttpStatusCode.NotFound)
+        {
+            // Delete is idempotent. Azure can report a missing container as a 404
+            // before DeleteIfExistsAsync gets a chance to report a missing blob.
+            _filesDeleted.Add(1);
+            _logger.LogDebug(LogEvents.DeleteNotFound, "Azure container or blob was already absent while deleting a file.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+             throw;
         }
         catch (Exception e)
         {
              _filesFailed.Add(1);
-             _logger.LogError(e, "Encountered an error while deleting file. {ContainerName} {FileName}", bucketName, fileName);
+             _logger.LogError(LogEvents.DeleteFailed, e, "Azure cloud-storage delete failed");
              throw;
         }
     }
@@ -220,20 +257,20 @@ public class Client : ICloudFileService
     public async Task CopyFileAsync(string sourceBucketName, string sourceFileName, string destinationBucketName, string destinationFileName, CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(CopyFileAsync));
-        activity?.SetTag("sourceBucket", sourceBucketName);
-        activity?.SetTag("destinationBucket", destinationBucketName);
 
         if (string.IsNullOrWhiteSpace(sourceBucketName)) throw new ArgumentException("Source bucket name cannot be null or whitespace.", nameof(sourceBucketName));
+        if (string.IsNullOrWhiteSpace(sourceFileName)) throw new ArgumentException("Source file name cannot be null or whitespace.", nameof(sourceFileName));
         if (string.IsNullOrWhiteSpace(destinationBucketName)) throw new ArgumentException("Destination bucket name cannot be null or whitespace.", nameof(destinationBucketName));
-
-        var sourceContainer = await GetContainerClientAsync(sourceBucketName, cancellationToken);
-        var sourceBlob = sourceContainer.GetBlobClient(sourceFileName);
-
-        var destinationContainer = await GetContainerClientAsync(destinationBucketName, cancellationToken);
-        var destinationBlob = destinationContainer.GetBlobClient(destinationFileName);
+        if (string.IsNullOrWhiteSpace(destinationFileName)) throw new ArgumentException("Destination file name cannot be null or whitespace.", nameof(destinationFileName));
 
         try
         {
+             var sourceContainer = await GetContainerClientAsync(sourceBucketName, createIfMissing: false, cancellationToken);
+             var sourceBlob = sourceContainer.GetBlobClient(sourceFileName);
+
+             var destinationContainer = await GetContainerClientAsync(destinationBucketName, createIfMissing: true, cancellationToken);
+             var destinationBlob = destinationContainer.GetBlobClient(destinationFileName);
+
              if (!await sourceBlob.ExistsAsync(cancellationToken))
              {
                   throw new FileNotFoundException($"Source file {sourceFileName} in bucket {sourceBucketName} not found.");
@@ -244,10 +281,14 @@ public class Client : ICloudFileService
              var operation = await destinationBlob.StartCopyFromUriAsync(new Uri(sourceUri), cancellationToken: cancellationToken);
              await operation.WaitForCompletionAsync(cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+             throw;
+        }
         catch (Exception ex)
         {
              _filesFailed.Add(1);
-             _logger.LogError(ex, "Error copying file");
+             _logger.LogError(LogEvents.CopyFailed, ex, "Error copying file");
              throw;
         }
     }
@@ -255,56 +296,104 @@ public class Client : ICloudFileService
     public async IAsyncEnumerable<CloudFileMetadata> GetFileListAsync(string bucketName, string? prefix = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using var activity = _activitySource.StartActivity(nameof(GetFileListAsync));
-        activity?.SetTag("bucket", bucketName);
 
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
-        var containerClient = await GetContainerClientAsync(bucketName, cancellationToken);
-
+        BlobContainerClient containerClient;
         AsyncPageable<BlobItem> blobs;
         try
         {
+             containerClient = await GetContainerClientAsync(bucketName, createIfMissing: false, cancellationToken);
              blobs = containerClient.GetBlobsAsync(prefix: prefix, cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+             throw;
         }
         catch (Exception e)
         {
              _filesFailed.Add(1);
-             _logger.LogError(e, "Encountered an error while getting file list. {Prefix} {ContainerName}", prefix, bucketName);
+             _logger.LogError(LogEvents.ListFailed, e, "Azure cloud-storage listing failed");
              throw;
         }
 
-        await foreach (var blobItem in blobs)
+        IAsyncEnumerator<BlobItem> enumerator;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            yield return new CloudFileMetadata(
-                bucketName,
-                blobItem.Name,
-                (ulong?)blobItem.Properties.ContentLength,
-                blobItem.Properties.LastModified?.UtcDateTime,
-                blobItem.Properties.ContentType,
-                GetBlobSasUri(containerClient.GetBlobClient(blobItem.Name), BlobSasPermissions.Read, 60)
-            );
+            enumerator = blobs.GetAsyncEnumerator(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.ListFailed, exception, "Azure cloud-storage listing failed");
+            throw;
+        }
+
+        await using (enumerator)
+        {
+            while (true)
+            {
+                CloudFileMetadata metadata;
+                try
+                {
+                    if (!await enumerator.MoveNextAsync())
+                    {
+                        break;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    BlobItem blobItem = enumerator.Current;
+                    metadata = new CloudFileMetadata(
+                        bucketName,
+                        blobItem.Name,
+                        (ulong?)blobItem.Properties.ContentLength,
+                        blobItem.Properties.LastModified?.UtcDateTime,
+                        blobItem.Properties.ContentType,
+                        GetBlobSasUri(containerClient.GetBlobClient(blobItem.Name), BlobSasPermissions.Read, 60)
+                    );
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _filesFailed.Add(1);
+                    _logger.LogError(LogEvents.ListFailed, exception, "Azure cloud-storage listing failed");
+                    throw;
+                }
+
+                yield return metadata;
+            }
         }
     }
 
     public string GetSignedUploadUrl(string bucketName, string filename, string contentType, int expirationMinutes = 60)
     {
         if (string.IsNullOrWhiteSpace(bucketName)) throw new ArgumentException("Bucket name cannot be null or whitespace.", nameof(bucketName));
+        if (string.IsNullOrWhiteSpace(filename)) throw new ArgumentException("File name cannot be null or whitespace.", nameof(filename));
+        if (string.IsNullOrWhiteSpace(contentType)) throw new ArgumentException("Content type cannot be null or whitespace.", nameof(contentType));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expirationMinutes);
         var containerClient = _serviceClient.GetBlobContainerClient(bucketName);
         var blobClient = containerClient.GetBlobClient(filename);
         return GetBlobSasUri(blobClient, BlobSasPermissions.Write, expirationMinutes);
     }
 
-    private async Task<BlobContainerClient> GetContainerClientAsync(string bucketName, CancellationToken cancellationToken)
+    private async Task<BlobContainerClient> GetContainerClientAsync(
+        string bucketName,
+        bool createIfMissing,
+        CancellationToken cancellationToken)
     {
         var containerClient = _serviceClient.GetBlobContainerClient(bucketName);
 
-        // Optimization: Check cache first. If it's there, we assume it exists.
-        if (_containerExistenceCache.ContainsKey(bucketName))
+        if (!createIfMissing || _containerExistenceCache.ContainsKey(bucketName))
         {
             return containerClient;
         }
 
-        // If not in cache, create if not exists and add to cache.
         await containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
         _containerExistenceCache.TryAdd(bucketName, true);
         
@@ -313,6 +402,7 @@ public class Client : ICloudFileService
 
     private static string GetBlobSasUri(BlobClient blobClient, BlobSasPermissions permissions, int expirationMinutes)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expirationMinutes);
         if (!blobClient.CanGenerateSasUri) return string.Empty;
 
         var sasBuilder = new BlobSasBuilder
@@ -326,5 +416,29 @@ public class Client : ICloudFileService
         sasBuilder.SetPermissions(permissions);
 
         return blobClient.GenerateSasUri(sasBuilder).ToString();
+    }
+
+    private FileStream OpenUploadSourceFile(string sourcePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return new FileStream(
+                sourcePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _filesFailed.Add(1);
+            _logger.LogError(LogEvents.UploadFailed, exception, "Could not open the Azure cloud-storage upload source file");
+            throw;
+        }
     }
 }

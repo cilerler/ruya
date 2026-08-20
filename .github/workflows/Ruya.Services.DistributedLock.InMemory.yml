@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Services.DistributedLock.InMemory.yml'
       - 'src/Ruya.Services.DistributedLock.InMemory/**'
+      - 'tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests/**'
 
 jobs:
   build:
@@ -23,7 +24,10 @@ jobs:
     with:
       project-name: 'Ruya.Services.DistributedLock.InMemory'
       project-path: './src/Ruya.Services.DistributedLock.InMemory/Ruya.Services.DistributedLock.InMemory.csproj'
-      test-project-paths: './tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests.csproj'
+      test-project-paths: |
+        ./tests/Ruya.Services.DistributedLock.Unit.Tests/Ruya.Services.DistributedLock.Unit.Tests.csproj
+        ./tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests/Ruya.Services.DistributedLock.InMemory.Unit.Tests.csproj
+      test-configuration: 'Debug'
       dispatch-event-type: 'Ruya.Services.DistributedLock.InMemory'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
       use-testcontainers: false

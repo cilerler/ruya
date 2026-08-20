@@ -5,22 +5,30 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<Description>SQL Server provider implementation (table-based message queue)</Description>
+		<Description>SQL Server Service Broker message queue provider</Description>
 		<PackageTags>messaging;sqlserver;mssql;queue;event-driven</PackageTags>
 		<Version>8.2</Version>
 	</PropertyGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Release'">
+	<ItemGroup Condition="'$(Configuration)' == 'Release' And '$(UseLocalMessageQueueProjectReference)' != 'true'">
 		<PackageReference Include="Ruya.Services.MessageQueue" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+	<ItemGroup Condition="'$(Configuration)' == 'Debug' Or '$(UseLocalMessageQueueProjectReference)' == 'true'">
 		<ProjectReference Include="..\Ruya.Services.MessageQueue\Ruya.Services.MessageQueue.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Data.SqlClient" />
 		<PackageReference Include="Polly" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Include="Resources\SQL\*.sql" />
+		<None Update="Resources\SQL\ServiceBrokerSchema.sql"
+			CopyToOutputDirectory="PreserveNewest"
+			Pack="true"
+			PackagePath="contentFiles\any\any\Resources\SQL\ServiceBrokerSchema.sql" />
 	</ItemGroup>
 
 </Project>

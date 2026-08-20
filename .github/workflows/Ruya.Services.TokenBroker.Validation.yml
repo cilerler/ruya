@@ -24,6 +24,7 @@ jobs:
       project-name: 'Ruya.Services.TokenBroker.Validation'
       project-path: './src/Ruya.Services.TokenBroker.Validation/Ruya.Services.TokenBroker.Validation.csproj'
       # test-project-paths:
+      use-local-tokenbroker-project-references: true
       dispatch-event-type: 'Ruya.Services.TokenBroker.Validation'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

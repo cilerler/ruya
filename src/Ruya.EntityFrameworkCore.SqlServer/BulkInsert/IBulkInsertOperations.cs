@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
@@ -114,11 +115,13 @@ public sealed class BulkInsertOptions
     /// <summary>
     /// Batch size for bulk copy. Default is 1000.
     /// </summary>
+    [Range(1, 1_000_000)]
     public int BatchSize { get; set; } = 1000;
 
     /// <summary>
     /// Timeout in seconds. Default is 30.
     /// </summary>
+    [Range(1, 86400)]
     public int Timeout { get; set; } = 30;
 
     /// <summary>
@@ -151,6 +154,7 @@ public sealed class BulkInsertOptions
     /// If null, defaults to <see cref="BatchSize"/> when <see cref="NotifyAfter"/> is set.
     /// This allows finer-grained progress updates without changing the write batch size.
     /// </summary>
+    [Range(1, int.MaxValue)]
     public int? NotifyAfterRows { get; set; }
 
     /// <summary>

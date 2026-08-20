@@ -8,7 +8,15 @@ public static class ServiceCollectionValidationExtensions
 {
     public static IServiceCollection EnsureServicesRegistered(this IServiceCollection services, params Type[] requiredServices)
     {
+		ArgumentNullException.ThrowIfNull(services);
+		ArgumentNullException.ThrowIfNull(requiredServices);
+		if (requiredServices.Any(static serviceType => serviceType is null))
+		{
+			throw new ArgumentException("Required service types cannot contain null values.", nameof(requiredServices));
+		}
+
         var missing = requiredServices
+			.Distinct()
             .Where(t => !services.Any(sd => sd.ServiceType == t))
             .ToList();
 

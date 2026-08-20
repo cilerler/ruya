@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 using Ruya.Services.ReliableMessaging.Inbox;
@@ -36,7 +36,11 @@ public static class StartupExtensions
 		ArgumentNullException.ThrowIfNull(services);
 
 		var optionsBuilder = services.AddOptions<ReliableMessagingOptions>()
-			.BindConfiguration(ReliableMessagingOptions.ConfigurationSectionName);
+			.BindConfiguration(ReliableMessagingOptions.ConfigurationSectionName)
+			.ValidateOnStart();
+
+		services.TryAddEnumerable(
+			ServiceDescriptor.Singleton<IValidateOptions<ReliableMessagingOptions>, ReliableMessagingOptionsValidator>());
 
 		if (configure is not null)
 		{

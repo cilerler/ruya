@@ -1,5 +1,4 @@
 using System;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Ruya.Services.DistributedLock.Abstractions;
@@ -34,24 +33,10 @@ public static class ServiceCollectionExtensions
         // Register core services
         services.AddDistributedLockCore();
 
-        // Register settings with configuration support
-        services.AddOptions<DistributedLockSettings>()
-            .Configure<IConfiguration>((settings, configuration) =>
-            {
-                ArgumentNullException.ThrowIfNull(configuration);
-
-                // Bind from configuration section
-                var section = configuration.GetSection(DistributedLockSettings.ConfigurationSectionName);
-                if (section.Exists())
-                {
-                    section.Bind(settings);
-                }
-
-                // Apply programmatic configuration if provided
-                configureSettings?.Invoke(settings);
-            })
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        if (configureSettings is not null)
+        {
+            services.Configure(configureSettings);
+        }
 
         // Register InMemory provider
         services.TryAddSingleton<IDistributedLockProvider, InMemoryLockProvider>();

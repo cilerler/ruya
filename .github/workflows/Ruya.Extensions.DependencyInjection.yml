@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.Extensions.DependencyInjection.yml'
       - 'src/Ruya.Extensions.DependencyInjection/**'
+      - 'tests/Ruya.Extensions.DependencyInjection.Unit.Tests/**'
 
 jobs:
   build:
@@ -23,7 +24,7 @@ jobs:
     with:
       project-name: 'Ruya.Extensions.DependencyInjection'
       project-path: './src/Ruya.Extensions.DependencyInjection/Ruya.Extensions.DependencyInjection.csproj'
-      # test-project-paths:
+      test-project-paths: './tests/Ruya.Extensions.DependencyInjection.Unit.Tests/Ruya.Extensions.DependencyInjection.Unit.Tests.csproj'
       dispatch-event-type: 'Ruya.Extensions.DependencyInjection'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

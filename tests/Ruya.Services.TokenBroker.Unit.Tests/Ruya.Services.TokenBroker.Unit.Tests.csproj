@@ -23,8 +23,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Ruya.Services.DistributedLock.Abstractions\Ruya.Services.DistributedLock.Abstractions.csproj" />
+		<ProjectReference Include="..\..\src\Ruya.Services.TokenBroker.Abstractions\Ruya.Services.TokenBroker.Abstractions.csproj" />
 		<ProjectReference Include="..\..\src\Ruya.Services.TokenBroker\Ruya.Services.TokenBroker.csproj" />
 		<ProjectReference Include="..\..\src\Ruya.Services.TokenBroker.Client\Ruya.Services.TokenBroker.Client.csproj" />
+		<ProjectReference Include="..\..\src\Ruya.Services.TokenBroker.Validation\Ruya.Services.TokenBroker.Validation.csproj" />
 	</ItemGroup>
 
 </Project>

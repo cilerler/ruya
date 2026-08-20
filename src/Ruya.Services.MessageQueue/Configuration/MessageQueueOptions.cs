@@ -11,6 +11,11 @@ namespace Ruya.Services.MessageQueue.Configuration;
 public sealed class MessageQueueOptions
 {
     /// <summary>
+    /// Configuration section used by the parameterless registration overload.
+    /// </summary>
+    public const string ConfigurationSectionName = nameof(Ruya.Services.MessageQueue);
+
+    /// <summary>
     /// Default provider to use when no provider is specified
     /// </summary>
     public string? DefaultProvider { get; set; }
@@ -31,7 +36,9 @@ public sealed class MessageQueueOptions
     public string Serializer { get; set; } = "json";
 
     /// <summary>
-    /// Global timeout for operations
+    /// Default timeout applied to finite queue operations such as creation, publishing, and
+    /// health checks. Subscription lifetime tokens are forwarded unchanged so host shutdown can
+    /// continue to cancel handlers after setup completes.
     /// </summary>
     public TimeSpan DefaultTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -57,8 +64,10 @@ public class ProviderConfiguration
     public required string Type { get; set; }
 
     /// <summary>
-    /// Connection string or configuration
+    /// Released 8.x compatibility placeholder. Provider credentials are resolved by each provider
+    /// from its descriptive connection-string catalog key; this value is never consumed.
     /// </summary>
+    [Obsolete("ProviderConfiguration.ConnectionString is not consumed. Configure the provider-specific *ConnectionStringKey and supply its value through ConnectionStrings and secrets. This property will be removed in version 9.0.")]
     public string? ConnectionString { get; set; }
 
     /// <summary>
@@ -74,15 +83,38 @@ public sealed class MessageQueueOptionsValidator : IValidateOptions<MessageQueue
 {
     public ValidateOptionsResult Validate(string? name, MessageQueueOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         if (options.DefaultTimeout <= TimeSpan.Zero)
         {
             return ValidateOptionsResult.Fail("DefaultTimeout must be greater than zero");
+        }
+
+        if (!string.Equals(options.Serializer, "json", StringComparison.OrdinalIgnoreCase))
+        {
+            return ValidateOptionsResult.Fail(
+                $"Serializer '{options.Serializer}' is not supported. The named Serializer setting " +
+                "supports only 'json'; custom IMessageSerializer implementations are registered " +
+                "independently with AddSerializer<TSerializer>().");
         }
 
         if (!string.IsNullOrEmpty(options.DefaultProvider) &&
             !options.Providers.ContainsKey(options.DefaultProvider))
         {
             return ValidateOptionsResult.Fail($"DefaultProvider '{options.DefaultProvider}' is not configured in Providers");
+        }
+
+#pragma warning disable CS0618 // Released compatibility property must fail safely until version 9.0.
+        var providerWithInlineConnection = options.Providers.FirstOrDefault(
+            static provider => !string.IsNullOrWhiteSpace(provider.Value.ConnectionString));
+#pragma warning restore CS0618
+        if (providerWithInlineConnection.Value is not null)
+        {
+            return ValidateOptionsResult.Fail(
+                $"Provider '{providerWithInlineConnection.Key}' sets the obsolete " +
+                "ProviderConfiguration.ConnectionString value, which is not consumed. Remove it, " +
+                "configure that provider's descriptive *ConnectionStringKey, and supply the resolved " +
+                "value through ConnectionStrings and secrets.");
         }
 
         foreach (var provider in options.Providers.Where(p => p.Value.Enabled))

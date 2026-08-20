@@ -1,0 +1,74 @@
+name: Ruya.Services.CloudStorage.Contracts
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches: [main, release-preview, release-qa, develop]
+    paths:
+      - '.github/workflows/Ruya.Services.CloudStorage.Contracts.yml'
+      - 'src/Ruya.Services.CloudStorage.Abstractions/**'
+      - 'src/Ruya.Services.CloudStorage.Amazon/**'
+      - 'src/Ruya.Services.CloudStorage.Azure/**'
+      - 'src/Ruya.Services.CloudStorage.Google/**'
+      - 'src/Ruya.Services.CloudStorage.Local/**'
+      - 'tests/Ruya.Services.CloudStorage.Unit.Tests/**'
+      - 'tests/Ruya.Services.CloudStorage.Integration.Tests/**'
+      - 'tests/Ruya.Services.CloudStorage.Tests.Common/**'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test shared CloudStorage contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build and Test Contracts
+        shell: pwsh
+        run: |
+          $testProjects = @(
+            './tests/Ruya.Services.CloudStorage.Unit.Tests/Ruya.Services.CloudStorage.Unit.Tests.csproj'
+            './tests/Ruya.Services.CloudStorage.Integration.Tests/Ruya.Services.CloudStorage.Integration.Tests.csproj'
+          )
+
+          foreach ($testProject in $testProjects) {
+            dotnet restore $testProject -p:Configuration=Debug
+            if ($LASTEXITCODE -ne 0) {
+              throw "Restore failed: $testProject"
+            }
+
+            dotnet build $testProject --configuration Debug --no-restore
+            if ($LASTEXITCODE -ne 0) {
+              throw "Build failed: $testProject"
+            }
+
+            dotnet test `
+              --project $testProject `
+              --configuration Debug `
+              --no-build `
+              --no-restore `
+              --verbosity normal
+            if ($LASTEXITCODE -ne 0) {
+              throw "Tests failed: $testProject"
+            }
+          }

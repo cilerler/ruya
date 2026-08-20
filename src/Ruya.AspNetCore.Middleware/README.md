@@ -17,6 +17,9 @@ ASP.NET Core middleware for adding application environment information to HTTP r
 | `X-Environment` | Environment name (from `ASPNETCORE_ENVIRONMENT` or `DOTNET_ENVIRONMENT`) | Enabled |
 | `X-MachineName` | Server machine name | **Disabled** (security) |
 
+The outer process writes its configured values immediately before the response starts. If a proxied downstream
+service supplied the same header, the outer value replaces it so each header has one authoritative value.
+
 ## Installation
 
 ```bash

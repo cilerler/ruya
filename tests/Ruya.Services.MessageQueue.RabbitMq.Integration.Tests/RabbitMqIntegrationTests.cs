@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.RabbitMq;
+using RabbitMQ.Client;
 using Ruya.Services.MessageQueue.Extensions;
 using Ruya.Services.MessageQueue.Configuration;
 using Ruya.Services.MessageQueue.RabbitMq;
@@ -11,16 +12,21 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading.Tasks;
 using System;
 using Ruya.Services.MessageQueue.Abstractions;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Net.Http;
 using System.Linq;
+using System.Text.Json;
 
 namespace Ruya.Services.MessageQueue.Integration.Tests;
 
 [TestClass]
 public class RabbitMQIntegrationTests
 {
+    private const string RabbitMqUsername = "useradmin";
+    private const string RabbitMqPassword = "passwordadmin";
+
     private RabbitMqContainer? _rabbitMqContainer;
     private IServiceProvider? _serviceProvider;
     private IMessageQueueFactory? _factory;
@@ -32,8 +38,8 @@ public class RabbitMQIntegrationTests
         // TestContainers will assign random external ports for both
         _rabbitMqContainer = new RabbitMqBuilder()
         .WithImage("cilerler/rabbitmq:4.2.1-management-delayed")
-            .WithUsername("guest")
-            .WithPassword("guest")
+            .WithUsername(RabbitMqUsername)
+            .WithPassword(RabbitMqPassword)
             .WithPortBinding(RabbitMqBuilder.RabbitMqPort, true) // AMQP port 5672 → random external port
             .WithPortBinding(15672, true) // Management HTTP API port → random external port
             .WithCommand(
@@ -64,8 +70,8 @@ public class RabbitMQIntegrationTests
         {
             options.Host = hostname;
             options.Port = amqpPort;
-            options.Username = "guest";
-            options.Password = "guest";
+            options.Username = RabbitMqUsername;
+            options.Password = RabbitMqPassword;
             options.VirtualHost = "/";
             options.UsePublisherConfirms = true;
             options.AutoCreateTopology = true;
@@ -125,6 +131,59 @@ public class RabbitMQIntegrationTests
         Assert.IsNotNull(receivedMessages[0]);
         Assert.AreEqual(1, receivedMessages[0].Id);
         Assert.AreEqual("Hello RabbitMQ", receivedMessages[0].Content);
+    }
+
+    [TestMethod]
+    public async Task PublishAsync_ConfirmationOptOut_UsesNonConfirmingChannelAndDeliversMessage()
+    {
+        // Arrange
+        const string topic = "confirmation-opt-out-topic";
+        var bus = await _factory!.CreateQueueAsync("rabbitmq");
+        var received = new TaskCompletionSource<TestMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var subscription = await bus.SubscribeAsync<TestMessage>(
+            topic,
+            context =>
+            {
+                received.TrySetResult(context.Envelope.Payload);
+                return Task.FromResult(MessageResult.Success());
+            },
+            new SubscribeOptions { ConsumerGroup = "confirmation-opt-out-consumer" });
+        await Task.Delay(500);
+
+        // Act
+        var messageId = await bus.PublishAsync(
+            topic,
+            new TestMessage { Id = 11, Content = "No publisher confirmation" },
+            new PublishOptions
+            {
+                WaitForConfirmation = false,
+                Timeout = TimeSpan.FromSeconds(5)
+            });
+        var delivered = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Assert
+        Assert.IsFalse(string.IsNullOrWhiteSpace(messageId));
+        Assert.AreEqual(11, delivered.Id);
+        Assert.AreEqual("No publisher confirmation", delivered.Content);
+    }
+
+    [TestMethod]
+    public async Task SubscribeAsync_CallerAlreadyCancelled_PropagatesCancellationThroughSetup()
+    {
+        // Arrange
+        var bus = await _factory!.CreateQueueAsync("rabbitmq");
+        using var callerCancellation = new CancellationTokenSource();
+        await callerCancellation.CancelAsync();
+
+        // Act
+        var exception = await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            bus.SubscribeAsync<TestMessage>(
+                $"cancelled-subscription-{Guid.NewGuid():N}",
+                _ => Task.FromResult(MessageResult.Success()),
+                cancellationToken: callerCancellation.Token));
+
+        // Assert
+        Assert.AreEqual(callerCancellation.Token, exception.CancellationToken);
     }
 
     [TestMethod]
@@ -443,38 +502,36 @@ public class RabbitMQIntegrationTests
     }
 
     [TestMethod]
-    public async Task DeadLetterQueue_ShouldMoveToDeadLetterAfterMaxRetries()
+    public async Task RetryResult_ShouldStopAfterMaxDeliveryCount()
     {
         // Arrange
         var bus = await _factory!.CreateQueueAsync("rabbitmq");
-        var receivedMessages = new List<TestMessage>();
         var retryCount = 0;
-        var taskCompletionSource = new TaskCompletionSource<bool>();
-        var lockObj = new object();
+        var finalAttempt = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Subscribe with DLQ enabled
-        await bus.SubscribeAsync<TestMessage>("dlq-test-topic", async context =>
+        // Subscribe with a finite delivery limit and deterministic retry timing.
+        await bus.SubscribeAsync<TestMessage>("dlq-test-topic", context =>
         {
-            lock (lockObj)
+            var attempt = Interlocked.Increment(ref retryCount);
+            if (attempt == 4)
             {
-                retryCount++;
+                finalAttempt.TrySetResult(true);
             }
-            // Fail 4 times, then it should go to DLQ
-            // Note: In this test we just verify it retries. Verifying it's in DLQ requires consuming from DLQ.
-            return MessageResult.Retry();
+
+            return Task.FromResult(MessageResult.Retry());
         }, new SubscribeOptions
         {
             ConsumerGroup = "dlq-consumer",
-            RetryPolicy = new RetryPolicy { MaxRetryAttempts = 3 }
+            MaxDeliveryCount = 4,
+            RetryPolicy = new RetryPolicy
+            {
+                MaxRetryAttempts = 3,
+                InitialDelay = TimeSpan.FromMilliseconds(25),
+                MaxDelay = TimeSpan.FromMilliseconds(25),
+                UseExponentialBackoff = false,
+                UseJitter = false
+            }
         });
-
-        // Subscribe to DLQ to verify message arrived there
-        // The DLQ name is usually {ConsumerGroup}-dlq or similar depending on implementation
-        // Assuming default naming convention: {Topic}.{ConsumerGroup}.dlq or just configuring a consumer for the DLQ
-        // For this test, we'll just verify retries happen.
-        // To properly test DLQ, we need to know the exact DLQ name generated by the library.
-        // Let's assume we can subscribe to the DLQ topic if it's routed there.
-        // Or we can just check if the consumer stopped receiving it after retries.
 
         await Task.Delay(500);
 
@@ -482,10 +539,259 @@ public class RabbitMQIntegrationTests
         await bus.PublishAsync("dlq-test-topic", new TestMessage { Id = 1, Content = "Fail me" });
 
         // Assert
-        await Task.Delay(3000); // Wait for retries
+        await finalAttempt.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(4, Volatile.Read(ref retryCount));
+    }
 
-        // Should have retried 4 times (1 initial + 3 retries)
-        Assert.IsTrue(retryCount >= 4);
+    [TestMethod]
+    public async Task PublishAsync_ExplicitMessageIdFanOut_ShouldTrackRetryDeliveryCountPerConsumerGroup()
+    {
+        // Arrange
+        const string topic = "message-id-fanout-retry-topic";
+        const string messageId = "shared-message-id";
+        var bus = await _factory!.CreateQueueAsync("rabbitmq");
+        var groupOneDeliveries = new ConcurrentQueue<(string MessageId, int DeliveryCount)>();
+        var groupTwoDeliveries = new ConcurrentQueue<(string MessageId, int DeliveryCount)>();
+        var groupOneAttempts = 0;
+        var groupTwoAttempts = 0;
+        var groupOneCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var groupTwoCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await bus.SubscribeAsync<TestMessage>(topic, context =>
+        {
+            groupOneDeliveries.Enqueue((context.Envelope.MessageId, context.DeliveryCount));
+            if (Interlocked.Increment(ref groupOneAttempts) == 1)
+            {
+                return Task.FromResult(MessageResult.Retry("retry once"));
+            }
+
+            groupOneCompleted.TrySetResult(true);
+            return Task.FromResult(MessageResult.Success());
+        }, new SubscribeOptions
+        {
+            ConsumerGroup = "message-id-fanout-group-one",
+            MaxDeliveryCount = 2,
+            RetryPolicy = new RetryPolicy
+            {
+                MaxRetryAttempts = 1,
+                InitialDelay = TimeSpan.FromMilliseconds(25),
+                MaxDelay = TimeSpan.FromMilliseconds(25),
+                UseExponentialBackoff = false,
+                UseJitter = false
+            }
+        });
+
+        await bus.SubscribeAsync<TestMessage>(topic, context =>
+        {
+            groupTwoDeliveries.Enqueue((context.Envelope.MessageId, context.DeliveryCount));
+            if (Interlocked.Increment(ref groupTwoAttempts) == 1)
+            {
+                return Task.FromResult(MessageResult.Retry("retry once"));
+            }
+
+            groupTwoCompleted.TrySetResult(true);
+            return Task.FromResult(MessageResult.Success());
+        }, new SubscribeOptions
+        {
+            ConsumerGroup = "message-id-fanout-group-two",
+            MaxDeliveryCount = 2,
+            RetryPolicy = new RetryPolicy
+            {
+                MaxRetryAttempts = 1,
+                InitialDelay = TimeSpan.FromMilliseconds(25),
+                MaxDelay = TimeSpan.FromMilliseconds(25),
+                UseExponentialBackoff = false,
+                UseJitter = false
+            }
+        });
+
+        await Task.Delay(500);
+
+        // Act
+        var publishedMessageId = await bus.PublishAsync(
+            topic,
+            new TestMessage { Id = 1, Content = "Retry once per group" },
+            new PublishOptions { MessageId = messageId });
+
+        // Assert
+        await Task.WhenAll(groupOneCompleted.Task, groupTwoCompleted.Task)
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.AreEqual(messageId, publishedMessageId);
+        CollectionAssert.AreEqual(new[] { 1, 2 }, groupOneDeliveries.Select(static delivery => delivery.DeliveryCount).ToArray());
+        CollectionAssert.AreEqual(new[] { 1, 2 }, groupTwoDeliveries.Select(static delivery => delivery.DeliveryCount).ToArray());
+        Assert.IsTrue(groupOneDeliveries.All(delivery => delivery.MessageId == messageId));
+        Assert.IsTrue(groupTwoDeliveries.All(delivery => delivery.MessageId == messageId));
+    }
+
+    [TestMethod]
+    public async Task MalformedBodyWithoutMessageId_ShouldRejectToDeadLetterQueueWithoutRequeueing()
+    {
+        // Arrange
+        const string topic = "malformed-no-message-id-topic";
+        const string consumerGroup = "malformed-no-message-id-consumer";
+        var deadLetterQueue = $"{topic}.dlq";
+        var malformedBody = new byte[] { 0x7B, 0x22, 0x70, 0x61 };
+        var handlerInvocations = 0;
+        var bus = await _factory!.CreateQueueAsync("rabbitmq");
+
+        await bus.SubscribeAsync<TestMessage>(topic, context =>
+        {
+            Interlocked.Increment(ref handlerInvocations);
+            return Task.FromResult(MessageResult.Success());
+        }, new SubscribeOptions
+        {
+            ConsumerGroup = consumerGroup,
+            RequeueOnException = true,
+            MaxDeliveryCount = 4
+        });
+
+        await Task.Delay(500);
+
+        var connectionFactory = new ConnectionFactory
+        {
+            HostName = _rabbitMqContainer!.Hostname,
+            Port = _rabbitMqContainer.GetMappedPublicPort(RabbitMqBuilder.RabbitMqPort),
+            UserName = RabbitMqUsername,
+            Password = RabbitMqPassword,
+            VirtualHost = "/"
+        };
+        await using var connection = await connectionFactory.CreateConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        var propertiesWithoutMessageId = new BasicProperties
+        {
+            ContentType = "application/json",
+            DeliveryMode = DeliveryModes.Persistent
+        };
+
+        // Act
+        await channel.BasicPublishAsync(
+            exchange: topic,
+            routingKey: topic,
+            mandatory: false,
+            basicProperties: propertiesWithoutMessageId,
+            body: malformedBody,
+            cancellationToken: CancellationToken.None);
+
+        BasicGetResult? deadLetteredMessage = null;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (deadLetteredMessage is null && DateTimeOffset.UtcNow < deadline)
+        {
+            deadLetteredMessage = await channel.BasicGetAsync(
+                deadLetterQueue,
+                autoAck: true,
+                cancellationToken: CancellationToken.None);
+            if (deadLetteredMessage is null)
+            {
+                await Task.Delay(100);
+            }
+        }
+
+        // Assert
+        Assert.IsNotNull(deadLetteredMessage, "Malformed input should be rejected to the configured dead-letter queue.");
+        CollectionAssert.AreEqual(malformedBody, deadLetteredMessage!.Body.ToArray());
+        Assert.IsTrue(string.IsNullOrEmpty(deadLetteredMessage.BasicProperties.MessageId));
+        Assert.AreEqual(0, Volatile.Read(ref handlerInvocations));
+
+        await Task.Delay(500);
+        Assert.IsNull(
+            await channel.BasicGetAsync(consumerGroup, autoAck: true, cancellationToken: CancellationToken.None),
+            "The malformed message must not remain in the source queue.");
+        Assert.IsNull(
+            await channel.BasicGetAsync(deadLetterQueue, autoAck: true, cancellationToken: CancellationToken.None),
+            "A poison-message loop must not create additional dead-letter deliveries.");
+    }
+
+    [TestMethod]
+    public async Task ValidEnvelopeWithoutStableMessageId_ShouldRejectToDeadLetterQueueBeforeHandler()
+    {
+        // Arrange
+        const string topic = "valid-blank-message-id-topic";
+        const string consumerGroup = "valid-blank-message-id-consumer";
+        var deadLetterQueue = $"{topic}.dlq";
+        var handlerInvocations = 0;
+        var envelopeWithoutStableId = new MessageEnvelope<TestMessage>
+        {
+            MessageId = "   ",
+            MessageType = typeof(TestMessage).FullName!,
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = new TestMessage { Id = 1, Content = "Retry forever without a stable identity" }
+        };
+        var validBody = JsonSerializer.SerializeToUtf8Bytes(envelopeWithoutStableId);
+        var bus = await _factory!.CreateQueueAsync("rabbitmq");
+
+        await bus.SubscribeAsync<TestMessage>(topic, context =>
+        {
+            Interlocked.Increment(ref handlerInvocations);
+            return Task.FromResult(MessageResult.Retry("retry forever"));
+        }, new SubscribeOptions
+        {
+            ConsumerGroup = consumerGroup,
+            MaxDeliveryCount = 5,
+            RetryPolicy = new RetryPolicy
+            {
+                MaxRetryAttempts = 4,
+                InitialDelay = TimeSpan.FromMilliseconds(25),
+                MaxDelay = TimeSpan.FromMilliseconds(25),
+                UseExponentialBackoff = false,
+                UseJitter = false
+            }
+        });
+
+        await Task.Delay(500);
+
+        var connectionFactory = new ConnectionFactory
+        {
+            HostName = _rabbitMqContainer!.Hostname,
+            Port = _rabbitMqContainer.GetMappedPublicPort(RabbitMqBuilder.RabbitMqPort),
+            UserName = RabbitMqUsername,
+            Password = RabbitMqPassword,
+            VirtualHost = "/"
+        };
+        await using var connection = await connectionFactory.CreateConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        var propertiesWithoutMessageId = new BasicProperties
+        {
+            ContentType = "application/json",
+            DeliveryMode = DeliveryModes.Persistent
+        };
+
+        // Act
+        await channel.BasicPublishAsync(
+            exchange: topic,
+            routingKey: topic,
+            mandatory: false,
+            basicProperties: propertiesWithoutMessageId,
+            body: validBody,
+            cancellationToken: CancellationToken.None);
+
+        BasicGetResult? deadLetteredMessage = null;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (deadLetteredMessage is null && DateTimeOffset.UtcNow < deadline)
+        {
+            deadLetteredMessage = await channel.BasicGetAsync(
+                deadLetterQueue,
+                autoAck: true,
+                cancellationToken: CancellationToken.None);
+            if (deadLetteredMessage is null)
+            {
+                await Task.Delay(100);
+            }
+        }
+
+        // Assert
+        Assert.IsNotNull(deadLetteredMessage, "A decoded delivery without a stable identity should terminate in the dead-letter queue.");
+        CollectionAssert.AreEqual(validBody, deadLetteredMessage!.Body.ToArray());
+        Assert.IsTrue(string.IsNullOrEmpty(deadLetteredMessage.BasicProperties.MessageId));
+        Assert.AreEqual(0, Volatile.Read(ref handlerInvocations), "The handler must not run for an untrackable delivery.");
+
+        await Task.Delay(500);
+        Assert.IsNull(
+            await channel.BasicGetAsync(consumerGroup, autoAck: true, cancellationToken: CancellationToken.None),
+            "The untrackable message must not remain in the source queue.");
+        Assert.IsNull(
+            await channel.BasicGetAsync(deadLetterQueue, autoAck: true, cancellationToken: CancellationToken.None),
+            "Fail-closed rejection must produce one terminal dead-letter delivery, not a retry loop.");
     }
 
     [TestMethod]
@@ -506,8 +812,8 @@ public class RabbitMQIntegrationTests
         {
             options.Host = _rabbitMqContainer!.Hostname;
             options.Port = _rabbitMqContainer.GetMappedPublicPort(RabbitMqBuilder.RabbitMqPort);
-            options.Username = "guest";
-            options.Password = "guest";
+            options.Username = RabbitMqUsername;
+            options.Password = RabbitMqPassword;
             options.VirtualHost = "/";
             options.UsePublisherConfirms = false;
             options.AutoCreateTopology = true;
@@ -583,8 +889,8 @@ public class RabbitMQIntegrationTests
         {
             options.Host = newHostname;
             options.Port = newPort;
-            options.Username = "guest";
-            options.Password = "guest";
+            options.Username = RabbitMqUsername;
+            options.Password = RabbitMqPassword;
             options.VirtualHost = "/";
             options.UsePublisherConfirms = true;
             options.AutoCreateTopology = true;
@@ -887,7 +1193,7 @@ public class RabbitMQIntegrationTests
         httpClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue(
                 "Basic",
-                Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("guest:guest")));
+                Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes($"{RabbitMqUsername}:{RabbitMqPassword}")));
 
         var response = await httpClient.GetAsync(managementUrl);
 
@@ -912,7 +1218,7 @@ public class RabbitMQIntegrationTests
         httpClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue(
                 "Basic",
-                Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("guest:guest")));
+                Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes($"{RabbitMqUsername}:{RabbitMqPassword}")));
 
         var initialResponse = await httpClient.GetAsync(initialUrl);
         Assert.IsTrue(initialResponse.IsSuccessStatusCode, "Management API should work before restart");
@@ -962,7 +1268,7 @@ public class RabbitMQIntegrationTests
         httpClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue(
                 "Basic",
-                Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("guest:guest")));
+                Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes($"{RabbitMqUsername}:{RabbitMqPassword}")));
 
         var response = await httpClient.GetAsync(queuesUrl);
 

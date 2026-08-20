@@ -15,7 +15,10 @@ on:
     branches: [main, release-preview, release-qa, develop]
     paths:
       - '.github/workflows/Ruya.Services.MessageQueue.RabbitMq.yml'
+      - 'src/Ruya.Services.MessageQueue/**'
       - 'src/Ruya.Services.MessageQueue.RabbitMq/**'
+      - 'tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/**'
+      - 'tests/Ruya.Services.MessageQueue.RabbitMq.Unit.Tests/**'
 
 jobs:
   build:
@@ -23,7 +26,11 @@ jobs:
     with:
       project-name: 'Ruya.Services.MessageQueue.RabbitMq'
       project-path: './src/Ruya.Services.MessageQueue.RabbitMq/Ruya.Services.MessageQueue.RabbitMq.csproj'
-      test-project-paths: './tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests.csproj'
+      test-project-paths: |
+        ./tests/Ruya.Services.MessageQueue.RabbitMq.Unit.Tests/Ruya.Services.MessageQueue.RabbitMq.Unit.Tests.csproj
+        ./tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests/Ruya.Services.MessageQueue.RabbitMq.Integration.Tests.csproj
+      use-testcontainers: true
+      testcontainers-timeout: '1200s'
       dispatch-event-type: 'Ruya.Services.MessageQueue.RabbitMq'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

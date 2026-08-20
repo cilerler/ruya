@@ -15,6 +15,7 @@ namespace Ruya.Services.DistributedLock.Redis.Tests;
 /// These tests verify the lock provider functionality against an actual Redis server.
 /// </summary>
 [TestClass]
+[TestCategory("Integration")]
 public sealed class RedisLockProviderIntegrationTests
 {
     private static RedisContainer? _redisContainer;

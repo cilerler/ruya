@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -13,26 +14,81 @@ namespace Ruya.Services.MessageQueue.MsSql;
 public static class MsSqlExtensions
 {
     /// <summary>
+    /// Adds SQL Server Service Broker options bound from <c>MessageQueue:MsSql</c>.
+    /// </summary>
+    public static IMessageQueueBuilder AddMsSql(this IMessageQueueBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        builder.Services
+            .AddOptions<MsSqlOptions>()
+            .BindConfiguration(MsSqlOptions.ConfigurationSectionName)
+            .ValidateOnStart();
+        RegisterProvider(builder);
+        return builder;
+    }
+
+    /// <summary>
     /// Adds SQL Server Service Broker as a message queue provider
     /// </summary>
     public static IMessageQueueBuilder AddMsSql(
         this IMessageQueueBuilder builder,
         Action<MsSqlOptions> configure)
     {
-        if (builder == null) throw new ArgumentNullException(nameof(builder));
-        if (configure == null) throw new ArgumentNullException(nameof(configure));
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
 
-        // Register options
-        builder.Services.Configure(configure);
-
-        // Validate options
-        builder.Services.AddSingleton<IValidateOptions<MsSqlOptions>, MsSqlOptionsValidator>();
-
-        // Register provider
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IMessageQueueProvider, MsSqlProvider>());
+        builder.Services
+            .AddOptions<MsSqlOptions>()
+            .Configure(configure)
+            .ValidateOnStart();
+        RegisterProvider(builder);
 
         return builder;
+    }
+
+    private static void RegisterProvider(IMessageQueueBuilder builder)
+    {
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<MsSqlOptions>, MsSqlOptionsValidator>());
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<MsSqlOptions>, MsSqlConnectionStringCatalogValidator>());
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IConfigureOptions<MsSqlOptions>, MsSqlConnectionStringResolver>());
+
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IMessageQueueProvider, MsSqlProvider>());
+    }
+
+    internal static void ResolveConnectionString(MsSqlOptions options, IConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(options.MessageQueueConnectionStringKey) ||
+            options.ConnectionStringResolvedFromCatalog)
+        {
+            return;
+        }
+
+        var resolvedConnectionString = configuration.GetConnectionString(options.MessageQueueConnectionStringKey);
+        options.ConnectionString = resolvedConnectionString ?? string.Empty;
+        options.ConnectionStringResolvedFromCatalog = !string.IsNullOrWhiteSpace(resolvedConnectionString);
+    }
+}
+
+internal sealed class MsSqlConnectionStringResolver : IConfigureOptions<MsSqlOptions>
+{
+    private readonly IServiceProvider _serviceProvider;
+
+    public MsSqlConnectionStringResolver(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+    }
+
+    public void Configure(MsSqlOptions options)
+    {
+        var configuration = _serviceProvider.GetService<IConfiguration>();
+        if (configuration is not null)
+        {
+            MsSqlExtensions.ResolveConnectionString(options, configuration);
+        }
     }
 }
 
@@ -73,11 +129,30 @@ internal sealed class MsSqlOptionsValidator : IValidateOptions<MsSqlOptions>
             return ValidateOptionsResult.Fail("PollingIntervalMs must be at least 10ms");
         }
 
-        if (options.EnableConversationPooling && options.MaxPooledConversations < 1)
+#pragma warning disable CS0618 // Compatibility property must remain validated until version 9.0.
+        if (options.EnableConversationPooling)
         {
-            return ValidateOptionsResult.Fail("MaxPooledConversations must be at least 1 when conversation pooling is enabled");
+            return ValidateOptionsResult.Fail(
+                "EnableConversationPooling is not supported by the current Service Broker provider. Leave it disabled.");
         }
+#pragma warning restore CS0618
 
         return ValidateOptionsResult.Success;
+    }
+}
+
+internal sealed class MsSqlConnectionStringCatalogValidator : IValidateOptions<MsSqlOptions>
+{
+    public ValidateOptionsResult Validate(string? name, MsSqlOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.MessageQueueConnectionStringKey))
+        {
+            return ValidateOptionsResult.Skip;
+        }
+
+        return !options.ConnectionStringResolvedFromCatalog
+            ? ValidateOptionsResult.Fail(
+                "MessageQueueConnectionStringKey must identify a configured connection string.")
+            : ValidateOptionsResult.Success;
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Ruya.OpenTelemetry;
 
@@ -9,7 +10,7 @@ namespace Ruya.OpenTelemetry;
 /// </summary>
 public sealed class OpenTelemetrySettings
 {
-    public const string ConfigurationSectionName = "OpenTelemetry";
+    public const string ConfigurationSectionName = nameof(Ruya.OpenTelemetry);
 
     /// <summary>
     /// Service identification settings.
@@ -42,8 +43,17 @@ public sealed class OpenTelemetrySettings
     public KubernetesSettings Kubernetes { get; set; } = new();
 
     /// <summary>
+    /// Activity source names to add to the tracing provider.
+    /// </summary>
+    [SuppressMessage("Design", "CA1002", Justification = "List<T> supports configuration binding consistently with the released Meters property.")]
+    [SuppressMessage("Usage", "CA2227", Justification = "The setter is required for configuration binding.")]
+    public List<string> ActivitySources { get; set; } = [];
+
+    /// <summary>
     /// Meters to add to the metrics provider.
     /// </summary>
+    [SuppressMessage("Design", "CA1002", Justification = "The released List<T> property type is preserved for 8.x binary compatibility and configuration binding.")]
+    [SuppressMessage("Usage", "CA2227", Justification = "The released setter is preserved for 8.x binary compatibility and configuration binding.")]
     public List<string> Meters { get; set; } =
     [
         "Microsoft.AspNetCore.Hosting",
@@ -55,13 +65,13 @@ public sealed class OpenTelemetrySettings
         "System.Net.Http",
         "System.Net.NameResolution",
         "System.Net.Security",
-        "Microsoft.Extensions.Diagnostics.ResourceMonitoring",
-        "Ruya.Diagnostics.DistributedTracing"
+        "Microsoft.Extensions.Diagnostics.ResourceMonitoring"
     ];
 
     /// <summary>
     /// Additional custom tags to add to all telemetry.
     /// </summary>
+    [SuppressMessage("Usage", "CA2227", Justification = "The released setter is preserved for 8.x binary compatibility and configuration binding.")]
     public Dictionary<string, string> CustomTags { get; set; } = new();
 }
 
@@ -154,20 +164,21 @@ public sealed class HttpInstrumentationSettings
     public int MaxBodySizeBytes { get; set; } = 32768; // 32KB default
 
     /// <summary>
-    /// Content types to capture. Empty = all text-based types.
+    /// JSON content types that may be captured. Non-JSON bodies are never
+    /// attached to telemetry because JSON-path redaction cannot protect them.
     /// </summary>
+    [SuppressMessage("Design", "CA1002", Justification = "The released List<T> property type is preserved for 8.x binary compatibility and configuration binding.")]
+    [SuppressMessage("Usage", "CA2227", Justification = "The released setter is preserved for 8.x binary compatibility and configuration binding.")]
     public List<string> AllowedContentTypes { get; set; } =
     [
-        "application/json",
-        "application/xml",
-        "text/plain",
-        "text/xml",
-        "application/x-www-form-urlencoded"
+        "application/json"
     ];
 
     /// <summary>
     /// URL patterns to exclude from body capture (regex).
     /// </summary>
+    [SuppressMessage("Design", "CA1002", Justification = "The released List<T> property type is preserved for 8.x binary compatibility and configuration binding.")]
+    [SuppressMessage("Usage", "CA2227", Justification = "The released setter is preserved for 8.x binary compatibility and configuration binding.")]
     public List<string> ExcludeUrlPatterns { get; set; } =
     [
         "/health",
@@ -179,6 +190,8 @@ public sealed class HttpInstrumentationSettings
     /// <summary>
     /// Headers to redact from capture.
     /// </summary>
+    [SuppressMessage("Design", "CA1002", Justification = "The released List<T> property type is preserved for 8.x binary compatibility and configuration binding.")]
+    [SuppressMessage("Usage", "CA2227", Justification = "The released setter is preserved for 8.x binary compatibility and configuration binding.")]
     public List<string> RedactedHeaders { get; set; } =
     [
         "Authorization",
@@ -191,6 +204,8 @@ public sealed class HttpInstrumentationSettings
     /// <summary>
     /// JSON paths to redact from body (e.g., "$.password", "$.creditCard").
     /// </summary>
+    [SuppressMessage("Design", "CA1002", Justification = "The released List<T> property type is preserved for 8.x binary compatibility and configuration binding.")]
+    [SuppressMessage("Usage", "CA2227", Justification = "The released setter is preserved for 8.x binary compatibility and configuration binding.")]
     public List<string> RedactedJsonPaths { get; set; } =
     [
         "$.password",
@@ -234,6 +249,8 @@ public sealed class SqlInstrumentationSettings
     /// <summary>
     /// Patterns to detect and redact in SQL (case-insensitive).
     /// </summary>
+    [SuppressMessage("Design", "CA1002", Justification = "The released List<T> property type is preserved for 8.x binary compatibility and configuration binding.")]
+    [SuppressMessage("Usage", "CA2227", Justification = "The released setter is preserved for 8.x binary compatibility and configuration binding.")]
     public List<string> SensitivePatterns { get; set; } =
     [
         @"password\s*=\s*'[^']*'",

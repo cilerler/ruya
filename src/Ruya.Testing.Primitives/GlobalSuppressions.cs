@@ -5,8 +5,5 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-[assembly: SuppressMessage("Maintainability", "CA1515:Consider making public types internal", Justification = "<Pending>", Scope = "type", Target = "~T:Ruya.Testing.Primitives.TestHost")]
-[assembly: SuppressMessage("Maintainability", "CA1515:Consider making public types internal", Justification = "<Pending>", Scope = "type", Target = "~T:Ruya.Testing.Primitives.TestBase`1")]
-[assembly: SuppressMessage("Maintainability", "CA1515:Consider making public types internal", Justification = "<Pending>", Scope = "type", Target = "~T:Ruya.Testing.Primitives.StorageTests")]
-[assembly: SuppressMessage("Maintainability", "CA1515:Consider making public types internal", Justification = "<Pending>", Scope = "type", Target = "~T:Ruya.Testing.Primitives.AssemblySetup")]
-[assembly: SuppressMessage("Maintainability", "CA1515:Consider making public types internal", Justification = "<Pending>", Scope = "type", Target = "~T:Ruya.Testing.Primitives.PingPongTests")]
+[assembly: SuppressMessage("Maintainability", "CA1515:Consider making public types internal", Justification = "TestHost is part of the published testing-library API.", Scope = "type", Target = "~T:" + nameof(Ruya) + "." + nameof(Ruya.Testing) + "." + nameof(Ruya.Testing.Primitives) + "." + nameof(Ruya.Testing.Primitives.TestHost))]
+[assembly: SuppressMessage("Maintainability", "CA1515:Consider making public types internal", Justification = "TestBase is part of the published testing-library API.", Scope = "type", Target = "~T:" + nameof(Ruya) + "." + nameof(Ruya.Testing) + "." + nameof(Ruya.Testing.Primitives) + "." + nameof(Ruya.Testing.Primitives.TestBase<object>) + "`1")]

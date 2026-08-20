@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
-using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ruya.Services.MessageQueue.Abstractions;
 using Ruya.Services.MessageQueue.Serialization;
 using Ruya.Services.MessageQueue.Middleware;
+using Ruya.Services.MessageQueue.Telemetry;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -24,43 +24,43 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
     private readonly InMemoryOptions _options;
     private readonly IMessageSerializer _serializer;
     private readonly MiddlewarePipeline _pipeline;
+    private readonly MessageQueueTelemetry _telemetry;
     private readonly ILogger _logger;
 
     // Topics with consumer group management
     private readonly ConcurrentDictionary<string, TopicManager> _topics = new();
 
-    // Dead letter queue
-    private readonly Channel<DeadLetterMessage> _deadLetterQueue;
+    private readonly IInMemoryDeadLetterStore _deadLetterStore;
 
     // Message store for replay (optional)
     private readonly ConcurrentDictionary<string, ConcurrentQueue<StoredMessage>>? _messageStore;
 
     // Track delayed delivery tasks to await them during disposal
-    private readonly ConcurrentBag<Task> _delayedDeliveryTasks = new();
+    private readonly ConcurrentDictionary<Task, byte> _delayedDeliveryTasks = new();
 
     // Cancellation token for disposal to cancel delayed delivery tasks
     private readonly CancellationTokenSource _disposalCts = new();
+    private readonly object _lifecycleGate = new();
+    private readonly TaskCompletionSource _disposeCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private volatile bool _disposed;
+    private int _disposeState;
 
     public InMemoryMessageQueue(
         string name,
         IOptions<InMemoryOptions> options,
         IMessageSerializer serializer,
         IEnumerable<IMessageMiddleware> middlewares,
+        MessageQueueTelemetry telemetry,
+        IInMemoryDeadLetterStore deadLetterStore,
         ILogger logger)
     {
         _name = name ?? throw new ArgumentNullException(nameof(name));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _pipeline = new MiddlewarePipeline(middlewares);
+        _telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
+        _deadLetterStore = deadLetterStore ?? throw new ArgumentNullException(nameof(deadLetterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        _deadLetterQueue = Channel.CreateUnbounded<DeadLetterMessage>(new UnboundedChannelOptions
-        {
-            SingleReader = false,
-            SingleWriter = false
-        });
 
         if (_options.EnableMessageStore)
         {
@@ -68,12 +68,13 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
         }
 
         _logger.LogInformation(
+            InMemoryLogEvents.QueueLifecycle,
             "InMemory message bus '{Name}' initialized with consumer group support (DLQ: {DLQ}, Store: {Store})",
             _name, _options.EnableDeadLetterQueue, _options.EnableMessageStore);
     }
 
     public string Name => _name;
-    public string Provider => "InMemory";
+    public string Provider => nameof(Ruya.Services.MessageQueue.InMemory);
 
     public async Task<string> PublishAsync<TMessage>(
         string topic,
@@ -81,15 +82,29 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
         PublishOptions? options = null,
         CancellationToken cancellationToken = default) where TMessage : class
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) != 0, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var envelope = CreateEnvelope(message, options);
-
-        return await _pipeline.ExecutePublishAsync(
-            envelope,
-            topic,
-            async (env, t) => await PublishInternalAsync(env, t, cancellationToken),
-            cancellationToken);
+        using var telemetry = _telemetry.StartPublish(CreateEnvelope(message, options), "in_memory", topic);
+        try
+        {
+            var messageId = await _pipeline.ExecutePublishAsync(
+                telemetry.Envelope,
+                topic,
+                async (env, t) => await PublishInternalAsync(env, t, cancellationToken),
+                cancellationToken);
+            telemetry.Complete();
+            return messageId;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            telemetry.Fail(ex);
+            throw;
+        }
     }
 
     private async Task<string> PublishInternalAsync<TMessage>(
@@ -115,32 +130,22 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
         // Handle delayed delivery
         if (envelope.DeliveryDelay.HasValue)
         {
-            // Track delayed delivery task to ensure we wait for it during disposal
-            var delayedTask = Task.Run(async () =>
+            cancellationToken.ThrowIfCancellationRequested();
+
+            lock (_lifecycleGate)
             {
-                try
-                {
-                    // Use linked token that cancels on either caller cancel OR disposal
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                        cancellationToken, _disposalCts.Token);
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) != 0, this);
 
-                    await Task.Delay(envelope.DeliveryDelay.Value, linkedCts.Token);
-                    if (!_disposed)
-                    {
-                        await topicManager.BroadcastAsync(wrapper, linkedCts.Token);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    _logger.LogDebug("Delayed delivery cancelled for message {MessageId}", envelope.MessageId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error in delayed delivery for message {MessageId}", envelope.MessageId);
-                }
-            }, CancellationToken.None);  // Don't pass caller token to Task.Run itself
-
-            _delayedDeliveryTasks.Add(delayedTask);
+                // Once PublishAsync reports acceptance, the caller token no longer owns the scheduled
+                // delivery. Queue disposal remains the lifetime boundary for in-memory delayed work.
+                var delayedTask = DeliverDelayedAsync(
+                    topicManager,
+                    wrapper,
+                    envelope.DeliveryDelay.Value,
+                    envelope.MessageId);
+                _delayedDeliveryTasks.TryAdd(delayedTask, 0);
+                _ = RemoveDelayedDeliveryWhenCompleteAsync(delayedTask);
+            }
         }
         else
         {
@@ -148,6 +153,7 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
         }
 
         _logger.LogDebug(
+            InMemoryLogEvents.Publish,
             "Published message {MessageId} to topic '{Topic}' → {ConsumerGroupCount} consumer groups (Priority: {Priority})",
             envelope.MessageId, topic, topicManager.ConsumerGroupCount, envelope.Priority);
 
@@ -160,7 +166,9 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
         PublishOptions? options = null,
         CancellationToken cancellationToken = default) where TMessage : class
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) != 0, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        RejectCallerAssignedBatchMessageId(options);
 
         var messageList = messages.ToList();
         if (messageList.Count == 0)
@@ -168,30 +176,14 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
             return Array.Empty<string>();
         }
 
-        var topicManager = GetOrCreateTopic(topic);
         var messageIds = new List<string>(messageList.Count);
 
         foreach (var message in messageList)
         {
-            var envelope = CreateEnvelope(message, options);
-            messageIds.Add(envelope.MessageId);
-
-            if (_messageStore != null)
-            {
-                StoreMessage(topic, envelope);
-            }
-
-            var wrapper = new MessageWrapper(
-                _serializer.Serialize(envelope),
-                envelope.MessageId,
-                envelope.Priority,
-                null,
-                envelope.Headers?.TryGetValue("X-RoutingKey", out var routingKey) == true ? routingKey : topic);
-
-            await topicManager.BroadcastAsync(wrapper, cancellationToken);
+            messageIds.Add(await PublishAsync(topic, message, options, cancellationToken));
         }
 
-        _logger.LogDebug("Batch published {Count} messages to topic '{Topic}'", messageIds.Count, topic);
+        _logger.LogDebug(InMemoryLogEvents.Publish, "Batch published {Count} messages to topic '{Topic}'", messageIds.Count, topic);
 
         return messageIds;
     }
@@ -207,37 +199,53 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
         SubscribeOptions? options = null,
         CancellationToken cancellationToken = default) where TMessage : class
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) != 0, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var topicManager = GetOrCreateTopic(topic);
         var consumerGroup = options?.ConsumerGroup ?? $"default-{Guid.NewGuid():N}"; // Unique default = broadcast
 
         // Warn if consumer group already exists (possible duplicate subscription)
-        var consumerGroupChannel = topicManager.GetOrAddConsumerGroup(consumerGroup, _options.ChannelCapacity);
+        var consumerGroupLease = topicManager.AcquireConsumerGroup(
+            consumerGroup,
+            _options.ChannelCapacity,
+            removeWhenUnused: options?.ConsumerGroup is null);
 
-        if (options?.ConsumerGroup != null && topicManager.ConsumerGroupCount > 1)
+        if (options?.ConsumerGroup is not null && consumerGroupLease.WasExisting)
         {
-            _logger.LogWarning(
-                "Creating additional subscription for existing consumer group '{ConsumerGroup}' on topic '{Topic}'. " +
-                "If this is unintended, it may cause duplicate message processing.",
+            _logger.LogDebug(
+                InMemoryLogEvents.Subscription,
+                "Adding a competing subscription to consumer group '{ConsumerGroup}' on topic '{Topic}'.",
                 consumerGroup, topic);
         }
 
         var subscription = new InMemorySubscription<TMessage>(
             topic,
             consumerGroup,
-            consumerGroupChannel.Reader,
+            consumerGroupLease.Buffer,
+            consumerGroupLease.Release,
             handler,
             options,
             _serializer,
             _pipeline,
             _options,
-            _deadLetterQueue.Writer,
+            _name,
+            _deadLetterStore,
+            _telemetry,
             _logger);
 
-        await subscription.StartAsync(cancellationToken);
+        try
+        {
+            await subscription.StartAsync(cancellationToken);
+        }
+        catch
+        {
+            await subscription.DisposeAsync();
+            throw;
+        }
 
         _logger.LogInformation(
+            InMemoryLogEvents.Subscription,
             "Subscribed to topic '{Topic}' [ConsumerGroup: '{ConsumerGroup}'] (Pattern: {Pattern}, MaxConcurrency: {MaxConcurrency})",
             topic,
             consumerGroup,
@@ -253,7 +261,8 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
         SubscribeOptions? options = null,
         CancellationToken cancellationToken = default) where TMessage : class
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) != 0, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var topicList = topics?.ToList() ?? throw new ArgumentNullException(nameof(topics));
 
@@ -296,14 +305,15 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
 
     public Task<bool> IsHealthyAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(!_disposed);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(Volatile.Read(ref _disposeState) == 0);
     }
 
     private TopicManager GetOrCreateTopic(string topic)
     {
         return _topics.GetOrAdd(topic, t =>
         {
-            _logger.LogDebug("Created topic '{Topic}'", t);
+            _logger.LogDebug(InMemoryLogEvents.Topology, "Created topic '{Topic}'", t);
             return new TopicManager(t, _logger);
         });
     }
@@ -339,7 +349,7 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
 
         return new MessageEnvelope<TMessage>
         {
-            MessageId = Guid.NewGuid().ToString(),
+            MessageId = ResolveMessageId(options),
             MessageType = typeof(TMessage).FullName ?? typeof(TMessage).Name,
             Timestamp = DateTimeOffset.UtcNow,
             Payload = message,
@@ -354,50 +364,120 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
         };
     }
 
+    private async Task DeliverDelayedAsync(
+        TopicManager topicManager,
+        MessageWrapper wrapper,
+        TimeSpan delay,
+        string messageId)
+    {
+        try
+        {
+            await Task.Delay(delay, _disposalCts.Token);
+            await topicManager.BroadcastAsync(wrapper, _disposalCts.Token);
+        }
+        catch (OperationCanceledException) when (_disposalCts.IsCancellationRequested)
+        {
+            _logger.LogDebug(InMemoryLogEvents.DelayedDelivery, "Delayed delivery cancelled during queue disposal for message {MessageId}", messageId);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(InMemoryLogEvents.DelayedDelivery, exception, "Error in delayed delivery for message {MessageId}", messageId);
+        }
+    }
+
+    private async Task RemoveDelayedDeliveryWhenCompleteAsync(Task delayedTask)
+    {
+        try
+        {
+            await delayedTask;
+        }
+        finally
+        {
+            _delayedDeliveryTasks.TryRemove(delayedTask, out _);
+        }
+    }
+
+    private static string ResolveMessageId(PublishOptions? options)
+    {
+        if (options?.MessageId is null)
+        {
+            return Guid.NewGuid().ToString();
+        }
+
+        if (string.IsNullOrWhiteSpace(options.MessageId))
+        {
+            throw new ArgumentException("MessageId cannot be empty or whitespace.", nameof(options));
+        }
+
+        return options.MessageId;
+    }
+
+    private static void RejectCallerAssignedBatchMessageId(PublishOptions? options)
+    {
+        if (options?.MessageId is not null)
+        {
+            throw new ArgumentException(
+                "PublishOptions.MessageId cannot be used for batch publishing because each message needs a distinct identifier.",
+                nameof(options));
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
-
-        _disposed = true;
-
-        _logger.LogInformation("Disposing InMemory message bus '{Name}' with {TopicCount} topics", _name, _topics.Count);
-
-        // Cancel all delayed delivery tasks to prevent long waits
-        _disposalCts.Cancel();
-
-        // Wait for all delayed delivery tasks to complete (should complete quickly due to cancellation)
-        if (_delayedDeliveryTasks.Count > 0)
+        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
         {
-            _logger.LogDebug("Waiting for {Count} delayed delivery tasks to complete", _delayedDeliveryTasks.Count);
-            try
-            {
-                await Task.WhenAll(_delayedDeliveryTasks);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogDebug("Delayed delivery tasks cancelled during disposal");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error waiting for delayed delivery tasks during disposal");
-            }
+            await _disposeCompletion.Task;
+            return;
         }
 
-        // Dispose the disposal CancellationTokenSource
-        _disposalCts.Dispose();
-
-        // Complete all topic managers
-        foreach (var topicManager in _topics.Values)
+        try
         {
-            topicManager.Complete();
+            // Synchronize with delayed-publish acceptance so every accepted task is visible below.
+            Task[] delayedTasks;
+            lock (_lifecycleGate)
+            {
+                delayedTasks = _delayedDeliveryTasks.Keys.ToArray();
+            }
+
+            _logger.LogInformation(InMemoryLogEvents.QueueLifecycle, "Disposing InMemory message bus '{Name}' with {TopicCount} topics", _name, _topics.Count);
+
+            await _disposalCts.CancelAsync();
+
+            if (delayedTasks.Length > 0)
+            {
+                _logger.LogDebug(InMemoryLogEvents.DelayedDelivery, "Waiting for {Count} delayed delivery tasks to complete", delayedTasks.Length);
+                try
+                {
+                    await Task.WhenAll(delayedTasks);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogDebug(InMemoryLogEvents.DelayedDelivery, "Delayed delivery tasks cancelled during disposal");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(InMemoryLogEvents.DelayedDelivery, ex, "Error waiting for delayed delivery tasks during disposal");
+                }
+            }
+
+            _disposalCts.Dispose();
+
+            foreach (var topicManager in _topics.Values)
+            {
+                topicManager.Complete();
+            }
+
+            _topics.Clear();
+            _messageStore?.Clear();
+
+            _logger.LogInformation(InMemoryLogEvents.QueueLifecycle, "InMemory message bus '{Name}' disposed", _name);
+            _disposeCompletion.TrySetResult();
         }
-
-        _deadLetterQueue.Writer.Complete();
-
-        _topics.Clear();
-        _messageStore?.Clear();
-
-        _logger.LogInformation("InMemory message bus '{Name}' disposed", _name);
+        catch (Exception exception)
+        {
+            _disposeCompletion.TrySetException(exception);
+            throw;
+        }
     }
 
     // Internal classes
@@ -410,7 +490,8 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
     {
         private readonly string _topic;
         private readonly ILogger _logger;
-        private readonly ConcurrentDictionary<string, Channel<MessageWrapper>> _consumerGroups = new();
+        private readonly Dictionary<string, ConsumerGroupState> _consumerGroups = new(StringComparer.Ordinal);
+        private readonly object _consumerGroupsLock = new();
 
         public TopicManager(string topic, ILogger logger)
         {
@@ -418,48 +499,86 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
             _logger = logger;
         }
 
-        public int ConsumerGroupCount => _consumerGroups.Count;
-
-        public Channel<MessageWrapper> GetOrAddConsumerGroup(string consumerGroup, int? channelCapacity)
+        public int ConsumerGroupCount
         {
-            return _consumerGroups.GetOrAdd(consumerGroup, cg =>
+            get
             {
-                var channel = channelCapacity.HasValue
-                    ? Channel.CreateBounded<MessageWrapper>(new BoundedChannelOptions(channelCapacity.Value)
-                    {
-                        FullMode = BoundedChannelFullMode.Wait,
-                        SingleReader = false,
-                        SingleWriter = false
-                    })
-                    : Channel.CreateUnbounded<MessageWrapper>(new UnboundedChannelOptions
-                    {
-                        SingleReader = false,
-                        SingleWriter = false
-                    });
+                lock (_consumerGroupsLock)
+                {
+                    return _consumerGroups.Count;
+                }
+            }
+        }
 
-                _logger.LogDebug(
-                    "Created consumer group '{ConsumerGroup}' for topic '{Topic}' (Capacity: {Capacity})",
-                    cg, _topic, channelCapacity?.ToString() ?? "unbounded");
+        public ConsumerGroupLease AcquireConsumerGroup(
+            string consumerGroup,
+            int? channelCapacity,
+            bool removeWhenUnused)
+        {
+            lock (_consumerGroupsLock)
+            {
+                var wasExisting = _consumerGroups.TryGetValue(consumerGroup, out var state);
+                if (!wasExisting)
+                {
+                    var buffer = new ConsumerGroupBuffer(channelCapacity);
+                    state = new ConsumerGroupState(buffer, removeWhenUnused);
+                    _consumerGroups.Add(consumerGroup, state);
 
-                return channel;
-            });
+                    _logger.LogDebug(
+                        InMemoryLogEvents.Topology,
+                        "Created consumer group '{ConsumerGroup}' for topic '{Topic}' (Capacity: {Capacity})",
+                        consumerGroup,
+                        _topic,
+                        channelCapacity?.ToString() ?? "unbounded");
+                }
+
+                state!.SubscriberCount++;
+                var capturedState = state;
+                return new ConsumerGroupLease(
+                    state.Buffer,
+                    wasExisting,
+                    () => ReleaseConsumerGroup(consumerGroup, capturedState));
+            }
+        }
+
+        private void ReleaseConsumerGroup(string consumerGroup, ConsumerGroupState state)
+        {
+            lock (_consumerGroupsLock)
+            {
+                if (state.SubscriberCount > 0)
+                {
+                    state.SubscriberCount--;
+                }
+
+                if (state.SubscriberCount == 0 &&
+                    state.RemoveWhenUnused &&
+                    _consumerGroups.TryGetValue(consumerGroup, out var current) &&
+                    ReferenceEquals(current, state))
+                {
+                    _consumerGroups.Remove(consumerGroup);
+                }
+            }
         }
 
         public async Task BroadcastAsync(MessageWrapper message, CancellationToken cancellationToken)
         {
-            if (_consumerGroups.IsEmpty)
+            ConsumerGroupState[] consumerGroups;
+            lock (_consumerGroupsLock)
             {
-                _logger.LogWarning("No consumer groups for topic '{Topic}', message {MessageId} dropped",
+                consumerGroups = _consumerGroups.Values.ToArray();
+            }
+
+            if (consumerGroups.Length == 0)
+            {
+                _logger.LogWarning(InMemoryLogEvents.Topology, "No consumer groups for topic '{Topic}', message {MessageId} dropped",
                     _topic, message.MessageId);
                 return;
             }
 
-            // Broadcast to ALL consumer groups (fanout pattern)
-            var tasks = new List<Task>(_consumerGroups.Count);
-
-            foreach (var channel in _consumerGroups.Values)
+            var tasks = new List<Task>(consumerGroups.Length);
+            foreach (var consumerGroup in consumerGroups)
             {
-                tasks.Add(channel.Writer.WriteAsync(message, cancellationToken).AsTask());
+                tasks.Add(consumerGroup.Buffer.WriteAsync(message, cancellationToken).AsTask());
             }
 
             await Task.WhenAll(tasks);
@@ -467,9 +586,52 @@ internal sealed class InMemoryMessageQueue : IMessageQueue
 
         public void Complete()
         {
-            foreach (var channel in _consumerGroups.Values)
+            ConsumerGroupState[] consumerGroups;
+            lock (_consumerGroupsLock)
             {
-                channel.Writer.Complete();
+                consumerGroups = _consumerGroups.Values.ToArray();
+                _consumerGroups.Clear();
+            }
+
+            foreach (var consumerGroup in consumerGroups)
+            {
+                consumerGroup.Buffer.Complete();
+            }
+        }
+
+        private sealed class ConsumerGroupState
+        {
+            public ConsumerGroupState(ConsumerGroupBuffer buffer, bool removeWhenUnused)
+            {
+                Buffer = buffer;
+                RemoveWhenUnused = removeWhenUnused;
+            }
+
+            public ConsumerGroupBuffer Buffer { get; }
+
+            public bool RemoveWhenUnused { get; }
+
+            public int SubscriberCount { get; set; }
+        }
+
+        public sealed class ConsumerGroupLease
+        {
+            private Action? _release;
+
+            public ConsumerGroupLease(ConsumerGroupBuffer buffer, bool wasExisting, Action release)
+            {
+                Buffer = buffer;
+                WasExisting = wasExisting;
+                _release = release;
+            }
+
+            public ConsumerGroupBuffer Buffer { get; }
+
+            public bool WasExisting { get; }
+
+            public void Release()
+            {
+                Interlocked.Exchange(ref _release, null)?.Invoke();
             }
         }
     }

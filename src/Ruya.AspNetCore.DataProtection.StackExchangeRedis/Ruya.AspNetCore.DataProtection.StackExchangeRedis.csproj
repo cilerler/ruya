@@ -18,8 +18,20 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
 		<PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
 		<PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Configuration)' == 'Release'">
 		<PackageReference Include="Ruya.Diagnostics.Abstractions" />
 		<PackageReference Include="Ruya.Primitives" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+		<ProjectReference Include="..\Ruya.Diagnostics.Abstractions\Ruya.Diagnostics.Abstractions.csproj" />
+		<ProjectReference Include="..\Ruya.Primitives\Ruya.Primitives.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="Ruya.AspNetCore.DataProtection.StackExchangeRedis.Unit.Tests" />
 	</ItemGroup>
 
 </Project>

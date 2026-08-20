@@ -9,15 +9,15 @@ using Ruya.Services.TokenBroker.Extensions;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add Token Client (to exchange tokens)
-builder.Services.AddTokenClient(builder.Configuration);
+builder.Services.AddTokenClient();
 
 // Add Token Validation (to validate incoming tokens)
-builder.Services.AddTokenValidation(builder.Configuration);
+builder.Services.AddTokenValidation();
 
 // Add HttpClient for calling Service C
 builder.Services.AddHttpClient("ServiceC", client =>
 {
-    client.BaseAddress = new Uri("http://service-c:8080");
+    client.BaseAddress = new Uri("https://service-c");
 });
 
 var app = builder.Build();
@@ -34,19 +34,7 @@ app.MapGet("/api/orders", [Authorize] async (
 {
     var user = httpContext.User;
 
-    // Log who is calling and the full chain
-    var subject = user.GetSubject();
     var actorChain = user.GetActorChainList();
-
-    if (actorChain.Count > 0)
-    {
-        // This is already an exchanged token - show full chain
-        Console.WriteLine($"Request from {subject} via chain: [{string.Join(" → ", actorChain)}]");
-    }
-    else
-    {
-        Console.WriteLine($"Direct request from {subject}");
-    }
 
     // Check scopes
     if (!user.HasAllScopes("read:orders"))
@@ -69,15 +57,14 @@ app.MapGet("/api/orders", [Authorize] async (
     var client = httpClientFactory.CreateClient("ServiceC");
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", exchangedToken);
 
-    var response = await client.GetAsync("/api/inventory", cancellationToken);
+    using var response = await client.GetAsync("/api/inventory", cancellationToken);
     response.EnsureSuccessStatusCode();
 
     var inventoryData = await response.Content.ReadAsStringAsync(cancellationToken);
 
     return Results.Ok(new
     {
-        CalledBy = subject,
-        ActorChain = actorChain,
+        ActorDepth = actorChain.Count,
         InventoryData = inventoryData
     });
 })

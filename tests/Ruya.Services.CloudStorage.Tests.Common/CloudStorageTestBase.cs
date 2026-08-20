@@ -121,16 +121,10 @@ namespace Ruya.Services.CloudStorage.Tests.Common
 
             // Delete
             await client.DeleteFileAsync(bucketName, remotePath, TestContext.CancellationToken);
+
             // Verify it's gone
-            try
-            {
-                await client.GetFileMetadataAsync(bucketName, remotePath);
-                Assert.Fail("File should have been deleted");
-            }
-            catch (Exception)
-            {
-                // Expected exception (FileNotFoundException or similar)
-            }
+            await Assert.ThrowsAsync<FileNotFoundException>(() =>
+                client.GetFileMetadataAsync(bucketName, remotePath, TestContext.CancellationToken));
         }
     }
 }

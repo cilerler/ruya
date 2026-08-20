@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace Ruya.Services.TokenBroker.Models;
 
@@ -12,6 +13,10 @@ public sealed record TokenRequest
     public required string Subject { get; init; }
     public string? Name { get; init; }
     public IReadOnlyList<string>? Roles { get; init; }
+    /// <summary>
+    /// Roles the issuer has authorized this request to receive. A missing value authorizes no roles.
+    /// </summary>
+    public IReadOnlyList<string>? AllowedRoles { get; init; }
     public IReadOnlyList<string>? Scopes { get; init; }
     public TimeSpan? CustomLifetime { get; init; }
     public IDictionary<string, string>? AdditionalClaims { get; init; }
@@ -38,6 +43,11 @@ public sealed record TokenExchangeRequest
     public IReadOnlyList<string>? NarrowedScopes { get; init; }
 
     /// <summary>
+    /// Scopes the actor service is authorized to receive. A missing value authorizes no scopes.
+    /// </summary>
+    public IReadOnlyList<string>? ActorAllowedScopes { get; init; }
+
+    /// <summary>
     /// Custom lifetime for the exchanged token. If null, uses default.
     /// </summary>
     public TimeSpan? CustomLifetime { get; init; }
@@ -52,6 +62,10 @@ public sealed record TokenResponse
     public required string TokenType { get; init; }
     public required int ExpiresIn { get; init; }
     public required DateTime ExpiresAt { get; init; }
+    /// <summary>
+    /// Gets the expiry as a timezone-safe UTC value. The legacy <see cref="ExpiresAt"/> member remains for 8.x compatibility.
+    /// </summary>
+    public DateTimeOffset ExpiresAtUtc => TokenTime.ToUtc(ExpiresAt);
     public required string Subject { get; init; }
     public ActorChain? Actor { get; init; }
     public IReadOnlyList<string>? Scopes { get; init; }
@@ -124,7 +138,7 @@ public sealed record ActorChain
         // Try current ActorChain format first: { "subject": "...", "actor": { ... } }
         try
         {
-            var result = System.Text.Json.JsonSerializer.Deserialize<ActorChain>(json, Constants.JsonSerializerOptions);
+            var result = JsonSerializer.Deserialize(json, TokenBrokerJsonSerializerContext.Default.ActorChain);
             if (result?.Subject is not null)
             {
                 return result;
@@ -138,7 +152,7 @@ public sealed record ActorChain
         // Try legacy single-actor format: { "sub": "service-name" }
         try
         {
-            var legacy = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json, Constants.JsonSerializerOptions);
+            var legacy = JsonSerializer.Deserialize(json, TokenBrokerJsonSerializerContext.Default.JsonElement);
             if (legacy.TryGetProperty("sub", out var sub) && sub.GetString() is { } subject)
             {
                 return new ActorChain { Subject = subject };
@@ -157,7 +171,7 @@ public sealed record ActorChain
     /// </summary>
     public string ToJson()
     {
-        return System.Text.Json.JsonSerializer.Serialize(this, Constants.JsonSerializerOptions);
+        return JsonSerializer.Serialize(this, TokenBrokerJsonSerializerContext.Default.ActorChain);
     }
 }
 
@@ -169,6 +183,7 @@ public sealed record ServiceRegistration
     public required string ServiceName { get; init; }
     public required string ApiKeyHash { get; init; }
     public IReadOnlyList<string>? AllowedScopes { get; init; }
+    public IReadOnlyList<string>? AllowedRoles { get; init; }
     public bool CanExchangeTokens { get; init; } = true;
 }
 
@@ -212,6 +227,10 @@ public sealed record TokenValidationResult
     public IReadOnlyList<string>? Scopes { get; init; }
     public IReadOnlyList<string>? Roles { get; init; }
     public DateTime? ExpiresAt { get; init; }
+    /// <summary>
+    /// Gets the expiry as a timezone-safe UTC value when one is available.
+    /// </summary>
+    public DateTimeOffset? ExpiresAtUtc => ExpiresAt is { } value ? TokenTime.ToUtc(value) : null;
     public string? ErrorMessage { get; init; }
 
     /// <summary>
@@ -223,4 +242,11 @@ public sealed record TokenValidationResult
     /// Gets the full actor chain as a list from outermost to innermost.
     /// </summary>
     public IReadOnlyList<string>? ActorChainList => ActorChain?.ToList();
+}
+
+internal static class TokenTime
+{
+    public static DateTimeOffset ToUtc(DateTime value) => value.Kind == DateTimeKind.Unspecified
+        ? new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc))
+        : new DateTimeOffset(value).ToUniversalTime();
 }

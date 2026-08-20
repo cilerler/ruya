@@ -23,7 +23,6 @@ jobs:
     with:
       project-name: 'Ruya.Services.DistributedLock.Abstractions'
       project-path: './src/Ruya.Services.DistributedLock.Abstractions/Ruya.Services.DistributedLock.Abstractions.csproj'
-      # test-project-paths:
       dispatch-event-type: 'Ruya.Services.DistributedLock.Abstractions'
       triggered-branch: ${{ github.event.client_payload.branch || '' }}
     secrets:

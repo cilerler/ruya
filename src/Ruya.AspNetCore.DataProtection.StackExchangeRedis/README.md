@@ -1,33 +1,24 @@
 # Ruya.AspNetCore.DataProtection.StackExchangeRedis
 
-Data protection service with Redis key persistence for ASP.NET Core applications.
+ASP.NET Core Data Protection with a shared Redis key repository. The package supports direct server
+configuration and an external-client mode that retrieves Redis settings at runtime.
 
 ## Features
 
-- ASP.NET Core Data Protection with Redis key storage
-- Distributed tracing and metrics via OpenTelemetry
-- Health checks for Redis connectivity and data protection roundtrip
-- Client mode for fetching settings from a remote configuration endpoint
+- Redis-backed Data Protection key persistence
+- Application-name and purpose isolation
+- Direct server registration
+- Runtime settings bootstrap for external clients such as MAUI applications
+- One singleton `IConnectionMultiplexer` exposed through dependency injection
+- Redis connectivity and protect/unprotect health checks
+- OpenTelemetry-compatible logs, traces, and metrics
 
-## Installation
+## Server mode
 
-```bash
-dotnet add package Ruya.AspNetCore.DataProtection.StackExchangeRedis
-```
-
-## Usage
-
-### Server Mode (Direct Redis Connection)
-
-Use this mode when your application has direct access to Redis configuration and serves as the configuration source for clients.
-
-**appsettings.json:**
+Keep non-secret settings in ordinary configuration:
 
 ```json
 {
-  "ConnectionStrings": {
-    "Redis": "localhost:6379,abortConnect=false"
-  },
   "DataProtectionSettings": {
     "ApplicationName": "MyApplication",
     "ConnectionStringKey": "Redis",
@@ -37,65 +28,59 @@ Use this mode when your application has direct access to Redis configuration and
 }
 ```
 
-**Program.cs:**
+Supply the referenced Redis credential through user-secrets for local development and through an
+environment variable or deployed secret provider elsewhere:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:Redis" "localhost:6379,password=<local-password>,abortConnect=false"
+$env:ConnectionStrings__Redis = "redis.internal:6379,password=<deployment-secret>,ssl=true"
+```
+
+Register the service:
 
 ```csharp
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
-using Ruya.AspNetCore.DataProtection.StackExchangeRedis;
-
-var builder = WebApplication.CreateBuilder(args);
-
-// Add data protection with Redis
-builder.Services.AddDataProtectionServer();
-
-// Add distributed tracing (required dependency)
+builder.Services.AddMetrics();
+builder.Services.AddDistributedMemoryCache();
 builder.Services.AddDistributedTracingService();
-
-var app = builder.Build();
-
-// Expose settings endpoint for clients to fetch configuration
-app.MapDataProtectionApi();
-
-// Health checks are automatically registered
-app.MapHealthChecks("/health");
-
-app.Run();
+builder.Services.AddDataProtectionServer(settings =>
+{
+    settings.Purposes.Add(
+        DataProtectionService.DefaultPurpose,
+        "MyApplication.Encryption");
+});
 ```
 
-**Extension method for exposing settings API:**
+## Remote client mode
+
+Remote client mode is intended for external applications that must not embed the Redis credential in
+their distributed application package. The application downloads `DataProtectionSettings` from an
+authenticated server endpoint at runtime and then opens one direct Redis connection.
+
+Runtime retrieval prevents static credential embedding; it does **not** hide the credential from the
+client process or from a compromised device. Use authenticated HTTPS, a restricted Redis ACL identity,
+TLS, and an endpoint authorization policy appropriate for trusted clients.
+
+The settings endpoint must stay on the configured service origin. HTTPS is required except for an HTTP
+loopback address used during local development; endpoint user-info credentials and cross-origin absolute
+URLs are rejected during options validation.
+
+### Server endpoint
+
+The settings server can expose its resolved settings through an authenticated endpoint:
 
 ```csharp
-public static WebApplication MapDataProtectionApi(this WebApplication app)
-{
-    app.MapGet("/api/DataProtection", ([FromServices] IOptions<DataProtectionSettings> options) =>
-    {
-        try
-        {
-            return Results.Json(options.Value);
-        }
-        catch (Exception e)
-        {
-            return Results.Problem(e.Message, statusCode: StatusCodes.Status500InternalServerError);
-        }
-    })
-    .Produces<DataProtectionSettings>(StatusCodes.Status200OK)
-    .ProducesProblem(StatusCodes.Status500InternalServerError)
-    .WithTags("DataProtection");
-
-    return app;
-}
+app.MapGet(
+        "/api/DataProtection",
+        (IOptions<DataProtectionSettings> settings) => Results.Json(settings.Value))
+    .RequireAuthorization("DataProtectionClients");
 ```
 
-> **Note:** The `/api/DataProtection` endpoint exposes the Redis connection string. Ensure this endpoint is secured appropriately (e.g., internal network only, authentication required).
+Do not expose this endpoint anonymously. Its response intentionally includes the resolved Redis
+connection string required by the external client.
 
-### Client Mode (Remote Configuration)
+### Client configuration
 
-Use this mode when settings are fetched from a central configuration service (the server). Settings are fetched asynchronously using lazy initialization - the HTTP call happens on first access to the data protection service, not during startup.
-
-> **Note:** The health check will report `Unhealthy` until initialization completes. This is by design - it prevents load balancers from sending traffic before the application is ready.
-
-**appsettings.json:**
+The client stores only the settings-service address:
 
 ```json
 {
@@ -109,178 +94,107 @@ Use this mode when settings are fetched from a central configuration service (th
 }
 ```
 
-**Program.cs (Basic):**
+Configure authentication on the package's named HTTP client, then register remote Data Protection:
 
 ```csharp
-using Ruya.AspNetCore.DataProtection.StackExchangeRedis;
+builder.Services.AddHttpClient(
+    DataProtectionClientSettings.HttpClientName,
+    client => client.DefaultRequestHeaders.Authorization =
+        new AuthenticationHeaderValue("Bearer", deviceAccessToken));
 
-var builder = WebApplication.CreateBuilder(args);
-
-// Add data protection client that fetches settings from remote endpoint
-builder.Services.AddDataProtectionClient(defaultPurpose: "MyApplication.Encryption");
-
-// Add distributed tracing (required dependency)
+builder.Services.AddMetrics();
+builder.Services.AddDistributedMemoryCache();
 builder.Services.AddDistributedTracingService();
-
-var app = builder.Build();
-
-app.Run();
+builder.Services.AddDataProtectionClient("MyApplication.Encryption");
 ```
 
-**Program.cs (With Connection String Capture):**
-
-Use the `configureSettings` callback to capture the Redis connection string for use elsewhere in your application (e.g., for caching):
+The released `IDataProtection` and `IConnectionMultiplexer` contracts are synchronous. To keep their
+first use from performing the remote bootstrap synchronously, initialize the client from an async
+application-startup or MAUI lifecycle boundary before resolving Data Protection:
 
 ```csharp
-using Ruya.AspNetCore.DataProtection.StackExchangeRedis;
+await app.Services.InitializeDataProtectionClientAsync(cancellationToken);
+```
 
-var builder = WebApplication.CreateBuilder(args);
+For compatibility, first resolution still initializes the client if this explicit prewarming step is
+not used. A failed bootstrap attempt is not cached permanently; the next initialization or readiness
+attempt retries it.
 
-string? redisConnectionString = null;
+## Sharing the Redis connection
 
-// Add data protection client with settings callback
-builder.Services.AddDataProtectionClient(
-    defaultPurpose: "MyApplication.Encryption",
-    configureSettings: options =>
+`AddDataProtectionServer` and `AddDataProtectionClient` register one singleton
+`IConnectionMultiplexer`. StackExchange.Redis multiplexers are designed to be long-lived and reused.
+
+Register Data Protection before Redis Distributed Lock so the latter inherits the existing connection
+and does not require another local Redis credential:
+
+```csharp
+builder.Services.AddDataProtectionClient("MyApplication.Encryption");
+builder.Services.AddRedisDistributedLock();
+```
+
+Microsoft's StackExchange Redis implementation of `IDistributedCache` does not automatically resolve an
+`IConnectionMultiplexer` from dependency injection. It can be pointed at the shared instance explicitly:
+
+```csharp
+builder.Services.AddStackExchangeRedisCache(_ => { });
+builder.Services.AddOptions<RedisCacheOptions>()
+    .Configure<IConnectionMultiplexer>((options, connection) =>
     {
-        // Capture the connection string fetched from the server
-        redisConnectionString = options.ConnectionString;
+        options.ConnectionMultiplexerFactory =
+            () => Task.FromResult(connection);
     });
-
-// Add distributed tracing (required dependency)
-builder.Services.AddDistributedTracingService();
-
-var app = builder.Build();
-
-// redisConnectionString is now available for other services
-app.Run();
 ```
 
-### Using the Service
+`RedisCache` treats a factory-returned connection as owned and may close it during disposal or forced
+reconnect. Use this compatibility pattern only when the cache and root service provider have the same
+lifetime and that ownership behavior is acceptable. Otherwise give `IDistributedCache` a dedicated
+multiplexer.
+
+The Redis MessageQueue provider currently owns its own connection and does not inherit this singleton.
+
+## Using the service
 
 ```csharp
-using Ruya.AspNetCore.DataProtection.StackExchangeRedis.Contracts;
-
-public class MyService
+public sealed class MyService(IDataProtection dataProtection)
 {
-    private readonly IDataProtection _dataProtection;
+    public string Encrypt(string plainText) => dataProtection.Protect(plainText);
 
-    public MyService(IDataProtection dataProtection)
-    {
-        _dataProtection = dataProtection;
-    }
-
-    public string EncryptSensitiveData(string plainText)
-    {
-        // Protect with default purpose
-        return _dataProtection.Protect(plainText);
-    }
-
-    public string DecryptSensitiveData(string protectedText)
-    {
-        return _dataProtection.Unprotect(protectedText);
-    }
-
-    public string EncryptWithCustomPurpose(string plainText, string purpose)
-    {
-        // Protect with specific purpose for additional isolation
-        return _dataProtection.Protect(plainText, new[] { purpose });
-    }
+    public string Decrypt(string protectedText) => dataProtection.Unprotect(protectedText);
 }
 ```
 
-## Configuration Reference
+## Configuration reference
 
-### DataProtectionSettings
+### `DataProtectionSettings`
 
-| Property | Type | Required | Default | Description |
-|----------|------|----------|---------|-------------|
-| `ApplicationName` | string | Yes | - | Application name for key isolation |
-| `ConnectionStringKey` | string | Yes | - | Key name in ConnectionStrings section |
-| `CacheKey` | string | Yes | - | Redis key for storing data protection keys |
-| `DefaultKeyLifetime` | int | No | 90 | Key lifetime in days (1-365) |
+| Property | Required | Description |
+|---|---:|---|
+| `ApplicationName` | Yes | Isolates keys for the consuming application. |
+| `ConnectionStringKey` | Yes | Name of the server's `ConnectionStrings` catalog entry. |
+| `CacheKey` | Yes | Redis key that stores the Data Protection key ring. |
+| `DefaultKeyLifetime` | No | Key lifetime in days, from 1 through 365. Default: 90. |
+| `ConnectionString` | Runtime | Resolved locally in server mode or delivered to a remote client. Never persist or log it. |
 
-### DataProtectionClientSettings
+### `DataProtectionClientSettings`
 
-| Property | Type | Required | Description |
-|----------|------|----------|-------------|
-| `ConnectionStringKey` | string | Yes | Key name in ConnectionStrings section |
-| `Endpoint` | string | Yes | API endpoint path for fetching settings |
+| Property | Required | Description |
+|---|---:|---|
+| `ConnectionStringKey` | Yes | Name of the local connection-string entry containing the settings-service base address. |
+| `Endpoint` | Yes | Relative or same-origin absolute settings endpoint. |
 
-## Health Checks
+## Health check
 
-A health check named `dataprotection-redis` is **automatically registered** when you call `AddDataProtectionServer()` or `AddDataProtectionClient()`. It verifies:
-
-1. Initialization status (client mode only)
-2. Redis connectivity (ping latency)
-3. Data protection roundtrip (encrypt/decrypt test)
-
-To expose the health check endpoint, add:
-
-```csharp
-app.MapHealthChecks("/health");
-```
-
-### Health Check States
-
-**Client Mode (during initialization):**
-```json
-{
-  "status": "Unhealthy",
-  "results": {
-    "dataprotection-redis": {
-      "status": "Unhealthy",
-      "description": "Data protection settings are not yet initialized."
-    }
-  }
-}
-```
-
-**Healthy (after initialization):**
-```json
-{
-  "status": "Healthy",
-  "results": {
-    "dataprotection-redis": {
-      "status": "Healthy",
-      "description": "Redis ping: 1ms, Data protection: OK"
-    }
-  }
-}
-```
-
-**Degraded (high latency):**
-```json
-{
-  "status": "Degraded",
-  "results": {
-    "dataprotection-redis": {
-      "status": "Degraded",
-      "description": "Redis ping latency is high: 5500ms"
-    }
-  }
-}
-```
+Both registration modes add `dataprotection-redis`. In remote mode the health check awaits client
+initialization, then verifies Redis connectivity and a local protect/unprotect round trip. Map it through
+the consuming application's canonical readiness endpoint.
 
 ## Metrics
 
-The following metrics are emitted:
-
 | Metric | Type | Description |
-|--------|------|-------------|
-| `dataprotection.protect.operations` | Counter | Total protect operations |
-| `dataprotection.unprotect.operations` | Counter | Total unprotect operations |
-| `dataprotection.protect.failures` | Counter | Total protect failures |
-| `dataprotection.unprotect.failures` | Counter | Total unprotect failures |
-| `dataprotection.operation.duration` | Histogram | Operation duration in seconds |
-
-## Dependencies
-
-- `Ruya.Diagnostics.Abstractions` - For `IDistributedTracing`
-- `Ruya.Primitives` - For `Startup.AssemblyName`/`AssemblyVersion`
-
-Ensure you register `IDistributedTracing` in your DI container:
-
-```csharp
-builder.Services.AddDistributedTracingService();
-```
+|---|---|---|
+| `dataprotection.protect.operations` | Counter | Protect operations. |
+| `dataprotection.unprotect.operations` | Counter | Unprotect operations. |
+| `dataprotection.protect.failures` | Counter | Failed protect operations. |
+| `dataprotection.unprotect.failures` | Counter | Failed unprotect operations. |
+| `dataprotection.operation.duration` | Histogram | Operation duration in seconds. |

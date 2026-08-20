@@ -5,8 +5,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Ruya.Services.ReliableMessaging.EntityFrameworkCore.Integration.Tests;
 
 /// <summary>
-/// Base class providing an isolated in-memory SQLite database per test. SQLite enforces primary-key uniqueness
-/// faithfully (unlike EF Core's InMemory provider), which is necessary to exercise the Inbox store's dedup path.
+/// Base class providing an isolated in-memory SQLite database per test for provider-neutral store behavior.
+/// SQL Server transaction, constraint, rollback, and concurrency semantics are verified separately through
+/// Testcontainers in <see cref="SqlServerProviderContractTests"/>.
 /// </summary>
 public abstract class IntegrationTestBase
 {

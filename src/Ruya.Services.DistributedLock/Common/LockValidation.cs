@@ -60,4 +60,17 @@ public static class LockValidation
                 paramName);
         }
     }
+
+    /// <summary>
+    /// Validates a provider lock expiry.
+    /// </summary>
+    /// <param name="expiry">The expiry to validate.</param>
+    /// <param name="paramName">The parameter name for exceptions.</param>
+    public static void ValidateExpiry(TimeSpan expiry, string paramName = "expiry")
+    {
+        if (expiry <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(paramName, expiry, "Lock expiry must be greater than zero.");
+        }
+    }
 }

@@ -23,7 +23,7 @@ A JWT-based service-to-service authentication system with API key authentication
 When tokens are exchanged through multiple services, the **full chain is preserved**:
 
 ```
-User → API → Service1 → Service2 → Service-N
+User → API → Service1 → Service2 → Service-N → Target
 ```
 
 Service-N's token contains:
@@ -42,13 +42,13 @@ Service-N's token contains:
 }
 ```
 
-**Scenario 1: User request through services**
+**Scenario 1: Token observed by Target after a user request traverses the services**
 - `GetOriginalSubject()` → "user-123"
 - `GetActorChainList()` → ["service-n", "service2", "service1"]
 - `GetImmediateActor()` → "service-n" (who called us)
 - `GetOriginalActor()` → "service1" (first service after user)
 
-**Scenario 2: Cronjob/background job**
+**Scenario 2: Token observed by Target after a cronjob/background job traverses the services**
 - `GetOriginalSubject()` → "service1" (the cronjob owner)
 - `GetActorChainList()` → ["service-n", "service2"]
 - Service-N knows service1 initiated the request
@@ -75,15 +75,18 @@ Service-N's token contains:
 | **Ruya.Services.TokenBroker.Abstractions** | Shared models, constants, interfaces | None |
 | **Ruya.Services.TokenBroker.Validation** | Lightweight JWT validation only | Ruya.Services.TokenBroker.Abstractions |
 | **Ruya.Services.TokenBroker.Client** | HTTP client to request/exchange tokens | Ruya.Services.TokenBroker.Abstractions |
-| **Ruya.Services.TokenBroker** | Full service: issuing, validation, Redis API keys | Ruya.Services.TokenBroker.Abstractions, Ruya.Services.TokenBroker.Validation |
+| **Ruya.Services.TokenBroker** | Full service: issuing, validation, distributed-cache API keys | Ruya.Services.TokenBroker.Abstractions, Ruya.Services.TokenBroker.Validation |
 
 ## Quick Start
 
-### 1. Generate a signing key
+### 1. Generate an RSA signing-key pair
 
 ```bash
-openssl rand -base64 32
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out token-broker-private.pem
+openssl pkey -in token-broker-private.pem -pubout -out token-broker-public.pem
 ```
+
+The issuer receives the private PEM from a secret provider. Validators receive only the public PEM. Never distribute the private key to validator services.
 
 ### 2. Configure appsettings.json
 
@@ -95,14 +98,18 @@ openssl rand -base64 32
       "ruya-api",
       "ruya-services"
     ],
-    "SigningKeyBase64": "YOUR_BASE64_ENCODED_256_BIT_KEY_HERE",
+    "SigningKeyId": "token-key-2026-08",
+    "SigningPublicKeys": {
+      "token-key-2026-08": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+    },
     "TokenLifetime": "00:15:00",
     "ClockSkew": "00:00:30",
-    "ApiKeysCacheKey": "token-service:valid-api-keys",
     "ApiKeyCacheDuration": "00:05:00"
   },
-  "ConnectionStrings": {
-    "Redis": "localhost:6379"
+  "DistributedLock": {
+    "Redis": {
+      "ConnectionStringKey": "Redis"
+    }
   }
 }
 
@@ -112,12 +119,18 @@ openssl rand -base64 32
 
 **Token Service (issuer):**
 ```csharp
+using Ruya.Services.DistributedLock.Redis.Extensions;
 using Ruya.Services.TokenBroker;
 
-builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "localhost:6379");
+var redisConnection = builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("ConnectionStrings:Redis is required from the active secret provider.");
+builder.Services.AddStackExchangeRedisCache(options => options.Configuration = redisConnection);
+builder.Services.AddRedisDistributedLock();
 builder.Services.AddTokenBroker();
 app.MapTokenBrokerApi();
 ```
+
+Supply `TokenBroker__SigningPrivateKeyPem` and `ConnectionStrings__Redis` through environment-backed secrets, a vault provider, or user-secrets for local development. Do not place either value in ordinary appsettings files. The public-key ring must contain the public half of the active `SigningKeyId`; startup fails when they do not match. `IDistributedLock` is required because API-key registration and rotation must be serialized across replicas.
 
 **Service A (caller):**
 ```csharp
@@ -134,6 +147,8 @@ using Ruya.Services.TokenBroker;
 
 builder.Services.AddTokenValidation();
 ```
+
+Validator configuration contains `Issuer`, `Audiences`, `ClockSkew`, and `SigningPublicKeys`; it must never contain `SigningPrivateKeyPem` or the obsolete `SigningKeyBase64` value.
 
 ## Token Renewal
 
@@ -159,38 +174,32 @@ var token = await tokenClient.GetTokenAsync(cancellationToken: ct);
 **Configuration:**
 ```json
 {
-  "TokenBroker": {
-    "Issuer": "ruya-token-service",
-    "Audiences": [
-      "ruya-api",
-      "ruya-services"
-    ],
-    "SigningKeyBase64": "YOUR_BASE64_ENCODED_256_BIT_KEY_HERE",
-    "ClockSkew": "00:00:30"
-  },
   "TokenClient": {
-    "TokenBrokerUrl": "http://token-service:8080",
+    "TokenBrokerUrl": "https://token-service",
     "ServiceName": "service-a",
-    "ApiKey": "YOUR_SERVICE_A_API_KEY_HERE",
     "TokenRefreshBuffer": "00:01:00"
   }
 }
 ```
 
+Supply `TokenClient__ApiKey` through a secret provider. HTTPS is required outside loopback. `AllowInsecureHttpForDevelopment` is an explicit development-only escape hatch and must not be enabled in production settings.
+
 ## Resilience & Fault Tolerance
 
-The `TokenClient` includes built-in resilience using .NET 8's `Microsoft.Extensions.Http.Resilience`:
+The `TokenClient` uses the standard `Microsoft.Extensions.Http.Resilience` pipeline:
 
-- **Retry**: 3 attempts with exponential backoff (1s, 2s, 4s)
-- **Circuit Breaker**: Opens after 5 consecutive failures, stays open for 30 seconds
-- **Timeout**: 30 second per-request timeout
+- **Retry**: bounded retries for transient failures with exponential backoff and jitter on retry-safe HTTP methods
+- **Circuit Breaker**: failure-ratio sampling prevents sustained calls to an unhealthy issuer
+- **Timeouts**: both per-attempt and total-request timeouts are enforced
+
+Token creation and exchange are POST operations that issue credentials. They are deliberately not retried automatically because the API does not implement an idempotency-key contract; a lost response must not create additional valid JWTs invisibly. Use an `AddTokenClient` overload that accepts `Action<HttpStandardResilienceOptions>` when the service needs values different from the package defaults. Custom settings cannot re-enable retries for unsafe methods.
 
 This ensures your services gracefully handle Token Service outages:
 
 ```
 Token Service goes down for 5 minutes:
 ├── Services with valid cached tokens → Continue working normally
-├── Services needing refresh → Retry with backoff, then fail gracefully
+├── Services needing refresh → Make one issuance attempt, then fail without creating a duplicate token
 └── Token Service recovers → Next request succeeds, services auto-recover
 ```
 
@@ -206,7 +215,7 @@ builder.Services.AddTokenClient();
 ```csharp
 builder.Services.AddTokenClient(options =>
 {
-    // Customize retry
+    // Customize retry for retry-safe methods only; token POSTs remain single-attempt.
     options.Retry.MaxRetryAttempts = 5;
     options.Retry.Delay = TimeSpan.FromSeconds(2);
 
@@ -447,7 +456,7 @@ app.MapGet("/api/data", async (HttpContext ctx, ITokenClient tokenClient) =>
 app.MapGet("/api/orders", [Authorize] async (ClaimsPrincipal user) =>
 {
     // Check scopes
-    if (!user.HasScope("read:orders"))
+    if (!user.HasAllScopes("read:orders"))
         return Results.Forbid();
 
     // Get original caller identity
@@ -471,25 +480,33 @@ try
 {
     var token = await tokenClient.GetTokenAsync(cancellationToken: ct);
 }
-catch (TokenBrokerException ex) when (ex is InvalidApiKeyException)
+catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
 {
-    // API key is invalid or revoked - check configuration
-    logger.LogError(ex, "Invalid API key for service");
-    throw;
-}
-catch (TokenBrokerException ex)
-{
-    // General token service error - retry or alert
-    logger.LogError(ex, "Token service unavailable");
+    // API key is invalid or revoked - check secret provisioning.
+    logger.LogError("Token service rejected this client credential");
     throw;
 }
 catch (HttpRequestException ex)
 {
-    // Network error to token service
-    logger.LogError(ex, "Cannot reach token service");
+    // Network, timeout, or non-success HTTP response. Do not log request bodies or credentials.
+    logger.LogError("Token service request failed with status {StatusCode}", ex.StatusCode);
     throw;
 }
 ```
+
+## Local verification
+
+Release builds normally consume published sibling packages. To verify all current TokenBroker projects together before those packages are published, use the repository-only project-reference switch:
+
+```powershell
+dotnet test --project tests/Ruya.Services.TokenBroker.Unit.Tests/Ruya.Services.TokenBroker.Unit.Tests.csproj `
+    --configuration Release `
+    -p:UseLocalTokenBrokerProjectReferences=true
+```
+
+The test target requires the .NET 8 ASP.NET Core shared runtime. On a machine intentionally carrying only a later runtime, set `DOTNET_ROLL_FORWARD=Major` for a compatibility smoke run; install the .NET 8 runtime for target-runtime verification.
+
+The TokenBroker workflows supply the same property to restore, build, and test so NuGet's static restore graph and the compiler use the same dependency graph. Published packages continue declaring package dependencies on the sibling TokenBroker packages.
 
 ## Token Flow
 
@@ -498,8 +515,8 @@ catch (HttpRequestException ex)
 ```
 Service A                    Token Service
     │                              │
-    │ POST /api/token              │
-    │ X-Api-Key: abc123            │
+    │ POST /api/v1/token           │
+    │ X-Api-Key: <secret>          │
     │ X-Service-Name: service-a    │
     │──────────────────────────────▶
     │                              │
@@ -512,7 +529,7 @@ Service A                    Token Service
 ```
 Service B                    Token Service
     │                              │
-    │ POST /api/token/exchange     │
+    │ POST /api/v1/token/exchange  │
     │ { token: "jwt-with-chain" }  │
     │──────────────────────────────▶
     │                              │
@@ -535,23 +552,23 @@ src/
 │   └── Exceptions.cs
 │
 ├── Ruya.Services.TokenBroker.Validation/        # Lightweight validation only
-│   ├── TokenValidationSettings.cs
+│   ├── Settings.cs
 │   ├── ClaimsPrincipalExtensions.cs
 │   └── StartupExtensions.cs        # AddTokenValidation()
 │
 ├── Ruya.Services.TokenBroker.Client/            # HTTP client for requesting tokens
-│   ├── TokenClient.cs
-│   ├── TokenClientSettings.cs
+│   ├── Client.cs
+│   ├── Settings.cs
+│   ├── SettingsValidator.cs
 │   └── StartupExtensions.cs        # AddTokenClient()
 │
 ├── Ruya.Services.TokenBroker/                   # Full service (central auth)
-│   ├── examples/
+│   ├── samples/
 │   │   ├── Program.*.cs
-│   │   ├── appsettings.*.json
 │   │   ├── kubernetes-deployment.yaml
 │   │   └── SeedApiKeys.cs
-│   ├── TokenBrokerSettings.cs
-│   ├── TokenBroker.cs
+│   ├── Settings.cs
+│   ├── Service.cs
 │   ├── ApiKeyValidator.cs
 │   ├── Api.cs                      # MapTokenBrokerApi()
 │   ├── HealthCheck.cs
@@ -560,88 +577,43 @@ src/
 
 ## API Keys
 
-API keys are stored in Redis as SHA256 hashed values.
+API keys are stored as SHA-256 hashes. Registration, removal, and rotation are serialized with a heartbeat-backed `IDistributedLock`; validation also checks the service-name index, so a stale payload cannot authenticate after the active index switches.
 
-### Seeding API Keys
+As currently implemented, `ApiKeyCacheDuration` is the absolute lifetime of both the registration and its active-key index, not merely an in-process read-cache duration. The provisioning owner must renew each registration before that duration expires.
 
-**Option 1: Startup seeding (development/testing)**
+### Registering and rotating API keys
+
+Always register through `IApiKeyValidator`; writing cache entries directly bypasses the active-key index and atomic rotation contract. Retrieve the plaintext key from a secret provider and pass the caller cancellation token:
 
 ```csharp
-// In Program.cs of your Token Service
-var apiKeyValidator = app.Services.GetRequiredService<IApiKeyValidator>();
+var apiKey = configuration["TokenBrokerBootstrap:ApiKeys:order-service"]
+    ?? throw new InvalidOperationException("The order-service API-key secret is missing.");
 
-await apiKeyValidator.RegisterServiceAsync(
+await validator.RegisterServiceAsync(
     new ServiceRegistration
     {
         ServiceName = "order-service",
-        ApiKeyHash = Convert.ToBase64String(
-            SHA256.HashData(Encoding.UTF8.GetBytes("dev-api-key-12345"))),
-        AllowedScopes = new[] { "read:orders", "write:orders" },
+        ApiKeyHash = string.Empty, // The validator computes the stored hash.
+        AllowedScopes = ["read:orders", "write:orders"],
+        AllowedRoles = ["order-reader"],
         CanExchangeTokens = true
     },
-    "dev-api-key-12345",  // Plain key for index lookup
-    CancellationToken.None);
+    apiKey,
+    cancellationToken);
 ```
 
-**Option 2: Admin API endpoint**
+Calling the same method with a new key rotates the credential. The new registration is written first, the active index switches under the distributed lock, and the old payload is then removed. If the index write reports an uncertain outcome, cleanup first verifies which hash is active and never removes a payload referenced by the active index. Re-registering the same key refreshes its payload without destructive compensation, so a failed index refresh does not invalidate the current credential. Provisioning calls remain safe to retry. Never log or return the plaintext key after the one controlled provisioning handoff.
 
-```csharp
-// Secure admin endpoint (protect appropriately!)
-app.MapPost("/admin/api-keys", [Authorize(Roles = "admin")]
-    async (RegisterServiceRequest request, IApiKeyValidator validator) =>
-{
-    var apiKey = GenerateSecureApiKey(); // Generate secure random key
-    await validator.RegisterServiceAsync(
-        new ServiceRegistration
-        {
-            ServiceName = request.ServiceName,
-            ApiKeyHash = Convert.ToBase64String(
-                SHA256.HashData(Encoding.UTF8.GetBytes(apiKey))),
-            AllowedScopes = request.Scopes,
-            CanExchangeTokens = request.CanExchange
-        },
-        apiKey,
-        CancellationToken.None);
+## Signing-key rotation
 
-    return Results.Ok(new { ApiKey = apiKey }); // Return key ONCE
-});
-```
+Rotate signing keys with an overlap window:
 
-**Option 3: Migration/seed script**
+1. Add the new public key to `SigningPublicKeys` on the broker and every validator while retaining the previous public key.
+2. Deploy validators and the broker with the overlapping ring.
+3. Switch `SigningKeyId` and `SigningPrivateKeyPem` to the new matching pair. New tokens carry the new `kid`; broker validation and exchange continue accepting unexpired tokens carrying the previous `kid`.
+4. Remove the previous public key only after its last possible token lifetime plus clock skew has elapsed.
 
-```csharp
-// Separate console app or migration
-public class SeedApiKeys
-{
-    public static async Task SeedAsync(IApiKeyValidator validator)
-    {
-        var services = new[]
-        {
-            ("order-service", "read:orders,write:orders", true),
-            ("inventory-service", "read:inventory", false),
-            ("reporting-service", "read:*", false)
-        };
-
-        foreach (var (name, scopes, canExchange) in services)
-        {
-            var apiKey = Environment.GetEnvironmentVariable($"{name.ToUpper()}_API_KEY")
-                ?? throw new InvalidOperationException($"Missing API key for {name}");
-
-            await validator.RegisterServiceAsync(
-                new ServiceRegistration
-                {
-                    ServiceName = name,
-                    ApiKeyHash = Convert.ToBase64String(
-                        SHA256.HashData(Encoding.UTF8.GetBytes(apiKey))),
-                    AllowedScopes = scopes.Split(','),
-                    CanExchangeTokens = canExchange
-                },
-                apiKey,
-                CancellationToken.None);
-        }
-    }
-}
-```
+The private key remains issuer-only throughout the rotation.
 
 ## Extensions
 
@@ -678,85 +650,22 @@ Built-in metrics:
 - `token_service_api_key_validations_total`
 - `token_service_api_key_validation_failures_total`
 
-## Integration with ASP.NET Identity
+## Boundary with user identity providers
 
-This library handles **service-to-service (S2S)** authentication, which is separate from **user authentication**. They work together:
+TokenBroker is an issuer and validator for its own service-to-service tokens. Its exchange endpoint accepts only a still-valid TokenBroker token signed by one of the configured broker keys. It does **not** accept or translate an arbitrary OAuth/OIDC token from an external identity provider.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        User Authentication                            │
-│   (ASP.NET Identity, OAuth2, OpenID Connect, IdentityServer, etc.)   │
-│                                                                       │
-│   User logs in → Gets user JWT → Calls your API Gateway              │
-└───────────────────────────────────┬──────────────────────────────────┘
-                                    │
-                                    ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                    Service-to-Service Authentication                  │
-│                    (This Token Service library)                       │
-│                                                                       │
-│   API Gateway → Token Exchange → Internal Services                   │
-│   (preserves user identity in 'sub', adds services to 'act' chain)   │
-└──────────────────────────────────────────────────────────────────────┘
-```
+An API gateway that accepts user tokens must validate those tokens with the identity provider's dedicated authentication scheme. If the gateway also calls internal services, keep that trust boundary explicit: request a broker service token for the gateway's registered service identity, or implement a separately reviewed federation/delegation component. Do not pass an external user token to `ExchangeTokenAsync` and assume it will be trusted or preserve the user identity.
 
-### Example: API Gateway with User Tokens
-
-```csharp
-// API Gateway receives user token from Identity Provider
-app.MapGet("/api/orders", [Authorize] async (
-    HttpContext ctx,
-    ITokenClient tokenClient,
-    HttpClient orderServiceClient) =>
-{
-    // Extract the incoming user token
-    var incomingToken = ctx.Request.Headers.Authorization
-        .ToString().Replace("Bearer ", "");
-
-    // Exchange the user token for an S2S token (preserves user identity, adds gateway to actor chain)
-    var exchangedToken = await tokenClient.ExchangeTokenAsync(
-        incomingToken,
-        narrowedScopes: ["read:orders"]);
-
-    // Use exchanged token to call internal service
-    // Internal service will see: subject=user, actor=api-gateway
-    orderServiceClient.DefaultRequestHeaders.Authorization =
-        new AuthenticationHeaderValue("Bearer", exchangedToken);
-
-    return await orderServiceClient.GetFromJsonAsync<Order[]>("/orders");
-});
-```
-
-### Combined Authentication Setup
-
-```csharp
-// In a microservice that receives both user and S2S tokens
-builder.Services
-    .AddAuthentication()
-    .AddJwtBearer("Users", options => { /* User token validation */ })
-    .AddJwtBearer("Services", options => { /* S2S token validation from TokenBroker */ });
-
-// Use AddTokenValidation for S2S tokens
-builder.Services.AddTokenValidation();
-
-// Policy-based authorization
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("ServiceOnly", policy =>
-        policy.RequireAuthenticatedUser()
-              .AddAuthenticationSchemes("Services"));
-
-    options.AddPolicy("UserOrService", policy =>
-        policy.RequireAuthenticatedUser()
-              .AddAuthenticationSchemes("Users", "Services"));
-});
-```
+`AddTokenValidation()` configures the default JWT bearer scheme for TokenBroker tokens. Applications with multiple issuers should configure named schemes and authorization policies deliberately rather than registering competing defaults.
 
 ## Security Notes
 
-1. Token Service should be **ClusterIP only** (no external access)
-2. API keys are SHA256 hashed before storage
-3. Tokens are short-lived (15 min default)
-4. Token exchange cannot elevate scopes
-5. Services can be restricted from token exchange via `CanExchangeTokens`
-6. Full actor chain provides audit trail for requests
+1. Keep the issuer internal (`ClusterIP` or an equivalent private boundary) and require TLS in transit.
+2. Store the RSA private key, Redis connection string, and client API keys only in a secret provider. Validators receive public keys only.
+3. Pin validation to RSA-SHA256 and rotate with overlapping `SigningPublicKeys` entries and distinct `kid` values.
+4. API keys are SHA-256 hashed and rotations are serialized with a distributed lock; never seed the cache directly.
+5. Tokens are short-lived (15 minutes by default), and exchanged tokens never outlive the original token.
+6. Token exchange cannot elevate the original scopes or exceed the actor service's registered scopes.
+7. Roles are issuer-owned and must be listed in the service registration; reserved claims cannot be overridden.
+8. `/api/v1/token/validate` requires the same API-key/service-name authentication as issuance. The `/api/token` prefix is a secured, deprecated 8.x compatibility alias.
+9. Logs and metric tags intentionally omit subjects, JWT IDs, tokens, API keys, and actor-chain contents.

@@ -16,6 +16,7 @@ on:
     paths:
       - '.github/workflows/Ruya.AspNetCore.Middleware.yml'
       - 'src/Ruya.AspNetCore.Middleware/**'
+      - 'tests/Ruya.AspNetCore.Middleware.Unit.Tests/**'
 
 jobs:
   build:

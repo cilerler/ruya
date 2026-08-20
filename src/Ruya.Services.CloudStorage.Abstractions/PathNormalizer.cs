@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 
 namespace Ruya.Services.CloudStorage.Abstractions;
 
@@ -25,17 +24,14 @@ public static class PathNormalizer
         if (string.IsNullOrEmpty(path))
             return path;
 
-        string fileName = Path.GetFileName(path);
-        string? directoryName = Path.GetDirectoryName(path);
+        bool hasTrailingSeparator = path[^1] is '/' or '\\';
+        string normalizedPath = string.Join(
+            '/',
+            path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries));
 
-        if (string.IsNullOrEmpty(directoryName))
-            return fileName;
-
-        string normalizedDirectory = directoryName
-            .Replace(Path.DirectorySeparatorChar, '/')
-            .Trim('/');
-
-        return $"{normalizedDirectory}/{fileName}";
+        return hasTrailingSeparator && normalizedPath.Length > 0
+            ? $"{normalizedPath}/"
+            : normalizedPath;
     }
 
     /// <summary>
@@ -50,7 +46,6 @@ public static class PathNormalizer
             return fileName;
 
         string normalizedDirectory = directory
-            .Replace(Path.DirectorySeparatorChar, '/')
             .Replace('\\', '/')
             .Trim('/');
 

@@ -105,9 +105,15 @@ internal static partial class LoggerExtensions
         Message = "Error releasing lock. [LockKey = {LockKey}]")]
     public static partial void LogLockReleaseError(this ILogger logger, Exception ex, string lockKey);
 
+    [LoggerMessage(
+        EventId = 17,
+        Level = LogLevel.Warning,
+        Message = "Distributed-lock health check could not clean up its probe lock")]
+    public static partial void LogHealthCheckCleanupError(this ILogger logger, Exception ex);
+
     // Scope definition
-    public static IDisposable? BeginLockScope(this ILogger logger, string lockKey, string lockValue)
+    public static IDisposable? BeginLockScope(this ILogger logger, string lockKey)
     {
-        return logger.BeginScope("LockKey={LockKey}, LockValue={LockValue}", lockKey, lockValue);
+        return logger.BeginScope("LockKey={LockKey}", lockKey);
     }
 }

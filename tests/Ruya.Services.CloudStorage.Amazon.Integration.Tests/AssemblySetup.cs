@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Amazon.S3;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Ruya.Testing.Primitives;
@@ -17,6 +16,7 @@ public static class AssemblySetup
 {
     private static IContainer? _container;
     private static bool _isEmulator = true;
+    private static readonly Dictionary<string, string?> _originalEnvironment = new(StringComparer.Ordinal);
 
     [AssemblyInitialize]
     public static async Task AssemblyInit(TestContext testContext)
@@ -53,18 +53,18 @@ public static class AssemblySetup
             region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-1";
         }
 
-        Environment.SetEnvironmentVariable("CloudStorage:Amazon:AccessKey", accessKey);
-        Environment.SetEnvironmentVariable("CloudStorage:Amazon:SecretKey", secretKey);
-        Environment.SetEnvironmentVariable("CloudStorage:Amazon:Region", region);
+        SetTestEnvironmentVariable("RUYA_TEST_CloudStorage__Amazon__AccessKey", accessKey);
+        SetTestEnvironmentVariable("RUYA_TEST_CloudStorage__Amazon__SecretKey", secretKey);
+        SetTestEnvironmentVariable("RUYA_TEST_CloudStorage__Amazon__Region", region);
 
         if (!string.IsNullOrEmpty(serviceUrl))
         {
-            Environment.SetEnvironmentVariable("CloudStorage:Amazon:ServiceUrl", serviceUrl);
+            SetTestEnvironmentVariable("RUYA_TEST_CloudStorage__Amazon__ServiceUrl", serviceUrl);
         }
 
         TestHost.Initialize((services, configuration) =>
         {
-            services.AddAmazonStorageService(configuration);
+            services.AddAmazonStorageService();
         });
 
         // Create bucket manually if using emulator or if needed
@@ -79,7 +79,7 @@ public static class AssemblySetup
             s3Config.ServiceURL = serviceUrl;
         }
 
-        var s3Client = new AmazonS3Client(accessKey, secretKey, s3Config);
+        using var s3Client = new AmazonS3Client(accessKey, secretKey, s3Config);
         try
         {
             await s3Client.PutBucketAsync("mybucket");
@@ -94,7 +94,34 @@ public static class AssemblySetup
     [AssemblyCleanup]
     public static async Task AssemblyCleanup()
     {
-        TestHost.Cleanup();
-        if (_container != null) await _container.StopAsync();
+        try
+        {
+            await TestHost.CleanupAsync();
+            if (_container != null) await _container.StopAsync();
+        }
+        finally
+        {
+            RestoreTestEnvironment();
+        }
+    }
+
+    private static void SetTestEnvironmentVariable(string name, string? value)
+    {
+        if (!_originalEnvironment.ContainsKey(name))
+        {
+            _originalEnvironment[name] = Environment.GetEnvironmentVariable(name);
+        }
+
+        Environment.SetEnvironmentVariable(name, value);
+    }
+
+    private static void RestoreTestEnvironment()
+    {
+        foreach ((string name, string? value) in _originalEnvironment)
+        {
+            Environment.SetEnvironmentVariable(name, value);
+        }
+
+        _originalEnvironment.Clear();
     }
 }

@@ -16,6 +16,7 @@ using Ruya.Services.CloudStorage.Abstractions;
 namespace Ruya.Services.CloudStorage.UnitTests.Azure;
 
 [TestClass]
+[DoNotParallelize]
 public class AzureClientTests
 {
     private Mock<BlobServiceClient> _mockServiceClient = null!;
@@ -55,7 +56,7 @@ public class AzureClientTests
     #region Container Caching Tests
 
     [TestMethod]
-    public async Task GetContainerClientAsync_CachesContainerExistence()
+    public async Task GetFileMetadataAsync_DoesNotCreateContainerAsReadSideEffect()
     {
         // Arrange
         SetupBlobPropertiesResponse();
@@ -64,30 +65,35 @@ public class AzureClientTests
         await _client.GetFileMetadataAsync("test-container", "file1.txt");
         await _client.GetFileMetadataAsync("test-container", "file2.txt");
 
-        // Assert - CreateIfNotExistsAsync should only be called once due to caching
+        // Assert - read operations must not create infrastructure
+        _mockContainerClient.Verify(x => x.CreateIfNotExistsAsync(
+            It.IsAny<PublicAccessType>(),
+            It.IsAny<IDictionary<string, string>>(),
+            It.IsAny<BlobContainerEncryptionScopeOptions>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [TestMethod]
+    public async Task UploadStreamAsync_CachesContainerCreationPerContainer()
+    {
+        using var first = new MemoryStream(new byte[10]);
+        using var second = new MemoryStream(new byte[10]);
+        _mockBlobClient
+            .Setup(x => x.UploadAsync(
+                It.IsAny<Stream>(),
+                It.IsAny<BlobUploadOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Response.FromValue(Mock.Of<BlobContentInfo>(), Mock.Of<Response>()));
+        SetupBlobPropertiesResponse();
+
+        await _client.UploadStreamAsync("container-a", first, "file-a.txt", "text/plain");
+        await _client.UploadStreamAsync("container-a", second, "file-b.txt", "text/plain");
+
         _mockContainerClient.Verify(x => x.CreateIfNotExistsAsync(
             It.IsAny<PublicAccessType>(),
             It.IsAny<IDictionary<string, string>>(),
             It.IsAny<BlobContainerEncryptionScopeOptions>(),
             It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [TestMethod]
-    public async Task GetContainerClientAsync_DifferentContainers_CallsCreateForEach()
-    {
-        // Arrange
-        SetupBlobPropertiesResponse();
-
-        // Act - Call for different containers
-        await _client.GetFileMetadataAsync("container-a", "file.txt");
-        await _client.GetFileMetadataAsync("container-b", "file.txt");
-
-        // Assert - CreateIfNotExistsAsync should be called twice (once per container)
-        _mockContainerClient.Verify(x => x.CreateIfNotExistsAsync(
-            It.IsAny<PublicAccessType>(),
-            It.IsAny<IDictionary<string, string>>(),
-            It.IsAny<BlobContainerEncryptionScopeOptions>(),
-            It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     #endregion
@@ -128,6 +134,17 @@ public class AzureClientTests
 
         Assert.IsTrue(ex.Message.Contains("missing.txt"));
         Assert.IsTrue(ex.Message.Contains("container"));
+
+#pragma warning disable CA1873 // Moq expression matchers are not evaluated as production log arguments.
+        _mockLogger.Verify(
+            logger => logger.Log(
+                LogLevel.Information,
+                It.Is<EventId>(eventId => eventId.Id == 8200 && eventId.Name == "AzureMetadataNotFound"),
+                It.IsAny<It.IsAnyType>(),
+                null,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+#pragma warning restore CA1873
     }
 
     [TestMethod]
@@ -143,6 +160,20 @@ public class AzureClientTests
         // Act & Assert
         await Assert.ThrowsAsync<RequestFailedException>(
             () => _client.GetFileMetadataAsync("container", "file.txt"));
+    }
+
+    [TestMethod]
+    public async Task GetFileMetadataAsync_WhenContainerClientSetupFails_RecordsFailure()
+    {
+        _mockServiceClient
+            .Setup(service => service.GetBlobContainerClient("container"))
+            .Throws(new InvalidOperationException("container setup failed"));
+        using var collector = new MetricCollector("Ruya.Services.CloudStorage.Azure", "files_failed");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _client.GetFileMetadataAsync("container", "file.txt"));
+
+        Assert.AreEqual(1, collector.Sum);
     }
 
     #endregion
@@ -228,6 +259,80 @@ public class AzureClientTests
         // Assert
         Assert.IsNotNull(capturedOptions?.HttpHeaders);
         Assert.AreEqual("application/json", capturedOptions.HttpHeaders.ContentType);
+    }
+
+    [TestMethod]
+    public async Task UploadFileAsync_WhenSourceCannotBeOpened_RecordsFailure()
+    {
+        using var collector = new MetricCollector("Ruya.Services.CloudStorage.Azure", "files_failed");
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            _client.UploadFileAsync(
+                "container",
+                Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"),
+                "file.txt"));
+
+        Assert.AreEqual(1, collector.Sum);
+    }
+
+    #endregion
+
+    #region GetFileListAsync Tests
+
+    [TestMethod]
+    public async Task GetFileListAsync_WhenEnumerationFails_RecordsFailure()
+    {
+        var blobs = new Mock<AsyncPageable<BlobItem>>();
+        blobs
+            .Setup(pageable => pageable.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
+            .Returns(() => new ThrowingAsyncEnumerator<BlobItem>(new InvalidOperationException("enumeration failed")));
+        _mockContainerClient
+            .Setup(container => container.GetBlobsAsync(
+                It.IsAny<BlobTraits>(),
+                It.IsAny<BlobStates>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(blobs.Object);
+        using var collector = new MetricCollector("Ruya.Services.CloudStorage.Azure", "files_failed");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (CloudFileMetadata _ in _client.GetFileListAsync("container"))
+            {
+                Assert.Fail("The failing enumerator must not yield an item.");
+            }
+        });
+
+        Assert.AreEqual(1, collector.Sum);
+    }
+
+    [TestMethod]
+    public async Task GetFileListAsync_WhenCallerCancels_DoesNotRecordFailure()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var blobs = new Mock<AsyncPageable<BlobItem>>();
+        blobs
+            .Setup(pageable => pageable.GetAsyncEnumerator(It.IsAny<CancellationToken>()))
+            .Returns(() => new ThrowingAsyncEnumerator<BlobItem>(new OperationCanceledException(cancellation.Token)));
+        _mockContainerClient
+            .Setup(container => container.GetBlobsAsync(
+                It.IsAny<BlobTraits>(),
+                It.IsAny<BlobStates>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(blobs.Object);
+        using var collector = new MetricCollector("Ruya.Services.CloudStorage.Azure", "files_failed");
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (CloudFileMetadata _ in _client.GetFileListAsync("container", cancellationToken: cancellation.Token))
+            {
+                Assert.Fail("The canceled enumerator must not yield an item.");
+            }
+        });
+
+        Assert.AreEqual(0, collector.Sum);
     }
 
     #endregion
@@ -341,6 +446,21 @@ public class AzureClientTests
 
         // Act & Assert - Should not throw
         await _client.DeleteFileAsync("container", "non-existent.txt");
+    }
+
+    [TestMethod]
+    public async Task DeleteFileAsync_WhenContainerDoesNotExist_DoesNotThrow()
+    {
+        // Arrange
+        _mockBlobClient
+            .Setup(x => x.DeleteIfExistsAsync(
+                It.IsAny<DeleteSnapshotsOption>(),
+                It.IsAny<BlobRequestConditions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RequestFailedException((int)HttpStatusCode.NotFound, "Container not found"));
+
+        // Act & Assert - Delete remains idempotent when the container is absent.
+        await _client.DeleteFileAsync("missing-container", "non-existent.txt");
     }
 
     #endregion

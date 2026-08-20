@@ -9,14 +9,20 @@ using Microsoft.Extensions.Logging;
 
 namespace Ruya.AspNetCore.Diagnostics.GlobalExceptionHandler;
 
-public sealed class GlobalExceptionHandlerService(ILogger<GlobalExceptionHandlerService> logger) : IExceptionHandler
+public sealed class GlobalExceptionHandlerService : IExceptionHandler
 {
 	private const string TraceIdKey = "traceId";
 	private const string ExceptionTypeKey = "exception.type";
 	private const string ExceptionMessageKey = "exception.message";
 	private const string ExceptionStatusCodeKey = "exception.statuscode";
 
-	private readonly ILogger _logger = logger;
+	private readonly ILogger _logger;
+
+	public GlobalExceptionHandlerService(ILogger<GlobalExceptionHandlerService> logger)
+	{
+		ArgumentNullException.ThrowIfNull(logger);
+		_logger = logger;
+	}
 
 	public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
 	{
@@ -29,8 +35,8 @@ public sealed class GlobalExceptionHandlerService(ILogger<GlobalExceptionHandler
 		if (exception is OperationCanceledException && cancellationToken.IsCancellationRequested)
 		{
 			_logger.RequestCancelled(traceId);
-			// Let the framework handle cancelled requests
-			return false;
+			httpContext.Response.StatusCode = 499;
+			return true;
 		}
 
 		(int statusCode, string title) = MapException(exception);
@@ -80,8 +86,6 @@ public sealed class GlobalExceptionHandlerService(ILogger<GlobalExceptionHandler
 				=> (StatusCodes.Status501NotImplemented, "Feature not implemented"),
 			TimeoutException
 				=> (StatusCodes.Status504GatewayTimeout, "Operation timed out"),
-			OperationCanceledException
-				=> (499, "Client closed request"),
 			_ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred")
 		};
 	}

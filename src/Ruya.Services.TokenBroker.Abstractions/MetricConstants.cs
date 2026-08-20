@@ -2,6 +2,7 @@ namespace Ruya.Services.TokenBroker;
 
 public static class MetricConstants
 {
+    // Published legacy instrumentation identities intentionally differ from this package's CLR namespace.
     public const string MeterName = "Ruya.TokenBroker";
     public const string ClientMeterName = "Ruya.TokenBroker.Client";
 

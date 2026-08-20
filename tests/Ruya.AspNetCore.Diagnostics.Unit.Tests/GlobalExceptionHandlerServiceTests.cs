@@ -43,13 +43,33 @@ public class GlobalExceptionHandlerServiceTests
 		return context;
 	}
 
+	private void VerifyLoggedEvent(LogLevel logLevel, int eventId, Exception? exception)
+	{
+#pragma warning disable CA1873 // Moq expression matchers are not evaluated as production log arguments.
+		_loggerMock.Verify(
+			x => x.Log(
+				logLevel,
+				It.Is<EventId>(candidate => candidate.Id == eventId),
+				It.IsAny<It.IsAnyType>(),
+				exception,
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.Once);
+#pragma warning restore CA1873
+	}
+
 	#region Input Validation Tests
+
+	[TestMethod]
+	public void Constructor_NullLogger_ThrowsArgumentNullException()
+	{
+		Assert.ThrowsExactly<ArgumentNullException>(() => new GlobalExceptionHandlerService(null!));
+	}
 
 	[TestMethod]
 	public async Task TryHandleAsync_NullHttpContext_ThrowsArgumentNullException()
 	{
 		// Arrange
-		var exception = new Exception("Test");
+		var exception = new InvalidOperationException("Test");
 
 		// Act & Assert
 		await Assert.ThrowsExactlyAsync<ArgumentNullException>(
@@ -76,7 +96,9 @@ public class GlobalExceptionHandlerServiceTests
 	{
 		// Arrange
 		var httpContext = CreateHttpContext();
-		var exception = new ArgumentNullException("param");
+#pragma warning disable S3928 // The synthetic exception validates mapping and has no originating method parameter.
+		var exception = new ArgumentNullException("request", "Required request value was null.");
+#pragma warning restore S3928
 
 		// Act
 		var result = await _sut.TryHandleAsync(httpContext, exception, CancellationToken.None);
@@ -91,7 +113,9 @@ public class GlobalExceptionHandlerServiceTests
 	{
 		// Arrange
 		var httpContext = CreateHttpContext();
-		var exception = new ArgumentOutOfRangeException("param");
+#pragma warning disable S3928 // The synthetic exception validates mapping and has no originating method parameter.
+		var exception = new ArgumentOutOfRangeException("value", "Request value was outside the supported range.");
+#pragma warning restore S3928
 
 		// Act
 		var result = await _sut.TryHandleAsync(httpContext, exception, CancellationToken.None);
@@ -162,18 +186,18 @@ public class GlobalExceptionHandlerServiceTests
 	}
 
 	[TestMethod]
-	public async Task TryHandleAsync_OperationCanceledException_WithoutCancellation_Returns499()
+	public async Task TryHandleAsync_OperationCanceledException_WithoutRequestCancellation_Returns500()
 	{
 		// Arrange
 		var httpContext = CreateHttpContext();
 		var exception = new OperationCanceledException("Cancelled");
 
-		// Act - CancellationToken is NOT cancelled
+		// Act
 		var result = await _sut.TryHandleAsync(httpContext, exception, CancellationToken.None);
 
 		// Assert
 		Assert.IsTrue(result);
-		Assert.AreEqual(499, httpContext.Response.StatusCode);
+		Assert.AreEqual(StatusCodes.Status500InternalServerError, httpContext.Response.StatusCode);
 	}
 
 	[TestMethod]
@@ -196,35 +220,54 @@ public class GlobalExceptionHandlerServiceTests
 	#region Cancellation Handling Tests
 
 	[TestMethod]
-	public async Task TryHandleAsync_OperationCanceledException_WithCancellation_ReturnsFalse()
+	public async Task TryHandleAsync_OperationCanceledException_WithRequestCancellation_Returns499()
 	{
 		// Arrange
 		var httpContext = CreateHttpContext();
 		using var cts = new CancellationTokenSource();
-		cts.Cancel();
+		await cts.CancelAsync();
 		var exception = new OperationCanceledException(cts.Token);
 
 		// Act
 		var result = await _sut.TryHandleAsync(httpContext, exception, cts.Token);
 
-		// Assert - Should return false to let framework handle
-		Assert.IsFalse(result);
+		// Assert
+		Assert.IsTrue(result);
+		Assert.AreEqual(499, httpContext.Response.StatusCode);
 	}
 
 	[TestMethod]
-	public async Task TryHandleAsync_TaskCanceledException_WithCancellation_ReturnsFalse()
+	public async Task TryHandleAsync_TaskCanceledException_WithRequestCancellation_Returns499()
 	{
 		// Arrange
 		var httpContext = CreateHttpContext();
 		using var cts = new CancellationTokenSource();
-		cts.Cancel();
+		await cts.CancelAsync();
 		var exception = new TaskCanceledException("Task was cancelled", null, cts.Token);
 
 		// Act
 		var result = await _sut.TryHandleAsync(httpContext, exception, cts.Token);
 
 		// Assert
-		Assert.IsFalse(result);
+		Assert.IsTrue(result);
+		Assert.AreEqual(499, httpContext.Response.StatusCode);
+	}
+
+	[TestMethod]
+	public async Task TryHandleAsync_OperationCanceledException_WithOnlyExceptionTokenCancelled_Returns500()
+	{
+		// Arrange
+		var httpContext = CreateHttpContext();
+		using var cts = new CancellationTokenSource();
+		await cts.CancelAsync();
+		var exception = new OperationCanceledException(cts.Token);
+
+		// Act
+		var result = await _sut.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+		// Assert
+		Assert.IsTrue(result);
+		Assert.AreEqual(StatusCodes.Status500InternalServerError, httpContext.Response.StatusCode);
 	}
 
 	#endregion
@@ -242,14 +285,7 @@ public class GlobalExceptionHandlerServiceTests
 		await _sut.TryHandleAsync(httpContext, exception, CancellationToken.None);
 
 		// Assert
-		_loggerMock.Verify(
-			x => x.Log(
-				LogLevel.Error,
-				It.IsAny<EventId>(),
-				It.IsAny<It.IsAnyType>(),
-				exception,
-				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-			Times.Once);
+		VerifyLoggedEvent(LogLevel.Error, eventId: 1001, exception);
 	}
 
 	[TestMethod]
@@ -258,21 +294,14 @@ public class GlobalExceptionHandlerServiceTests
 		// Arrange
 		var httpContext = CreateHttpContext();
 		using var cts = new CancellationTokenSource();
-		cts.Cancel();
+		await cts.CancelAsync();
 		var exception = new OperationCanceledException(cts.Token);
 
 		// Act
 		await _sut.TryHandleAsync(httpContext, exception, cts.Token);
 
 		// Assert
-		_loggerMock.Verify(
-			x => x.Log(
-				LogLevel.Information,
-				It.IsAny<EventId>(),
-				It.IsAny<It.IsAnyType>(),
-				It.IsAny<Exception?>(),
-				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-			Times.Once);
+		VerifyLoggedEvent(LogLevel.Information, eventId: 1002, exception: null);
 	}
 
 	#endregion
@@ -367,7 +396,7 @@ public class GlobalExceptionHandlerServiceTests
 		var responseBody = await reader.ReadToEndAsync();
 
 		Assert.IsNotNull(activity?.Id);
-		Assert.IsTrue(responseBody.Contains(activity.Id), "Response should contain Activity.Current.Id");
+		Assert.IsTrue(responseBody.Contains(activity.Id, StringComparison.Ordinal), "Response should contain Activity.Current.Id");
 	}
 
 	[TestMethod]
@@ -386,7 +415,7 @@ public class GlobalExceptionHandlerServiceTests
 		using var reader = new StreamReader(httpContext.Response.Body);
 		var responseBody = await reader.ReadToEndAsync();
 
-		Assert.IsTrue(responseBody.Contains("http-trace-id-12345"), "Response should contain HttpContext.TraceIdentifier");
+		Assert.IsTrue(responseBody.Contains("http-trace-id-12345", StringComparison.Ordinal), "Response should contain HttpContext.TraceIdentifier");
 	}
 
 	#endregion
@@ -398,7 +427,7 @@ public class GlobalExceptionHandlerServiceTests
 	{
 		// Arrange
 		var httpContext = CreateHttpContext();
-		var exception = new Exception("Test");
+		var exception = new InvalidOperationException("Test");
 
 		// Act
 		var result = await _sut.TryHandleAsync(httpContext, exception, CancellationToken.None);
@@ -412,13 +441,13 @@ public class GlobalExceptionHandlerServiceTests
 	{
 		// Arrange
 		var httpContext = CreateHttpContext();
-		var exception = new Exception("Test");
+		var exception = new InvalidOperationException("Test");
 
 		// Act
 		await _sut.TryHandleAsync(httpContext, exception, CancellationToken.None);
 
 		// Assert
-		Assert.IsTrue(httpContext.Response.ContentType?.Contains("application/problem+json") ?? false);
+		Assert.IsTrue(httpContext.Response.ContentType?.Contains("application/problem+json", StringComparison.Ordinal) ?? false);
 	}
 
 	[TestMethod]
@@ -437,9 +466,9 @@ public class GlobalExceptionHandlerServiceTests
 		using var reader = new StreamReader(httpContext.Response.Body);
 		var responseBody = await reader.ReadToEndAsync();
 
-		Assert.IsFalse(responseBody.Contains(sensitiveMessage), "Response should not contain sensitive exception message");
-		Assert.IsFalse(responseBody.Contains("hunter2"), "Response should not contain sensitive data");
-		Assert.IsTrue(responseBody.Contains("An unexpected error occurred"), "Response should contain generic message");
+		Assert.IsFalse(responseBody.Contains(sensitiveMessage, StringComparison.Ordinal), "Response should not contain sensitive exception message");
+		Assert.IsFalse(responseBody.Contains("hunter2", StringComparison.Ordinal), "Response should not contain sensitive data");
+		Assert.IsTrue(responseBody.Contains("An unexpected error occurred", StringComparison.Ordinal), "Response should contain generic message");
 	}
 
 	#endregion

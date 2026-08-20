@@ -109,8 +109,8 @@ public class DataProtectionHealthCheckTests
 
 		// Assert
 		Assert.AreEqual(HealthStatus.Healthy, result.Status);
-		Assert.IsTrue(result.Description?.Contains("Redis ping:") ?? false);
-		Assert.IsTrue(result.Description?.Contains("Data protection: OK") ?? false);
+		StringAssert.Contains(result.Description, "Redis ping:", StringComparison.Ordinal);
+		StringAssert.Contains(result.Description, "Data protection: OK", StringComparison.Ordinal);
 	}
 
 	[TestMethod]
@@ -150,7 +150,7 @@ public class DataProtectionHealthCheckTests
 
 		// Assert
 		Assert.AreEqual(HealthStatus.Degraded, result.Status);
-		Assert.IsTrue(result.Description?.Contains("Redis ping latency is high") ?? false);
+		StringAssert.Contains(result.Description, "Redis ping latency is high", StringComparison.Ordinal);
 	}
 
 	[TestMethod]
@@ -173,108 +173,105 @@ public class DataProtectionHealthCheckTests
 		Assert.AreEqual("Data protection roundtrip failed: content mismatch.", result.Description);
 	}
 
+	[TestMethod]
+	public async Task CheckHealthAsync_RemoteInitializationFailsThenRecovers_ReturnsHealthyOnRetry()
+	{
+		var settingsAttempts = 0;
+		var connection = CreateConnectionMultiplexerMock();
+		var remoteSettings = new AsyncLazy<DataProtectionSettings>(() =>
+		{
+			var attempt = Interlocked.Increment(ref settingsAttempts);
+			return attempt == 1
+				? Task.FromException<DataProtectionSettings>(new InvalidOperationException("transient"))
+				: Task.FromResult(new DataProtectionSettings
+				{
+					ApplicationName = "remote-client",
+					ConnectionStringKey = "Redis",
+					ConnectionString = "localhost:6379",
+					CacheKey = "keys"
+				});
+		});
+		var remoteConnection = new AsyncLazy<IConnectionMultiplexer>(
+			() => Task.FromResult(connection.Object));
+		var services = new ServiceCollection();
+		services.AddSingleton(remoteSettings);
+		services.AddSingleton(remoteConnection);
+		services.AddSingleton(connection.Object);
+		services.AddSingleton(CreateDataProtectionMock().Object);
+		using var serviceProvider = services.BuildServiceProvider();
+		var healthCheck = new DataProtectionHealthCheck(CreateLoggerMock().Object, serviceProvider);
+
+		var failedResult = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+		var recoveredResult = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+		Assert.AreEqual(HealthStatus.Unhealthy, failedResult.Status);
+		Assert.AreEqual(HealthStatus.Healthy, recoveredResult.Status);
+		Assert.AreEqual(2, settingsAttempts);
+		Assert.IsTrue(remoteSettings.IsValueCreated);
+		Assert.IsTrue(remoteConnection.IsValueCreated);
+	}
+
 	#endregion
 
-	#region Client Mode (With AsyncLazy) Tests
+	#region Cancellation Tests
 
 	[TestMethod]
-	public async Task CheckHealthAsync_ClientMode_SettingsNotInitialized_ReturnsUnhealthy()
+	public async Task CheckHealthAsync_PreCanceledToken_ThrowsOperationCanceledException()
 	{
-		// Arrange
-		var lazySettings = new AsyncLazy<DataProtectionSettings>(() =>
-		{
-			var tcs = new TaskCompletionSource<DataProtectionSettings>();
-			// Never complete - simulates not yet initialized
-			return tcs.Task;
-		});
-
 		var services = new ServiceCollection();
-		services.AddSingleton(lazySettings);
-		services.AddSingleton(CreateConnectionMultiplexerMock().Object);
-		services.AddSingleton(CreateDataProtectionMock().Object);
+		using var serviceProvider = services.BuildServiceProvider();
+		var healthCheck = new DataProtectionHealthCheck(CreateLoggerMock().Object, serviceProvider);
+		using var cancellationSource = new CancellationTokenSource();
+		await cancellationSource.CancelAsync();
 
-		var serviceProvider = services.BuildServiceProvider();
-		var logger = CreateLoggerMock();
-		var healthCheck = new DataProtectionHealthCheck(logger.Object, serviceProvider);
-
-		// Act
-		var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
-
-		// Assert
-		Assert.AreEqual(HealthStatus.Unhealthy, result.Status);
-		Assert.AreEqual("Data protection settings are not yet initialized.", result.Description);
+		await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+			() => healthCheck.CheckHealthAsync(new HealthCheckContext(), cancellationSource.Token));
 	}
 
 	[TestMethod]
-	public async Task CheckHealthAsync_ClientMode_RedisNotInitialized_ReturnsUnhealthy()
+	public async Task CheckHealthAsync_CanceledWhilePingIsPending_ThrowsOperationCanceledException()
 	{
-		// Arrange
-		var settings = new DataProtectionSettings
-		{
-			ApplicationName = "Test",
-			ConnectionStringKey = "Redis",
-			CacheKey = "Keys"
-		};
-		var lazySettings = new AsyncLazy<DataProtectionSettings>(() => Task.FromResult(settings));
-		// Force initialization
-		_ = await lazySettings.Value;
-
-		var lazyRedis = new AsyncLazy<IConnectionMultiplexer>(() =>
-		{
-			var tcs = new TaskCompletionSource<IConnectionMultiplexer>();
-			return tcs.Task;
-		});
+		var pendingPing = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var database = new Mock<IDatabase>();
+		database.Setup(x => x.PingAsync(It.IsAny<CommandFlags>())).Returns(pendingPing.Task);
+		var connection = new Mock<IConnectionMultiplexer>();
+		connection.Setup(x => x.IsConnected).Returns(true);
+		connection.Setup(x => x.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(database.Object);
 
 		var services = new ServiceCollection();
-		services.AddSingleton(lazySettings);
-		services.AddSingleton(lazyRedis);
-		services.AddSingleton(CreateConnectionMultiplexerMock().Object);
+		services.AddSingleton(connection.Object);
 		services.AddSingleton(CreateDataProtectionMock().Object);
+		using var serviceProvider = services.BuildServiceProvider();
+		var healthCheck = new DataProtectionHealthCheck(CreateLoggerMock().Object, serviceProvider);
+		using var cancellationSource = new CancellationTokenSource();
 
-		var serviceProvider = services.BuildServiceProvider();
-		var logger = CreateLoggerMock();
-		var healthCheck = new DataProtectionHealthCheck(logger.Object, serviceProvider);
+		var checkTask = healthCheck.CheckHealthAsync(new HealthCheckContext(), cancellationSource.Token);
+		await cancellationSource.CancelAsync();
 
-		// Act
-		var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
-
-		// Assert
-		Assert.AreEqual(HealthStatus.Unhealthy, result.Status);
-		Assert.AreEqual("Redis connection is not yet initialized.", result.Description);
+		await Assert.ThrowsAsync<OperationCanceledException>(() => checkTask);
 	}
 
 	[TestMethod]
-	public async Task CheckHealthAsync_ClientMode_FullyInitialized_ReturnsHealthy()
+	public async Task CheckHealthAsync_CanceledWhileRemoteSettingsArePending_ThrowsOperationCanceledException()
 	{
-		// Arrange
-		var settings = new DataProtectionSettings
+		var initializationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var pendingSettings = new TaskCompletionSource<DataProtectionSettings>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var remoteSettings = new AsyncLazy<DataProtectionSettings>(() =>
 		{
-			ApplicationName = "Test",
-			ConnectionStringKey = "Redis",
-			CacheKey = "Keys"
-		};
-		var lazySettings = new AsyncLazy<DataProtectionSettings>(() => Task.FromResult(settings));
-		_ = await lazySettings.Value;
-
-		var connectionMock = CreateConnectionMultiplexerMock();
-		var lazyRedis = new AsyncLazy<IConnectionMultiplexer>(() => Task.FromResult(connectionMock.Object));
-		_ = await lazyRedis.Value;
-
+			initializationStarted.TrySetResult();
+			return pendingSettings.Task;
+		});
 		var services = new ServiceCollection();
-		services.AddSingleton(lazySettings);
-		services.AddSingleton(lazyRedis);
-		services.AddSingleton(connectionMock.Object);
-		services.AddSingleton(CreateDataProtectionMock().Object);
+		services.AddSingleton(remoteSettings);
+		using var serviceProvider = services.BuildServiceProvider();
+		var healthCheck = new DataProtectionHealthCheck(CreateLoggerMock().Object, serviceProvider);
+		using var cancellationSource = new CancellationTokenSource();
 
-		var serviceProvider = services.BuildServiceProvider();
-		var logger = CreateLoggerMock();
-		var healthCheck = new DataProtectionHealthCheck(logger.Object, serviceProvider);
+		var checkTask = healthCheck.CheckHealthAsync(new HealthCheckContext(), cancellationSource.Token);
+		await initializationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		await cancellationSource.CancelAsync();
 
-		// Act
-		var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
-
-		// Assert
-		Assert.AreEqual(HealthStatus.Healthy, result.Status);
+		await Assert.ThrowsAsync<OperationCanceledException>(() => checkTask);
 	}
 
 	#endregion
@@ -334,10 +331,8 @@ public class DataProtectionHealthCheckTests
 	#region Cancellation Tests
 
 	[TestMethod]
-	public async Task CheckHealthAsync_CancellationRequested_StillCompletes()
+	public async Task CheckHealthAsync_TokenNotCanceled_CompletesSuccessfully()
 	{
-		// Arrange - health check doesn't currently use cancellation token
-		// but should handle it gracefully
 		var services = new ServiceCollection();
 		services.AddSingleton(CreateConnectionMultiplexerMock().Object);
 		services.AddSingleton(CreateDataProtectionMock().Object);

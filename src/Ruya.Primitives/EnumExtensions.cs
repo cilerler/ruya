@@ -2,6 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -75,6 +77,7 @@ public static class EnumExtensions
     /// <summary>
     /// Returns all display names for the enum type T, including [Display(Name="...")] overrides.
     /// </summary>
+    [SuppressMessage("Design", "CA1002", Justification = "The List return type is retained for 8.x binary compatibility.")]
     public static List<string> GetAllDisplayNames<T>() where T : Enum
     {
         return Enum.GetValues(typeof(T))
@@ -95,10 +98,13 @@ public static class EnumExtensions
         if (!enumType.IsDefined(typeof(FlagsAttribute), false))
             return enumValue.GetDisplayName();
 
+        var valueBits = ToUInt64Bits(enumValue);
         var activeBits = Enum.GetValues(enumType)
             .Cast<Enum>()
-            .Where(bit => Convert.ToInt64(bit) != 0 && enumValue.HasFlag(bit))
-            .Select(b => b.GetDisplayName());
+            .Select(bit => (Value: bit, Bits: ToUInt64Bits(bit)))
+            .Where(bit => IsSingleBit(bit.Bits) && (valueBits & bit.Bits) == bit.Bits)
+            .GroupBy(bit => bit.Bits)
+            .Select(group => group.First().Value.GetDisplayName());
 
         return string.Join(", ", activeBits);
     }
@@ -117,9 +123,43 @@ public static class EnumExtensions
 
         var parts = displayName.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var accumulatedValue = parts
-            .Select(part => Convert.ToInt64(part.ToEnum<T>()))
-            .Aggregate((long)0, (acc, val) => acc | val);
+            .Select(part => ToUInt64Bits(part.ToEnum<T>()))
+            .Aggregate(0UL, (acc, val) => acc | val);
 
-        return (T)Enum.ToObject(enumType, accumulatedValue);
+        return (T)Enum.ToObject(enumType, ToUnderlyingValue(enumType, accumulatedValue));
+    }
+
+    private static bool IsSingleBit(ulong value) => value != 0 && (value & (value - 1)) == 0;
+
+    private static ulong ToUInt64Bits(Enum value)
+    {
+        return Type.GetTypeCode(Enum.GetUnderlyingType(value.GetType())) switch
+        {
+            TypeCode.SByte => unchecked((byte)Convert.ToSByte(value, CultureInfo.InvariantCulture)),
+            TypeCode.Byte => Convert.ToByte(value, CultureInfo.InvariantCulture),
+            TypeCode.Int16 => unchecked((ushort)Convert.ToInt16(value, CultureInfo.InvariantCulture)),
+            TypeCode.UInt16 => Convert.ToUInt16(value, CultureInfo.InvariantCulture),
+            TypeCode.Int32 => unchecked((uint)Convert.ToInt32(value, CultureInfo.InvariantCulture)),
+            TypeCode.UInt32 => Convert.ToUInt32(value, CultureInfo.InvariantCulture),
+            TypeCode.Int64 => unchecked((ulong)Convert.ToInt64(value, CultureInfo.InvariantCulture)),
+            TypeCode.UInt64 => Convert.ToUInt64(value, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException($"Unsupported enum underlying type for {value.GetType()}.")
+        };
+    }
+
+    private static object ToUnderlyingValue(Type enumType, ulong value)
+    {
+        return Type.GetTypeCode(Enum.GetUnderlyingType(enumType)) switch
+        {
+            TypeCode.SByte => unchecked((sbyte)(byte)value),
+            TypeCode.Byte => (byte)value,
+            TypeCode.Int16 => unchecked((short)(ushort)value),
+            TypeCode.UInt16 => (ushort)value,
+            TypeCode.Int32 => unchecked((int)(uint)value),
+            TypeCode.UInt32 => (uint)value,
+            TypeCode.Int64 => unchecked((long)value),
+            TypeCode.UInt64 => value,
+            _ => throw new InvalidOperationException($"Unsupported enum underlying type for {enumType}.")
+        };
     }
 }

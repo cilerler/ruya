@@ -30,24 +30,29 @@ public static class ServiceCollectionExtensions
 
         // Register SQL Server settings
         services.AddOptions<SqlServerLockSettings>()
+            .BindConfiguration(SqlServerLockSettings.ConfigurationSectionName)
             .ValidateDataAnnotations()
-            .ValidateOnStart()
-            .Configure<IConfiguration>((settings, configuration) =>
-            {
-                ArgumentNullException.ThrowIfNull(configuration);
-                var section = configuration.GetSection(SqlServerLockSettings.ConfigurationSectionName);
-                ArgumentNullException.ThrowIfNull(section.Exists() ? string.Empty : null, SqlServerLockSettings.ConfigurationSectionName);
-                section.Bind(settings);
-                settings.ConnectionString = configuration.GetConnectionString(settings.ConnectionStringKey) ?? throw new ArgumentNullException(nameof(settings.ConnectionString));
-            });
+            .Validate(
+                settings => !string.IsNullOrWhiteSpace(settings.ConnectionStringKey),
+                "ConnectionStringKey is required.")
+            .Validate<IConfiguration>(
+                (settings, configuration) =>
+                    !string.IsNullOrWhiteSpace(
+                        configuration.GetConnectionString(settings.ConnectionStringKey)),
+                "The configured SQL Server connection-string catalog entry is required.")
+            .ValidateOnStart();
 
         // Register SQL Server provider
         services.TryAddSingleton<IDistributedLockProvider>(sp =>
         {
             var sqlSettings = sp.GetRequiredService<IOptions<SqlServerLockSettings>>().Value;
+            var configuration = sp.GetRequiredService<IConfiguration>();
+            string connectionString = configuration.GetConnectionString(sqlSettings.ConnectionStringKey)
+                ?? throw new InvalidOperationException(
+                    $"Connection string catalog entry '{sqlSettings.ConnectionStringKey}' is not configured.");
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             return new SqlServerLockProvider(
-                sqlSettings.ConnectionString,
+                connectionString,
                 loggerFactory.CreateLogger<SqlServerLockProvider>());
         });
 
