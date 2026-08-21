@@ -14,6 +14,9 @@ namespace Ruya.Services.CloudStorage.Amazon.Tests;
 [TestClass]
 public static class AssemblySetup
 {
+    // LocalStack 2026.03.0+ requires authentication; pin the final Community release for credential-free tests.
+    private const string LocalStackImage = "localstack/localstack:4.14.0@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a";
+
     private static IContainer? _container;
     private static bool _isEmulator = true;
     private static readonly Dictionary<string, string?> _originalEnvironment = new(StringComparer.Ordinal);
@@ -32,8 +35,7 @@ public static class AssemblySetup
         if (_isEmulator)
         {
             var port = Ruya.Services.CloudStorage.Tests.Common.TestUtils.GetAvailablePort();
-            _container = new ContainerBuilder()
-                .WithImage("localstack/localstack")
+            _container = new ContainerBuilder(LocalStackImage)
                 .WithPortBinding(port, 4566)
                 .WithEnvironment("SERVICES", "s3")
                 .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(4566).ForPath("/_localstack/health").ForStatusCode(System.Net.HttpStatusCode.OK)))
