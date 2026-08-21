@@ -37,7 +37,7 @@ jobs:
   # job dependencies before steps run, so the dynamic graph is executed through
   # predeclared topological layer matrices instead of a maintained package list.
   plan:
-    name: Plan affected packages
+    name: Determine affected packages
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -104,7 +104,7 @@ jobs:
           -GitHubOutputPath $env:GITHUB_OUTPUT
 
   build-layer-0:
-    name: Layer 0 / ${{ matrix.project_name }}
+    name: Layer 0 (roots) / ${{ matrix.project_name }}
     needs: plan
     if: needs.plan.result == 'success' && needs.plan.outputs.layer_0_count != '0'
     strategy:
@@ -127,7 +127,7 @@ jobs:
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
   build-layer-1:
-    name: Layer 1 / ${{ matrix.project_name }}
+    name: Layer 1 (consumers) / ${{ matrix.project_name }}
     needs: [plan, build-layer-0]
     if: |
       always() &&
@@ -154,7 +154,7 @@ jobs:
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
   build-layer-2:
-    name: Layer 2 / ${{ matrix.project_name }}
+    name: Layer 2 (downstream) / ${{ matrix.project_name }}
     needs: [plan, build-layer-0, build-layer-1]
     if: |
       always() &&

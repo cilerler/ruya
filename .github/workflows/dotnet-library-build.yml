@@ -109,6 +109,7 @@ jobs:
   # Branch Guard
   # ============================================================================
   branch-guard:
+    name: '${{ inputs.project-name }} / Resolve branch'
     runs-on: ubuntu-latest
     outputs:
       should-run: ${{ steps.check.outputs.should-run }}
@@ -140,6 +141,7 @@ jobs:
   # Build
   # ============================================================================
   build:
+    name: '${{ inputs.project-name }} / Build library'
     needs: branch-guard
     if: needs.branch-guard.outputs.should-run == 'true'
     runs-on: ubuntu-latest
@@ -346,6 +348,7 @@ jobs:
   # Test
   # ============================================================================
   test:
+    name: '${{ inputs.project-name }} / Run tests'
     needs: build
     if: inputs.test-project-paths != ''
     runs-on: ubuntu-latest
@@ -425,6 +428,29 @@ jobs:
               '-p:CoverletOutputFormat=cobertura'
             )
 
+            # Test projects declare opt-in local-reference switches, but project
+            # properties are not global MSBuild properties. Reapply those switches
+            # at the command boundary so restore sees the complete transitive graph.
+            [xml]$testProjectXml = Get-Content -LiteralPath $testProject -Raw
+            $localReferenceProperties = @(
+              foreach ($propertyGroup in $testProjectXml.Project.PropertyGroup) {
+                foreach ($property in $propertyGroup.ChildNodes) {
+                  if (
+                    $property.NodeType -eq [System.Xml.XmlNodeType]::Element -and
+                    $property.LocalName -match '^UseLocal.+ProjectReferences?$' -and
+                    $property.InnerText.Trim() -eq 'true'
+                  ) {
+                    $property.LocalName
+                  }
+                }
+              }
+            ) | Sort-Object -Unique
+
+            foreach ($propertyName in $localReferenceProperties) {
+              Write-Host "Applying test project global property: $propertyName=true"
+              $testArgs += "-p:$propertyName=true"
+            }
+
             if ('${{ inputs.use-local-tokenbroker-project-references }}' -eq 'true') {
               $testArgs += '-p:UseLocalTokenBrokerProjectReferences=true'
             }
@@ -443,6 +469,7 @@ jobs:
   # Pack
   # ============================================================================
   pack:
+    name: '${{ inputs.project-name }} / Create NuGet package'
     needs: build
     runs-on: ubuntu-latest
     outputs:
@@ -520,6 +547,7 @@ jobs:
   # Publish
   # ============================================================================
   publish:
+    name: '${{ inputs.project-name }} / Publish NuGet package'
     needs: [build, test, pack]
     if: |
       always() &&
@@ -615,6 +643,7 @@ jobs:
   # Dispatch
   # ============================================================================
   dispatch:
+    name: '${{ inputs.project-name }} / Notify dependent packages (rolling only)'
     needs: [build, publish]
     if: |
       always() &&
