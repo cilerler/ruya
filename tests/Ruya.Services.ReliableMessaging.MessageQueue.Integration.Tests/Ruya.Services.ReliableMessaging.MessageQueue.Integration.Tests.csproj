@@ -13,6 +13,8 @@
 		<TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
 
 		<TestingExtensionsProfile>AllMicrosoft</TestingExtensionsProfile>
+
+		<UseLocalMessageQueueProjectReference>true</UseLocalMessageQueueProjectReference>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -31,7 +33,9 @@
 		<ProjectReference Include="..\..\src\Ruya.Services.ReliableMessaging\Ruya.Services.ReliableMessaging.csproj" />
 		<ProjectReference Include="..\..\src\Ruya.Services.ReliableMessaging.MessageQueue\Ruya.Services.ReliableMessaging.MessageQueue.csproj" />
 		<ProjectReference Include="..\..\src\Ruya.Services.MessageQueue\Ruya.Services.MessageQueue.csproj" />
-		<ProjectReference Include="..\..\src\Ruya.Services.MessageQueue.InMemory\Ruya.Services.MessageQueue.InMemory.csproj" />
+		<ProjectReference
+			Include="..\..\src\Ruya.Services.MessageQueue.InMemory\Ruya.Services.MessageQueue.InMemory.csproj"
+			AdditionalProperties="UseLocalMessageQueueProjectReference=true" />
 	</ItemGroup>
 
 </Project>
